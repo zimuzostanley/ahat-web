@@ -299,7 +299,7 @@ export class AdbConnection {
     }
   }
 
-  async getProcessList(signal?: AbortSignal): Promise<ProcessInfo[]> {
+  async getProcessList(signal?: AbortSignal): Promise<{ list: ProcessInfo[]; hasBreakdown: boolean }> {
     if (!this.device) throw new Error("Not connected");
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     // Try compact format first — includes per-process Java/Native/Graphics breakdown
@@ -310,7 +310,9 @@ export class AdbConnection {
       // Only use compact as primary results if it has category breakdown lines
       const hasCategories = /^(?:cat,)?(?:Native Heap|Dalvik Heap),\d/m.test(compact);
       compactResults = parseMemInfo(compact);
-      if (hasCategories && compactResults.length > 0) return compactResults;
+      if (hasCategories && compactResults.length > 0) {
+        return { list: compactResults, hasBreakdown: true };
+      }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") throw e;
       // compact format failed, fall through
@@ -328,7 +330,7 @@ export class AdbConnection {
         }
       }
     }
-    return results;
+    return { list: results, hasBreakdown: false };
   }
 
   /**

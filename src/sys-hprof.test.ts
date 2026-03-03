@@ -970,30 +970,43 @@ describe.skipIf(!haveFile)("sys.hprof golden data", () => {
   // ── 21. Download buffer round-trip ────────────────────────────────────
 
   describe("download buffer integrity", () => {
-    it("buffer.slice(0) is byte-identical to original", () => {
+    it("full byte-by-byte comparison: clone is identical to original", () => {
+      // Simulates the exact download path in App.tsx:
+      //   const forWorker = buffer.slice(0);  // clone for worker
+      //   worker.postMessage(... [forWorker]); // transfer clone, original stays
+      //   downloadBuffer(name, activeSession.buffer); // download from original
       const clone = fileBuffer.slice(0);
       expect(clone.byteLength).toBe(fileBuffer.byteLength);
 
       const orig = new Uint8Array(fileBuffer);
       const copy = new Uint8Array(clone);
 
-      // Check every 1024th byte for speed, plus first and last 64
-      for (let i = 0; i < 64; i++) {
-        expect(copy[i]).toBe(orig[i]);
+      // Full comparison — every byte
+      let mismatches = 0;
+      for (let i = 0; i < orig.length; i++) {
+        if (orig[i] !== copy[i]) mismatches++;
       }
-      for (let i = orig.length - 64; i < orig.length; i++) {
-        expect(copy[i]).toBe(orig[i]);
-      }
-      for (let i = 0; i < orig.length; i += 1024) {
-        expect(copy[i]).toBe(orig[i]);
-      }
+      expect(mismatches).toBe(0);
     });
 
-    it("original buffer remains intact after cloning", () => {
-      const before = fileBuffer.byteLength;
-      fileBuffer.slice(0); // exercise clone without keeping ref
-      expect(fileBuffer.byteLength).toBe(before);
+    it("original buffer is NOT neutered after clone + simulated transfer", () => {
+      const clone = fileBuffer.slice(0);
+      // In the real app, clone is transferred to worker (neutering clone).
+      // The original must remain intact for download.
       expect(fileBuffer.byteLength).toBe(HPROF_SIZE);
+      expect(clone.byteLength).toBe(HPROF_SIZE);
+    });
+
+    it("checksum matches between original and clone", () => {
+      const orig = new Uint8Array(fileBuffer);
+      const clone = new Uint8Array(fileBuffer.slice(0));
+      // Simple hash — catches any bit flip
+      let hashOrig = 0, hashClone = 0;
+      for (let i = 0; i < orig.length; i++) {
+        hashOrig = ((hashOrig << 5) - hashOrig + orig[i]) | 0;
+        hashClone = ((hashClone << 5) - hashClone + clone[i]) | 0;
+      }
+      expect(hashOrig).toBe(hashClone);
     });
 
     it("re-parse of cloned buffer produces identical snapshot", () => {
@@ -1009,6 +1022,20 @@ describe.skipIf(!haveFile)("sys.hprof golden data", () => {
       expect(snap2.superRoot.dominated.length).toBe(snap.superRoot.dominated.length);
       expect(snap2.superRoot.getTotalRetainedSize().total)
         .toBe(snap.superRoot.getTotalRetainedSize().total);
+
+      // Verify top retained object is identical
+      const appHeap2 = snap2.getHeap("app");
+      const items2 = [...snap2.superRoot.dominated];
+      items2.sort((a, b) => {
+        if (appHeap2) {
+          const c = b.getRetainedSize(appHeap2).total - a.getRetainedSize(appHeap2).total;
+          if (c !== 0) return c;
+        }
+        return b.getTotalRetainedSize().total - a.getTotalRetainedSize().total;
+      });
+      expect(items2[0].id).toBe(GOLDEN.topRetained.id);
+      expect(items2[0].getClassName()).toBe(GOLDEN.topRetained.className);
+      expect(items2[0].getTotalRetainedSize().total).toBe(GOLDEN.topRetained.retainedTotal);
     });
   });
 });

@@ -1075,7 +1075,7 @@ function CaptureView({ onCaptured, conn }: {
     setEnrichProgress(null);
     setError(null);
     try {
-      const list = await conn.getProcessList(ac.signal);
+      const { list, hasBreakdown } = await conn.getProcessList(ac.signal);
       if (ac.signal.aborted) return;
       // On non-rooted devices, annotate processes with debuggable status
       if (!conn.isRoot) {
@@ -1084,13 +1084,17 @@ function CaptureView({ onCaptured, conn }: {
         for (const p of list) p.debuggable = debuggable.has(p.name);
       }
       setProcesses(list);
-      // Enrich with per-process details (Java/Native/Graphics breakdown)
-      await conn.enrichProcessDetails(list, (done, total, current) => {
-        if (ac.signal.aborted) return;
-        setEnrichStatus(current);
-        setEnrichProgress({ done, total });
-        setProcesses([...list]);
-      }, ac.signal);
+      // Only enrich with per-process details if compact format lacked breakdown.
+      // The compact format already provides Java/Native/Graphics on most devices,
+      // so this avoids N sequential `dumpsys meminfo <pid>` calls.
+      if (!hasBreakdown) {
+        await conn.enrichProcessDetails(list, (done, total, current) => {
+          if (ac.signal.aborted) return;
+          setEnrichStatus(current);
+          setEnrichProgress({ done, total });
+          setProcesses([...list]);
+        }, ac.signal);
+      }
     } catch (e) {
       if (ac.signal.aborted) return;
       if (e instanceof DOMException && e.name === "AbortError") return;
@@ -1346,15 +1350,19 @@ function CaptureView({ onCaptured, conn }: {
                         <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.nativeHeapKb > 0 ? fmtSize(p.nativeHeapKb * 1024) : "\u2014"}</td>
                         <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.graphicsKb > 0 ? fmtSize(p.graphicsKb * 1024) : "\u2014"}</td>
                       </>}
-                      <td className="py-1 px-2 text-center">
-                        <button
-                          className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 transition-colors whitespace-nowrap"
-                          disabled={capturing || !canCapture}
-                          title={!canCapture ? "Not debuggable" : capturing ? "Capture in progress" : "Capture heap dump"}
-                          onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
-                        >
-                          {isCapturingThis ? "\u2026" : "Capture"}
-                        </button>
+                      <td className="py-1 px-2 text-center whitespace-nowrap">
+                        {!canCapture ? (
+                          <span className="text-xs text-stone-400" title="Only debuggable apps can be captured on non-rooted devices">locked</span>
+                        ) : (
+                          <button
+                            className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 transition-colors whitespace-nowrap"
+                            disabled={capturing}
+                            title={capturing ? "Capture in progress" : "Capture heap dump"}
+                            onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
+                          >
+                            {isCapturingThis ? "\u2026" : "Capture"}
+                          </button>
+                        )}
                       </td>
                     </tr>
                     );
@@ -1685,11 +1693,11 @@ export default function App() {
       {isLoading && (
         <div className="flex items-center justify-center p-8 min-h-screen">
           <div className="max-w-md w-full bg-white border border-stone-200 p-8">
-            <h2 className="text-lg font-semibold text-stone-800 mb-4">Parsing {loadingName || "Heap Dump"}&hellip;</h2>
+            <h2 className="text-lg font-semibold text-stone-800 mb-4 truncate" title={`Parsing ${loadingName || "Heap Dump"}`}>Parsing {loadingName || "Heap Dump"}&hellip;</h2>
             <div className="w-full h-2 bg-stone-100 overflow-hidden mb-3">
               <div className="h-full bg-sky-500 transition-all duration-300" style={{ width: progress.pct + "%" }} />
             </div>
-            <p className="text-sm text-stone-500">{progress.msg}</p>
+            <p className="text-sm text-stone-500 truncate" title={progress.msg}>{progress.msg}</p>
           </div>
         </div>
       )}

@@ -84,11 +84,12 @@ describe("AdbConnection.getProcessList", () => {
     const { conn, mockDevice } = setupConnected();
     mockDevice.shell.mockResolvedValueOnce(COMPACT_WITH_CATEGORIES);
 
-    const result = await conn.getProcessList();
+    const { list: result, hasBreakdown } = await conn.getProcessList();
     expect(result.length).toBe(2);
     expect(result[0].name).toBe("com.android.systemui");
     expect(result[0].nativeHeapKb).toBe(50000);
     expect(result[0].javaHeapKb).toBe(30000);
+    expect(hasBreakdown).toBe(true);
     // Only one shell call — compact had categories, no fallback
     expect(mockDevice.shell).toHaveBeenCalledTimes(1);
     expect(mockDevice.shell).toHaveBeenCalledWith("dumpsys -t 60 meminfo -c", undefined);
@@ -100,8 +101,9 @@ describe("AdbConnection.getProcessList", () => {
       .mockResolvedValueOnce(COMPACT_NO_CATEGORIES)  // compact — no category lines
       .mockResolvedValueOnce(REGULAR_FORMAT);          // regular
 
-    const result = await conn.getProcessList();
+    const { list: result, hasBreakdown } = await conn.getProcessList();
     expect(result.length).toBe(2);
+    expect(hasBreakdown).toBe(false);
     expect(mockDevice.shell).toHaveBeenCalledTimes(2);
   });
 
@@ -111,7 +113,7 @@ describe("AdbConnection.getProcessList", () => {
       .mockResolvedValueOnce(COMPACT_NO_CATEGORIES)
       .mockResolvedValueOnce(REGULAR_FORMAT);
 
-    const result = await conn.getProcessList();
+    const { list: result } = await conn.getProcessList();
     const sysui = result.find(p => p.pid === 1234);
     expect(sysui?.oomLabel).toBe("Foreground");
     const system = result.find(p => p.pid === 987);
