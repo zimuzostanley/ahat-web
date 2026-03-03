@@ -801,3 +801,92 @@ export function parseProcMeminfo(output: string): Partial<GlobalMemInfo> {
   }
   return result;
 }
+
+// ─── Diff functions ─────────────────────────────────────────────────────────
+
+export type DiffStatus = "matched" | "added" | "removed";
+
+export interface ProcessDiff {
+  status: DiffStatus;
+  current: ProcessInfo;
+  prev: ProcessInfo | null;
+  deltaPssKb: number;
+  deltaRssKb: number;
+  deltaJavaHeapKb: number;
+  deltaNativeHeapKb: number;
+  deltaGraphicsKb: number;
+  deltaCodeKb: number;
+}
+
+export interface GlobalMemInfoDiff {
+  current: GlobalMemInfo;
+  prev: GlobalMemInfo;
+  deltaTotalRamKb: number;
+  deltaFreeRamKb: number;
+  deltaUsedPssKb: number;
+  deltaLostRamKb: number;
+  deltaZramPhysicalKb: number;
+  deltaSwapFreeKb: number;
+  deltaMemAvailableKb: number;
+  deltaBuffersKb: number;
+  deltaCachedKb: number;
+}
+
+/** Diff two process lists by PID + name. */
+export function diffProcesses(prev: ProcessInfo[], current: ProcessInfo[]): ProcessDiff[] {
+  const prevByPid = new Map(prev.map(p => [p.pid, p]));
+  const result: ProcessDiff[] = [];
+  const matchedPids = new Set<number>();
+
+  for (const cur of current) {
+    const old = prevByPid.get(cur.pid);
+    if (old && old.name === cur.name) {
+      matchedPids.add(cur.pid);
+      result.push({
+        status: "matched", current: cur, prev: old,
+        deltaPssKb: cur.pssKb - old.pssKb,
+        deltaRssKb: cur.rssKb - old.rssKb,
+        deltaJavaHeapKb: cur.javaHeapKb - old.javaHeapKb,
+        deltaNativeHeapKb: cur.nativeHeapKb - old.nativeHeapKb,
+        deltaGraphicsKb: cur.graphicsKb - old.graphicsKb,
+        deltaCodeKb: cur.codeKb - old.codeKb,
+      });
+    } else {
+      result.push({
+        status: "added", current: cur, prev: null,
+        deltaPssKb: cur.pssKb, deltaRssKb: cur.rssKb,
+        deltaJavaHeapKb: cur.javaHeapKb, deltaNativeHeapKb: cur.nativeHeapKb,
+        deltaGraphicsKb: cur.graphicsKb, deltaCodeKb: cur.codeKb,
+      });
+    }
+  }
+
+  for (const old of prev) {
+    if (!matchedPids.has(old.pid)) {
+      result.push({
+        status: "removed", current: old, prev: old,
+        deltaPssKb: -old.pssKb, deltaRssKb: -old.rssKb,
+        deltaJavaHeapKb: -old.javaHeapKb, deltaNativeHeapKb: -old.nativeHeapKb,
+        deltaGraphicsKb: -old.graphicsKb, deltaCodeKb: -old.codeKb,
+      });
+    }
+  }
+
+  return result;
+}
+
+/** Diff two GlobalMemInfo snapshots. */
+export function diffGlobalMemInfo(prev: GlobalMemInfo, current: GlobalMemInfo): GlobalMemInfoDiff {
+  return {
+    current, prev,
+    deltaTotalRamKb: current.totalRamKb - prev.totalRamKb,
+    deltaFreeRamKb: current.freeRamKb - prev.freeRamKb,
+    deltaUsedPssKb: current.usedPssKb - prev.usedPssKb,
+    deltaLostRamKb: current.lostRamKb - prev.lostRamKb,
+    deltaZramPhysicalKb: current.zramPhysicalKb - prev.zramPhysicalKb,
+    deltaSwapFreeKb: current.swapFreeKb - prev.swapFreeKb,
+    deltaMemAvailableKb: current.memAvailableKb - prev.memAvailableKb,
+    deltaBuffersKb: current.buffersKb - prev.buffersKb,
+    deltaCachedKb: current.cachedKb - prev.cachedKb,
+  };
+}

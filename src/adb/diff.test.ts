@@ -1,0 +1,134 @@
+import { describe, it, expect } from "vitest";
+import { diffProcesses, diffGlobalMemInfo, type ProcessInfo, type GlobalMemInfo } from "./capture";
+
+function makeProc(pid: number, name: string, pssKb: number, overrides?: Partial<ProcessInfo>): ProcessInfo {
+  return {
+    pid, name, oomLabel: "", pssKb, rssKb: 0,
+    javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
+    ...overrides,
+  };
+}
+
+// ─── diffProcesses ──────────────────────────────────────────────────────────
+
+describe("diffProcesses", () => {
+  it("matches processes by PID and name", () => {
+    const prev = [makeProc(100, "com.example.app", 50000)];
+    const curr = [makeProc(100, "com.example.app", 60000)];
+    const diffs = diffProcesses(prev, curr);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("matched");
+    expect(diffs[0].deltaPssKb).toBe(10000);
+    expect(diffs[0].prev).not.toBeNull();
+  });
+
+  it("marks new processes as added", () => {
+    const prev = [makeProc(100, "app1", 50000)];
+    const curr = [makeProc(100, "app1", 50000), makeProc(200, "app2", 30000)];
+    const diffs = diffProcesses(prev, curr);
+    const added = diffs.find(d => d.current.pid === 200);
+    expect(added?.status).toBe("added");
+    expect(added?.deltaPssKb).toBe(30000);
+    expect(added?.prev).toBeNull();
+  });
+
+  it("marks disappeared processes as removed", () => {
+    const prev = [makeProc(100, "app1", 50000), makeProc(200, "app2", 30000)];
+    const curr = [makeProc(100, "app1", 50000)];
+    const diffs = diffProcesses(prev, curr);
+    const removed = diffs.find(d => d.current.pid === 200);
+    expect(removed?.status).toBe("removed");
+    expect(removed?.deltaPssKb).toBe(-30000);
+  });
+
+  it("treats PID reuse with different name as remove + add", () => {
+    const prev = [makeProc(100, "old_app", 50000)];
+    const curr = [makeProc(100, "new_app", 30000)];
+    const diffs = diffProcesses(prev, curr);
+    expect(diffs).toHaveLength(2);
+    expect(diffs.find(d => d.status === "added")?.current.name).toBe("new_app");
+    expect(diffs.find(d => d.status === "removed")?.current.name).toBe("old_app");
+  });
+
+  it("computes deltas for all memory fields", () => {
+    const prev = [makeProc(1, "a", 100, { rssKb: 200, javaHeapKb: 30, nativeHeapKb: 40, graphicsKb: 50, codeKb: 60 })];
+    const curr = [makeProc(1, "a", 150, { rssKb: 250, javaHeapKb: 35, nativeHeapKb: 45, graphicsKb: 55, codeKb: 65 })];
+    const d = diffProcesses(prev, curr)[0];
+    expect(d.deltaPssKb).toBe(50);
+    expect(d.deltaRssKb).toBe(50);
+    expect(d.deltaJavaHeapKb).toBe(5);
+    expect(d.deltaNativeHeapKb).toBe(5);
+    expect(d.deltaGraphicsKb).toBe(5);
+    expect(d.deltaCodeKb).toBe(5);
+  });
+
+  it("returns zero deltas for unchanged processes", () => {
+    const p = makeProc(1, "a", 100, { javaHeapKb: 50 });
+    const diffs = diffProcesses([p], [{ ...p }]);
+    expect(diffs[0].status).toBe("matched");
+    expect(diffs[0].deltaPssKb).toBe(0);
+    expect(diffs[0].deltaJavaHeapKb).toBe(0);
+  });
+
+  it("handles empty lists", () => {
+    expect(diffProcesses([], [])).toHaveLength(0);
+  });
+
+  it("handles all-new processes", () => {
+    const curr = [makeProc(1, "a", 100), makeProc(2, "b", 200)];
+    const diffs = diffProcesses([], curr);
+    expect(diffs).toHaveLength(2);
+    expect(diffs.every(d => d.status === "added")).toBe(true);
+  });
+
+  it("handles all-removed processes", () => {
+    const prev = [makeProc(1, "a", 100), makeProc(2, "b", 200)];
+    const diffs = diffProcesses(prev, []);
+    expect(diffs).toHaveLength(2);
+    expect(diffs.every(d => d.status === "removed")).toBe(true);
+  });
+
+  it("handles large mixed diff", () => {
+    const prev = [makeProc(1, "a", 100), makeProc(2, "b", 200), makeProc(3, "c", 300)];
+    const curr = [makeProc(1, "a", 150), makeProc(3, "c", 250), makeProc(4, "d", 400)];
+    const diffs = diffProcesses(prev, curr);
+    expect(diffs).toHaveLength(4);
+    expect(diffs.filter(d => d.status === "matched")).toHaveLength(2);
+    expect(diffs.filter(d => d.status === "added")).toHaveLength(1);
+    expect(diffs.filter(d => d.status === "removed")).toHaveLength(1);
+    expect(diffs.find(d => d.current.pid === 2)?.status).toBe("removed");
+    expect(diffs.find(d => d.current.pid === 4)?.status).toBe("added");
+  });
+});
+
+// ─── diffGlobalMemInfo ──────────────────────────────────────────────────────
+
+describe("diffGlobalMemInfo", () => {
+  const base: GlobalMemInfo = {
+    totalRamKb: 8000000, freeRamKb: 4000000, usedPssKb: 3000000,
+    lostRamKb: 100000, zramPhysicalKb: 50000, swapTotalKb: 200000,
+    swapFreeKb: 150000, memAvailableKb: 5000000, buffersKb: 100000, cachedKb: 500000,
+  };
+
+  it("computes deltas for all fields", () => {
+    const current = { ...base, freeRamKb: 3500000, usedPssKb: 3500000 };
+    const d = diffGlobalMemInfo(base, current);
+    expect(d.deltaFreeRamKb).toBe(-500000);
+    expect(d.deltaUsedPssKb).toBe(500000);
+    expect(d.deltaTotalRamKb).toBe(0);
+  });
+
+  it("preserves both current and prev snapshots", () => {
+    const current = { ...base, freeRamKb: 1 };
+    const d = diffGlobalMemInfo(base, current);
+    expect(d.prev.freeRamKb).toBe(4000000);
+    expect(d.current.freeRamKb).toBe(1);
+  });
+
+  it("handles identical snapshots", () => {
+    const d = diffGlobalMemInfo(base, { ...base });
+    expect(d.deltaFreeRamKb).toBe(0);
+    expect(d.deltaUsedPssKb).toBe(0);
+    expect(d.deltaLostRamKb).toBe(0);
+  });
+});

@@ -5,7 +5,7 @@ import type {
   SiteData, SiteChildRow, SiteObjectsRow,
   PrimOrRef, BitmapListRow,
 } from "./hprof.worker";
-import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type GlobalMemInfo } from "./adb/capture";
+import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, diffProcesses, diffGlobalMemInfo } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 
 // ─── Worker proxy ─────────────────────────────────────────────────────────────
@@ -149,6 +149,27 @@ function fmtSize(n: number): string {
 
 function fmtHex(id: number): string {
   return "0x" + id.toString(16).padStart(8, "0");
+}
+
+function deltaBgClass(deltaKb: number): string {
+  if (deltaKb === 0) return "";
+  const abs = Math.abs(deltaKb);
+  if (deltaKb > 0) {
+    if (abs >= 50_000) return "bg-green-200";
+    if (abs >= 10_000) return "bg-green-100";
+    if (abs >= 1_000) return "bg-green-50";
+    return "";
+  }
+  if (abs >= 50_000) return "bg-red-200";
+  if (abs >= 10_000) return "bg-red-100";
+  if (abs >= 1_000) return "bg-red-50";
+  return "";
+}
+
+function fmtDelta(deltaKb: number): string {
+  if (deltaKb === 0) return "";
+  const prefix = deltaKb > 0 ? "+" : "";
+  return `${prefix}${fmtSize(deltaKb * 1024)}`;
 }
 
 // ─── Navigation types ─────────────────────────────────────────────────────────
@@ -1192,6 +1213,34 @@ function CaptureView({ onCaptured, conn }: {
   const [vmaSortField, setVmaSortField] = useState<VmaSortField>("pssKb");
   const [vmaSortAsc, setVmaSortAsc] = useState(false);
 
+  // Diff state
+  const [diffMode, setDiffMode] = useState(false);
+  const [prevProcesses, setPrevProcesses] = useState<ProcessInfo[] | null>(null);
+  const [prevGlobalMemInfo, setPrevGlobalMemInfo] = useState<GlobalMemInfo | null>(null);
+  const [processDiffs, setProcessDiffs] = useState<ProcessDiff[] | null>(null);
+  const [globalMemInfoDiff, setGlobalMemInfoDiff] = useState<GlobalMemInfoDiff | null>(null);
+  const diffTriggeredRef = useRef(false);
+
+  const clearDiff = useCallback(() => {
+    setDiffMode(false);
+    setPrevProcesses(null);
+    setPrevGlobalMemInfo(null);
+    setProcessDiffs(null);
+    setGlobalMemInfoDiff(null);
+    diffTriggeredRef.current = false;
+  }, []);
+
+  // Progressive diff recomputation — fires on every enrichment update
+  useEffect(() => {
+    if (!diffMode || !prevProcesses || !processes) return;
+    setProcessDiffs(diffProcesses(prevProcesses, processes));
+  }, [diffMode, prevProcesses, processes]);
+
+  useEffect(() => {
+    if (!diffMode || !prevGlobalMemInfo || !globalMemInfo) return;
+    setGlobalMemInfoDiff(diffGlobalMemInfo(prevGlobalMemInfo, globalMemInfo));
+  }, [diffMode, prevGlobalMemInfo, globalMemInfo]);
+
   const cancelEnrichment = useCallback(() => {
     if (!enrichAbortRef.current) return;
     enrichAbortRef.current.abort();
@@ -1212,9 +1261,12 @@ function CaptureView({ onCaptured, conn }: {
   const refreshProcesses = useCallback(async () => {
     if (!conn.connected) return;
     cancelEnrichment();
+    // Normal refresh clears diff state; handleDiff sets the flag before calling us
+    if (!diffTriggeredRef.current) clearDiff();
+    diffTriggeredRef.current = false;
     const ac = new AbortController();
     enrichAbortRef.current = ac;
-    setEnrichStatus("Fetching process list\u2026");
+    setEnrichStatus(diffMode ? "Diffing: Fetching process list\u2026" : "Fetching process list\u2026");
     setEnrichProgress(null);
     setSmapsData(new Map());
     setExpandedSmapsPid(null);
@@ -1254,7 +1306,7 @@ function CaptureView({ onCaptured, conn }: {
           { meminfo: needsMeminfo, smaps: needsSmaps },
           (done, total, current) => {
             if (ac.signal.aborted) return;
-            setEnrichStatus(current);
+            setEnrichStatus(diffMode ? `Diffing: ${current}` : current);
             setEnrichProgress({ done, total });
           },
           () => {
@@ -1279,7 +1331,17 @@ function CaptureView({ onCaptured, conn }: {
         setEnrichProgress(null);
       }
     }
-  }, [cancelEnrichment]);
+  }, [cancelEnrichment, clearDiff, diffMode]);
+
+  const handleDiff = useCallback(() => {
+    if (!processes) return;
+    // Deep copy current state as baseline (enrichment mutates in place)
+    setPrevProcesses(processes.map(p => ({ ...p })));
+    if (globalMemInfo) setPrevGlobalMemInfo({ ...globalMemInfo });
+    setDiffMode(true);
+    diffTriggeredRef.current = true;
+    refreshProcesses();
+  }, [processes, globalMemInfo, refreshProcesses]);
 
   useEffect(() => {
     if (connected) refreshProcesses();
@@ -1371,7 +1433,8 @@ function CaptureView({ onCaptured, conn }: {
     setSmapsData(new Map());
     setExpandedSmapsPid(null);
     setExpandedSmapsGroup(null);
-  }, [cancelEnrichment, cancelCapture]);
+    clearDiff();
+  }, [cancelEnrichment, cancelCapture, clearDiff]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -1384,6 +1447,28 @@ function CaptureView({ onCaptured, conn }: {
     copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
     return copy;
   }, [processes, sortField, sortAsc]);
+
+  const deltaFieldMap: Record<SortField, keyof ProcessDiff> = {
+    pssKb: "deltaPssKb", rssKb: "deltaRssKb", javaHeapKb: "deltaJavaHeapKb",
+    nativeHeapKb: "deltaNativeHeapKb", graphicsKb: "deltaGraphicsKb", codeKb: "deltaCodeKb",
+  };
+
+  const sortedDiffs = useMemo(() => {
+    if (!processDiffs) return null;
+    const deltaKey = deltaFieldMap[sortField];
+    const copy = [...processDiffs];
+    copy.sort((a, b) => {
+      // Pin added/removed to top
+      const aPin = a.status !== "matched" ? 1 : 0;
+      const bPin = b.status !== "matched" ? 1 : 0;
+      if (aPin !== bPin) return bPin - aPin;
+      // Sort by absolute delta descending (default) or by field value
+      const aVal = a[deltaKey] as number;
+      const bVal = b[deltaKey] as number;
+      return sortAsc ? aVal - bVal : bVal - aVal;
+    });
+    return copy;
+  }, [processDiffs, sortField, sortAsc]);
 
   const hasRss = processes ? processes.some(p => p.rssKb > 0) : false;
   // Show breakdown columns as soon as enrichment starts or any data arrives
@@ -1441,8 +1526,24 @@ function CaptureView({ onCaptured, conn }: {
             </div>
             <div className="flex items-center gap-3">
               <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses}>
-                {enrichStatus ? "Refreshing\u2026" : "Refresh"}
+                {enrichStatus && !diffMode ? "Refreshing\u2026" : "Refresh"}
               </button>
+              {processes && !diffMode && !enrichStatus && (
+                <button
+                  className="text-sky-600 hover:text-sky-800 text-xs border border-sky-300 px-2 py-0.5"
+                  onClick={handleDiff}
+                >
+                  Diff
+                </button>
+              )}
+              {diffMode && (
+                <button
+                  className="text-amber-600 hover:text-amber-800 text-xs border border-amber-300 px-2 py-0.5"
+                  onClick={clearDiff}
+                >
+                  Clear Diff
+                </button>
+              )}
               <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={handleDisconnect}>
                 Disconnect
               </button>
@@ -1494,17 +1595,35 @@ function CaptureView({ onCaptured, conn }: {
           {globalMemInfo && (
             <div className="mb-3 bg-white border border-stone-200 px-3 py-2">
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
-                <span className="text-stone-500">Total <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.totalRamKb * 1024)}</span></span>
-                <span className="text-stone-500">Free <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.freeRamKb * 1024)}</span></span>
-                <span className="text-stone-500">Used <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.usedPssKb * 1024)}</span></span>
-                {globalMemInfo.memAvailableKb > 0 && (
-                  <span className="text-stone-500">Available <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.memAvailableKb * 1024)}</span></span>
-                )}
-                {globalMemInfo.lostRamKb > 0 && (
-                  <span className="text-stone-500">Lost <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.lostRamKb * 1024)}</span></span>
-                )}
+                {([
+                  ["Total", globalMemInfo.totalRamKb, globalMemInfoDiff?.deltaTotalRamKb, false],
+                  ["Free", globalMemInfo.freeRamKb, globalMemInfoDiff?.deltaFreeRamKb, true],
+                  ["Used", globalMemInfo.usedPssKb, globalMemInfoDiff?.deltaUsedPssKb, false],
+                  ...(globalMemInfo.memAvailableKb > 0 ? [["Available", globalMemInfo.memAvailableKb, globalMemInfoDiff?.deltaMemAvailableKb, true] as const] : []),
+                  ...(globalMemInfo.lostRamKb > 0 ? [["Lost", globalMemInfo.lostRamKb, globalMemInfoDiff?.deltaLostRamKb, false] as const] : []),
+                ] as const).map(([label, value, delta, inverted]) => (
+                  <span key={label} className="text-stone-500">
+                    {label}{" "}
+                    <span className="font-mono text-stone-800">{fmtSize(value * 1024)}</span>
+                    {delta != null && delta !== 0 && (
+                      <span className={`font-mono ml-1 ${(inverted ? -delta : delta) > 0 ? "text-green-700" : "text-red-700"}`}>
+                        {fmtDelta(delta)}
+                      </span>
+                    )}
+                  </span>
+                ))}
                 {globalMemInfo.swapTotalKb > 0 && (
-                  <span className="text-stone-500">ZRAM <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.zramPhysicalKb * 1024)}{" / "}{fmtSize(globalMemInfo.swapTotalKb * 1024)}</span></span>
+                  <span className="text-stone-500">
+                    ZRAM{" "}
+                    <span className="font-mono text-stone-800">
+                      {fmtSize(globalMemInfo.zramPhysicalKb * 1024)}{" / "}{fmtSize(globalMemInfo.swapTotalKb * 1024)}
+                    </span>
+                    {globalMemInfoDiff && globalMemInfoDiff.deltaZramPhysicalKb !== 0 && (
+                      <span className={`font-mono ml-1 ${globalMemInfoDiff.deltaZramPhysicalKb > 0 ? "text-green-700" : "text-red-700"}`}>
+                        {fmtDelta(globalMemInfoDiff.deltaZramPhysicalKb)}
+                      </span>
+                    )}
+                  </span>
                 )}
               </div>
             </div>
@@ -1550,19 +1669,25 @@ function CaptureView({ onCaptured, conn }: {
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map(p => {
+                  {(diffMode && sortedDiffs ? sortedDiffs : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }))).map(d => {
+                    const p = d.current;
                     const canCapture = conn.isRoot || p.debuggable !== false;
                     const isCapturingThis = capturing && selectedPid === p.pid;
                     const hasSmaps = smapsData.has(p.pid);
                     const isSmapsExpanded = expandedSmapsPid === p.pid && hasSmaps;
                     const colCount = 2 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 4 : 0) + 1;
+                    const isDiff = diffMode && sortedDiffs !== null;
+                    const rowKey = `${d.status}-${p.pid}`;
                     return (
-                    <Fragment key={p.pid}>
+                    <Fragment key={rowKey}>
                     <tr
                       className={`border-t border-stone-100 cursor-pointer ${
+                        d.status === "removed" ? "opacity-60" :
+                        d.status === "added" ? "bg-green-50/50" :
                         isSmapsExpanded ? "bg-sky-50" : "hover:bg-stone-50"
-                      } ${!canCapture ? "opacity-50" : ""}`}
+                      } ${!canCapture && d.status !== "removed" ? "opacity-50" : ""}`}
                       onClick={() => {
+                        if (d.status === "removed") return;
                         if (hasSmaps) {
                           if (expandedSmapsPid === p.pid) {
                             setExpandedSmapsPid(null);
@@ -1576,25 +1701,52 @@ function CaptureView({ onCaptured, conn }: {
                       }}
                     >
                       <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">
-                        {hasSmaps ? (
+                        {hasSmaps && d.status !== "removed" ? (
                           <span className="text-stone-400 mr-1">{isSmapsExpanded ? "\u25BC" : "\u25B6"}</span>
-                        ) : enrichProgress ? (
+                        ) : enrichProgress && d.status !== "removed" ? (
                           <span className="text-stone-300 mr-1 text-[10px]">{"\u2026"}</span>
                         ) : null}
                         {p.pid}
                       </td>
-                      <td className="py-1 px-2 text-stone-800 truncate max-w-[400px]" title={p.name}>{p.name}</td>
+                      <td className={`py-1 px-2 text-stone-800 truncate max-w-[400px] ${d.status === "removed" ? "line-through" : ""}`} title={p.name}>
+                        {p.name}
+                        {isDiff && d.status !== "matched" && (
+                          <span className={`ml-2 text-[10px] font-medium ${d.status === "added" ? "text-green-600" : "text-red-600"}`}>
+                            {d.status === "added" ? "NEW" : "GONE"}
+                          </span>
+                        )}
+                      </td>
                       {hasOomLabel && <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">{p.oomLabel}</td>}
-                      {hasRss && <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.rssKb * 1024)}</td>}
-                      <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.pssKb * 1024)}</td>
-                      {hasBreakdown && <>
-                        <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.javaHeapKb > 0 ? fmtSize(p.javaHeapKb * 1024) : "\u2014"}</td>
-                        <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.nativeHeapKb > 0 ? fmtSize(p.nativeHeapKb * 1024) : "\u2014"}</td>
-                        <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.graphicsKb > 0 ? fmtSize(p.graphicsKb * 1024) : "\u2014"}</td>
-                        <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.codeKb > 0 ? fmtSize(p.codeKb * 1024) : "\u2014"}</td>
-                      </>}
+                      {(() => {
+                        // Build the list of numeric columns with their current value and delta
+                        const cols: { value: number; delta: number; key: string }[] = [];
+                        if (hasRss) cols.push({ value: p.rssKb, delta: d.deltaRssKb, key: "rss" });
+                        cols.push({ value: p.pssKb, delta: d.deltaPssKb, key: "pss" });
+                        if (hasBreakdown) {
+                          cols.push({ value: p.javaHeapKb, delta: d.deltaJavaHeapKb, key: "java" });
+                          cols.push({ value: p.nativeHeapKb, delta: d.deltaNativeHeapKb, key: "native" });
+                          cols.push({ value: p.graphicsKb, delta: d.deltaGraphicsKb, key: "graphics" });
+                          cols.push({ value: p.codeKb, delta: d.deltaCodeKb, key: "code" });
+                        }
+                        return cols.map(({ value, delta, key }) => {
+                          const isBreakdownCol = key !== "rss" && key !== "pss";
+                          const showDash = isBreakdownCol && value === 0 && (!isDiff || delta === 0);
+                          return (
+                            <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(delta) : ""}`}>
+                              {showDash ? "\u2014" : fmtSize(value * 1024)}
+                              {isDiff && delta !== 0 && (
+                                <span className={`ml-1 text-xs ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
+                                  {fmtDelta(delta)}
+                                </span>
+                              )}
+                            </td>
+                          );
+                        });
+                      })()}
                       <td className="py-1 px-2 text-center whitespace-nowrap">
-                        {!canCapture ? (
+                        {d.status === "removed" ? (
+                          <span className="text-xs text-stone-400">removed</span>
+                        ) : !canCapture ? (
                           <span className="text-xs text-stone-400" title="Only debuggable apps can be captured on non-rooted devices">locked</span>
                         ) : (
                           <button
@@ -1608,7 +1760,7 @@ function CaptureView({ onCaptured, conn }: {
                         )}
                       </td>
                     </tr>
-                    {isSmapsExpanded && (
+                    {isSmapsExpanded && d.status !== "removed" && (
                       <tr>
                         <td colSpan={colCount} className="p-0 border-t border-stone-200">
                           <SmapsSubTable
