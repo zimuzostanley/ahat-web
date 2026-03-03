@@ -204,10 +204,23 @@ describe("parseMemInfo", () => {
       expect(systemui.graphicsKb).toBe(7502);
     });
 
+    it("sums code PSS from .so/.dex/.oat/.art mmap", () => {
+      const result = parseMemInfo(DETAILED_OUTPUT);
+      const systemui = result.find(p => p.name === "com.android.systemui")!;
+      // 4321 (.so) + 3456 (.dex) + 890 (.oat) + 2345 (.art) = 11012
+      expect(systemui.codeKb).toBe(11012);
+    });
+
     it("handles zero graphics correctly", () => {
       const result = parseMemInfo(DETAILED_OUTPUT);
       const gms = result.find(p => p.name === "com.google.android.gms")!;
       expect(gms.graphicsKb).toBe(0);
+    });
+
+    it("handles zero code correctly", () => {
+      const result = parseMemInfo(DETAILED_OUTPUT);
+      const gms = result.find(p => p.name === "com.google.android.gms")!;
+      expect(gms.codeKb).toBe(0);
     });
 
     it("sorts results by PSS descending", () => {
@@ -236,6 +249,7 @@ describe("parseMemInfo", () => {
         nativeHeapKb: 1000,
         javaHeapKb: 0,
         graphicsKb: 0,
+        codeKb: 0,
       });
     });
   });
@@ -292,6 +306,8 @@ Dalvik Heap,9110,9032,0,136,13164
 Gfx dev,5502,5502,0,0,5502
 EGL mtrack,800,800,0,0,800
 GL mtrack,1200,1200,0,0,1200
+.dex mmap,3456,0,3456,0,3456
+.so mmap,4321,123,4198,0,8765
 proc,fore,com.spotify.music,14417,180234,150000,250000
 Native Heap,25000,24900,0,1234,28000
 Dalvik Heap,15000,14800,0,500,18000
@@ -304,6 +320,7 @@ proc,fore,com.example.app,999,50000,40000,60000
 cat,Native Heap,12000,11000,0,500,14000
 cat,Dalvik Heap,8000,7500,0,200,10000
 cat,Gfx dev,3000,3000,0,0,3000
+cat,.dex mmap,5000,0,5000,0,5000
 `;
 
     it("parses native-only compact format (N/A fields)", () => {
@@ -322,6 +339,7 @@ cat,Gfx dev,3000,3000,0,0,3000
       expect(sysui.nativeHeapKb).toBe(16840);
       expect(sysui.javaHeapKb).toBe(9110);
       expect(sysui.graphicsKb).toBe(7502); // 5502 + 800 + 1200
+      expect(sysui.codeKb).toBe(7777); // 3456 + 4321
     });
 
     it("parses compact format with cat prefix", () => {
@@ -335,6 +353,7 @@ cat,Gfx dev,3000,3000,0,0,3000
         nativeHeapKb: 12000,
         javaHeapKb: 8000,
         graphicsKb: 3000,
+        codeKb: 5000,
       });
     });
 

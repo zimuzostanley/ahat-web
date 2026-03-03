@@ -15,6 +15,7 @@ export interface ProcessInfo {
   javaHeapKb: number;
   nativeHeapKb: number;
   graphicsKb: number;
+  codeKb: number;
   debuggable?: boolean;
 }
 
@@ -135,7 +136,7 @@ function parseCompactFormat(output: string): ProcessInfo[] {
       const oomLabel = mapOomLabel(parts[1] ?? "");
       const pssKb = parseInt(parts[4], 10) || 0;
       const rssKb = parts.length >= 7 ? (parseInt(parts[6], 10) || 0) : 0;
-      cur = { pid, name, oomLabel, pssKb, rssKb, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0 };
+      cur = { pid, name, oomLabel, pssKb, rssKb, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0 };
       continue;
     }
 
@@ -163,6 +164,8 @@ function parseCompactFormat(output: string): ProcessInfo[] {
       cur.javaHeapKb = catPss;
     } else if (cat === "gfxdev" || cat === "eglmtrack" || cat === "glmtrack" || cat === "graphics") {
       cur.graphicsKb += catPss;
+    } else if (cat === "code" || cat === ".dexmmap" || cat === ".oatmmap" || cat === ".artmmap" || cat === ".sommap") {
+      cur.codeKb += catPss;
     }
   }
 
@@ -184,7 +187,7 @@ function parseDetailedSections(output: string): ProcessInfo[] {
     const hdr = line.match(/^\*\* MEMINFO in pid (\d+) \[(.+?)\]/);
     if (hdr) {
       if (cur && cur.pssKb > 0) results.push(cur);
-      cur = { pid: parseInt(hdr[1], 10), name: hdr[2], oomLabel: "", pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0 };
+      cur = { pid: parseInt(hdr[1], 10), name: hdr[2], oomLabel: "", pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0 };
       continue;
     }
 
@@ -208,6 +211,9 @@ function parseDetailedSections(output: string): ProcessInfo[] {
     } else if (/^(Gfx dev|EGL mtrack|GL mtrack)\s/.test(trimmed)) {
       const m = trimmed.match(/^(?:Gfx dev|EGL mtrack|GL mtrack)\s+(\d+)/);
       if (m) cur.graphicsKb += parseInt(m[1], 10);
+    } else if (/^(\.dex mmap|\.oat mmap|\.art mmap|\.so mmap)\s/.test(trimmed)) {
+      const m = trimmed.match(/^(?:\.dex mmap|\.oat mmap|\.art mmap|\.so mmap)\s+(\d+)/);
+      if (m) cur.codeKb += parseInt(m[1], 10);
     } else if (/^TOTAL\s+\d/.test(trimmed) && !trimmed.startsWith("TOTAL PSS") && !trimmed.startsWith("TOTAL SWAP")) {
       // TOTAL row: columns are PSS, PrivDirty, PrivClean, SwapPss, RSS, ...
       const nums = trimmed.replace(/^TOTAL\s+/, "").split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number);
@@ -260,7 +266,7 @@ function parseSummarySections(output: string): ProcessInfo[] {
       const val = parseInt(m[1].replace(/,/g, ""), 10);
       let info = byPid.get(pid);
       if (!info) {
-        info = { pid, name: m[2], oomLabel: "", pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0 };
+        info = { pid, name: m[2], oomLabel: "", pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0 };
         byPid.set(pid, info);
       }
       if (section === "pss") info.pssKb = val;
@@ -393,6 +399,7 @@ export class AdbConnection {
           processes[i].javaHeapKb = d.javaHeapKb;
           processes[i].nativeHeapKb = d.nativeHeapKb;
           processes[i].graphicsKb = d.graphicsKb;
+          processes[i].codeKb = d.codeKb;
           if (d.pssKb > 0) processes[i].pssKb = d.pssKb;
           if (d.rssKb > 0) processes[i].rssKb = d.rssKb;
         }
@@ -537,6 +544,7 @@ export class AdbConnection {
             proc.javaHeapKb = d.javaHeapKb;
             proc.nativeHeapKb = d.nativeHeapKb;
             proc.graphicsKb = d.graphicsKb;
+            proc.codeKb = d.codeKb;
             if (d.pssKb > 0) proc.pssKb = d.pssKb;
             if (d.rssKb > 0) proc.rssKb = d.rssKb;
           }

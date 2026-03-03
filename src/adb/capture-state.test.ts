@@ -158,6 +158,7 @@ function makeProcesses(count: number): ProcessInfo[] {
     javaHeapKb: 0,
     nativeHeapKb: 0,
     graphicsKb: 0,
+    codeKb: 0,
   }));
 }
 

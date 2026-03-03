@@ -1154,7 +1154,7 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
 
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
-type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb";
+type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb" | "codeKb";
 
 function CaptureView({ onCaptured, conn }: {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
@@ -1373,7 +1373,7 @@ function CaptureView({ onCaptured, conn }: {
 
   const hasRss = processes ? processes.some(p => p.rssKb > 0) : false;
   // Show breakdown columns as soon as enrichment starts or any data arrives
-  const hasBreakdown = enrichStatus !== null || (processes ? processes.some(p => p.javaHeapKb > 0 || p.nativeHeapKb > 0 || p.graphicsKb > 0) : false);
+  const hasBreakdown = enrichStatus !== null || (processes ? processes.some(p => p.javaHeapKb > 0 || p.nativeHeapKb > 0 || p.graphicsKb > 0 || p.codeKb > 0) : false);
   const hasOomLabel = processes ? processes.some(p => p.oomLabel !== "") : false;
 
   const toggleSort = useCallback((field: SortField) => {
@@ -1495,12 +1495,13 @@ function CaptureView({ onCaptured, conn }: {
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">Process</th>
                     {hasOomLabel && <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">State</th>}
                     {([
-                      ["pssKb", "PSS"],
                       ...(hasRss ? [["rssKb", "RSS"]] : []),
+                      ["pssKb", "PSS"],
                       ...(hasBreakdown ? [
                         ["javaHeapKb", "Java"],
                         ["nativeHeapKb", "Native"],
                         ["graphicsKb", "Graphics"],
+                        ["codeKb", "Code"],
                       ] : []),
                     ] as [SortField, string][]).map(([field, label]) => (
                       <th
@@ -1520,7 +1521,7 @@ function CaptureView({ onCaptured, conn }: {
                     const isCapturingThis = capturing && selectedPid === p.pid;
                     const hasSmaps = smapsData.has(p.pid);
                     const isSmapsExpanded = expandedSmapsPid === p.pid && hasSmaps;
-                    const colCount = 2 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 3 : 0) + 1;
+                    const colCount = 2 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 4 : 0) + 1;
                     return (
                     <Fragment key={p.pid}>
                     <tr
@@ -1550,12 +1551,13 @@ function CaptureView({ onCaptured, conn }: {
                       </td>
                       <td className="py-1 px-2 text-stone-800 truncate max-w-[400px]" title={p.name}>{p.name}</td>
                       {hasOomLabel && <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">{p.oomLabel}</td>}
-                      <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.pssKb * 1024)}</td>
                       {hasRss && <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.rssKb * 1024)}</td>}
+                      <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.pssKb * 1024)}</td>
                       {hasBreakdown && <>
                         <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.javaHeapKb > 0 ? fmtSize(p.javaHeapKb * 1024) : "\u2014"}</td>
                         <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.nativeHeapKb > 0 ? fmtSize(p.nativeHeapKb * 1024) : "\u2014"}</td>
                         <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.graphicsKb > 0 ? fmtSize(p.graphicsKb * 1024) : "\u2014"}</td>
+                        <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.codeKb > 0 ? fmtSize(p.codeKb * 1024) : "\u2014"}</td>
                       </>}
                       <td className="py-1 px-2 text-center whitespace-nowrap">
                         {!canCapture ? (
