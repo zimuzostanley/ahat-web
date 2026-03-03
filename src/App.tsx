@@ -1010,13 +1010,20 @@ function CaptureView({ onCaptured }: {
   const [captureProgress, setCaptureProgress] = useState<{ done: number; total: number } | null>(null);
 
   const cancelEnrichment = useCallback(() => {
-    enrichAbortRef.current?.abort();
+    if (!enrichAbortRef.current) return;
+    enrichAbortRef.current.abort();
     enrichAbortRef.current = null;
+    setEnrichStatus(null);
+    setEnrichProgress(null);
   }, []);
 
   const cancelCapture = useCallback(() => {
-    captureAbortRef.current?.abort();
+    if (!captureAbortRef.current) return;
+    captureAbortRef.current.abort();
     captureAbortRef.current = null;
+    setCapturing(false);
+    setCaptureStatus("");
+    setCaptureProgress(null);
   }, []);
 
   const refreshProcesses = useCallback(async () => {
@@ -1648,9 +1655,11 @@ export default function App() {
       </header>
 
       <main className="flex-1 p-4 max-w-7xl mx-auto w-full text-sm">
-        {showCapture ? (
+        {/* CaptureView stays mounted to preserve USB connection across view switches */}
+        <div className={showCapture ? "" : "hidden"}>
           <CaptureView onCaptured={handleCaptured} />
-        ) : (
+        </div>
+        {!showCapture && (
           <>
             {view === "overview" && overview && <OverviewView overview={overview} />}
             {view === "rooted"   && proxy    && <RootedView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} />}
