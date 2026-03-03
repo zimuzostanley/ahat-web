@@ -65,7 +65,8 @@ function makeWorkerProxy(
       if (!ready) reject(new Error(err.message ?? "Worker error"));
     };
 
-    worker.postMessage({ type: "parse", buffer }, [buffer]);
+    const forWorker = buffer.slice(0);
+    worker.postMessage({ type: "parse", buffer: forWorker }, [forWorker]);
   });
 }
 
@@ -330,16 +331,48 @@ function BitmapImage({ width, height, format, data }: {
 
 // ─── Views ────────────────────────────────────────────────────────────────────
 
-function OverviewView({ overview }: { overview: OverviewData }) {
+function OverviewView({ overview, sessions, activeSessionId, onSwitch, onDiscard }: {
+  overview: OverviewData;
+  sessions: Session[];
+  activeSessionId: string | null;
+  onSwitch: (id: string) => void;
+  onDiscard: (id: string) => void;
+}) {
   const heaps = overview.heaps.filter(h => h.java + h.native_ > 0);
   const totalJava = heaps.reduce((a, h) => a + h.java, 0);
   const totalNative = heaps.reduce((a, h) => a + h.native_, 0);
   return (
     <div>
       <h2 className="text-lg font-semibold mb-3 text-stone-800">Overview</h2>
+
       <div className="bg-white border border-stone-200 p-4 mb-4">
         <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">General Information</h3>
-        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 max-w-md">
+        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 max-w-md items-center">
+          <span className="text-stone-500">Heap Dump:</span>
+          <span className="flex items-center gap-2">
+            <select
+              className="text-sm bg-transparent text-stone-800 border-b border-stone-200 focus:border-sky-500 outline-none py-0.5 pr-4 cursor-pointer"
+              value={activeSessionId ?? ""}
+              onChange={e => onSwitch(e.target.value)}
+            >
+              {sessions.map(s => {
+                const sh = s.overview.heaps.filter(h => h.java + h.native_ > 0);
+                const total = sh.reduce((a, h) => a + h.java + h.native_, 0);
+                return (
+                  <option key={s.id} value={s.id} title={`${s.overview.instanceCount.toLocaleString()} instances, ${fmtSize(total)} retained`}>
+                    {s.name}
+                  </option>
+                );
+              })}
+            </select>
+            {sessions.length > 1 && (
+              <button
+                className="text-stone-300 hover:text-rose-500 text-xs"
+                onClick={() => activeSessionId && onDiscard(activeSessionId)}
+                title="Close this heap dump"
+              >&times;</button>
+            )}
+          </span>
           <span className="text-stone-500">Total Instances:</span>
           <span className="font-mono">{overview.instanceCount.toLocaleString()}</span>
           <span className="text-stone-500">Heaps:</span>
@@ -1044,6 +1077,12 @@ function CaptureView({ onCaptured, conn }: {
     try {
       const list = await conn.getProcessList(ac.signal);
       if (ac.signal.aborted) return;
+      // On non-rooted devices, annotate processes with debuggable status
+      if (!conn.isRoot) {
+        const debuggable = await conn.getDebuggablePackages(ac.signal);
+        if (ac.signal.aborted) return;
+        for (const p of list) p.debuggable = debuggable.has(p.name);
+      }
       setProcesses(list);
       // Enrich with per-process details (Java/Native/Graphics breakdown)
       await conn.enrichProcessDetails(list, (done, total, current) => {
@@ -1088,10 +1127,12 @@ function CaptureView({ onCaptured, conn }: {
     }
   }, []);
 
-  const handleCapture = useCallback(async () => {
-    if (selectedPid === null || capturing) return;
+  const handleCapture = useCallback(async (overridePid?: number) => {
+    const pid = overridePid ?? selectedPid;
+    if (pid === null || capturing) return;
     // Cancel enrichment — ADB device handles one command at a time
     cancelEnrichment();
+    if (overridePid !== undefined) setSelectedPid(overridePid);
     const ac = new AbortController();
     captureAbortRef.current = ac;
     setCapturing(true);
@@ -1099,10 +1140,10 @@ function CaptureView({ onCaptured, conn }: {
     setCaptureProgress(null);
     setError(null);
     try {
-      const proc = processes?.find(p => p.pid === selectedPid);
-      const procName = proc?.name ?? `pid_${selectedPid}`;
+      const proc = processes?.find(p => p.pid === pid);
+      const procName = proc?.name ?? `pid_${pid}`;
       const buffer = await conn.captureHeapDump(
-        selectedPid,
+        pid,
         withBitmaps,
         (phase: CapturePhase) => {
           switch (phase.step) {
@@ -1220,6 +1261,13 @@ function CaptureView({ onCaptured, conn }: {
             </div>
           </div>
 
+          {/* Non-root banner */}
+          {connected && !conn.isRoot && processes && (
+            <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2 mb-3">
+              Non-rooted device — only debuggable apps can be captured
+            </div>
+          )}
+
           {/* Capture controls */}
           <div className="bg-white border border-stone-200 p-3 mb-4 flex items-center gap-4">
             <label className="flex items-center gap-2 text-stone-600">
@@ -1230,8 +1278,9 @@ function CaptureView({ onCaptured, conn }: {
               className={`px-4 py-1.5 text-white transition-colors disabled:opacity-50 ml-auto ${
                 capturing ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
               }`}
-              onClick={handleCapture}
+              onClick={() => handleCapture()}
               disabled={selectedPid === null || capturing}
+              title={selectedPid === null ? "Select a process first" : capturing ? "Capture in progress" : "Capture heap dump"}
             >
               {capturing ? (captureStatus || "Capturing\u2026") : "Capture Heap Dump"}
             </button>
@@ -1249,7 +1298,7 @@ function CaptureView({ onCaptured, conn }: {
             </div>
           ) : (
             <div className="bg-white border border-stone-200 overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[700px] text-sm">
                 <thead>
                   <tr className="bg-stone-50 border-b border-stone-200">
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14">PID</th>
@@ -1272,19 +1321,23 @@ function CaptureView({ onCaptured, conn }: {
                         {label} {sortField === field ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
                       </th>
                     ))}
+                    <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-20"></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sorted.map(p => (
+                  {sorted.map(p => {
+                    const canCapture = conn.isRoot || p.debuggable !== false;
+                    const isCapturingThis = capturing && selectedPid === p.pid;
+                    return (
                     <tr
                       key={p.pid}
                       className={`border-t border-stone-100 cursor-pointer transition-colors ${
                         selectedPid === p.pid ? "bg-sky-50" : "hover:bg-stone-50"
-                      }`}
+                      } ${!canCapture ? "opacity-50" : ""}`}
                       onClick={() => setSelectedPid(selectedPid === p.pid ? null : p.pid)}
                     >
                       <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">{p.pid}</td>
-                      <td className="py-1 px-2 text-stone-800 truncate max-w-[400px]">{p.name}</td>
+                      <td className="py-1 px-2 text-stone-800 truncate max-w-[400px]" title={p.name}>{p.name}</td>
                       {hasOomLabel && <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">{p.oomLabel}</td>}
                       <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.pssKb * 1024)}</td>
                       {hasRss && <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.rssKb * 1024)}</td>}
@@ -1293,8 +1346,19 @@ function CaptureView({ onCaptured, conn }: {
                         <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.nativeHeapKb > 0 ? fmtSize(p.nativeHeapKb * 1024) : "\u2014"}</td>
                         <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.graphicsKb > 0 ? fmtSize(p.graphicsKb * 1024) : "\u2014"}</td>
                       </>}
+                      <td className="py-1 px-2 text-center">
+                        <button
+                          className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 transition-colors whitespace-nowrap"
+                          disabled={capturing || !canCapture}
+                          title={!canCapture ? "Not debuggable" : capturing ? "Capture in progress" : "Capture heap dump"}
+                          onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
+                        >
+                          {isCapturingThis ? "\u2026" : "Capture"}
+                        </button>
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1507,25 +1571,8 @@ export default function App() {
             <span className="font-bold tracking-tight text-sm">ahat<span className="text-stone-400 font-normal">.web</span></span>
           </div>
 
-          {/* Session tabs */}
-          {sessions.length > 1 && (
-            <div className="flex gap-0.5 ml-2 border-l border-stone-600 pl-3">
-              {sessions.map(s => (
-                <button
-                  key={s.id}
-                  className={`group px-2 py-1 text-xs transition-colors flex items-center gap-1 ${
-                    s.id === activeSessionId ? "bg-stone-600 text-white" : "text-stone-400 hover:text-white hover:bg-stone-700"
-                  }`}
-                  onClick={() => switchSession(s.id)}
-                >
-                  <span className="truncate max-w-[120px]">{s.name}</span>
-                  <span
-                    className="opacity-0 group-hover:opacity-100 text-stone-500 hover:text-rose-400 ml-0.5"
-                    onClick={e => { e.stopPropagation(); discardSession(s.id); }}
-                  >&times;</span>
-                </button>
-              ))}
-            </div>
+          {activeSession && (
+            <span className="text-stone-400 text-xs ml-2 border-l border-stone-600 pl-3 truncate max-w-[200px]">{activeSession.name}</span>
           )}
 
           <nav className="flex gap-0.5 ml-4">
@@ -1552,6 +1599,7 @@ export default function App() {
               <button
                 className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
                 onClick={() => downloadBuffer(activeSession.name, activeSession.buffer)}
+                title="Download .hprof file"
               >
                 Download
               </button>
@@ -1651,7 +1699,7 @@ export default function App() {
          Hidden via CSS when not active; wrapper styling adapts to context. */}
       <div className={showCapture && !isLoading ? "" : "hidden"}>
         {!hasSession && (
-          <div className="p-8 pb-0 max-w-[80%] mx-auto">
+          <div className="p-8 pb-0 max-w-[90%] mx-auto">
             <div className="flex items-center gap-4 mb-6">
               <button className="text-stone-400 hover:text-stone-600" onClick={() => setShowCapture(false)}>
                 &larr; Back
@@ -1660,7 +1708,7 @@ export default function App() {
             </div>
           </div>
         )}
-        <div className={hasSession ? "flex-1 p-4 max-w-[80%] mx-auto w-full text-sm" : "max-w-[80%] mx-auto px-8"}>
+        <div className={hasSession ? "flex-1 p-4 max-w-[90%] mx-auto w-full text-sm" : "max-w-[90%] mx-auto px-8"}>
           <CaptureView onCaptured={handleCaptured} conn={adbConnRef.current} />
         </div>
       </div>
@@ -1668,7 +1716,7 @@ export default function App() {
       {/* Main content views */}
       {hasSession && !showCapture && (
         <main className="flex-1 p-4 max-w-7xl mx-auto w-full text-sm">
-          {view === "overview" && overview && <OverviewView overview={overview} />}
+          {view === "overview" && overview && <OverviewView overview={overview} sessions={sessions} activeSessionId={activeSessionId} onSwitch={switchSession} onDiscard={discardSession} />}
           {view === "rooted"   && proxy    && <RootedView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} />}
           {view === "object"   && proxy    && <ObjectView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as ObjectParams} />}
           {view === "objects"  && proxy    && <ObjectsView proxy={proxy} navigate={navigate} params={params as unknown as ObjectsParams} />}

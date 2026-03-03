@@ -15,6 +15,7 @@ export interface ProcessInfo {
   javaHeapKb: number;
   nativeHeapKb: number;
   graphicsKb: number;
+  debuggable?: boolean;
 }
 
 // Map compact-format OOM adj labels to human-readable AOSP process states.
@@ -244,10 +245,12 @@ function parseSummarySections(output: string): ProcessInfo[] {
 export class AdbConnection {
   private device: AdbDevice | null = null;
   private keyMgr = new AdbKeyManager();
+  private _isRoot = false;
 
   get connected(): boolean { return this.device?.connected ?? false; }
   get serial(): string { return this.device?.serial ?? ""; }
   get productName(): string { return this.device?.productName ?? ""; }
+  get isRoot(): boolean { return this._isRoot; }
 
   /** Must be called from a user gesture (click handler). */
   async requestAndConnect(onStatus?: (msg: string) => void): Promise<void> {
@@ -257,10 +260,11 @@ export class AdbConnection {
     this.device = await AdbDevice.connect(usbDev, this.keyMgr);
     // Try to get root — best-effort, ignore failures (device may not be rooted)
     // Android su variants: "su 0 id" (toybox), "su -c id" (Magisk/SuperSU)
+    this._isRoot = false;
     for (const cmd of ["su 0 id", "su -c id"]) {
       try {
         const result = await this.device.shell(cmd);
-        if (result.includes("uid=0")) break;
+        if (result.includes("uid=0")) { this._isRoot = true; break; }
       } catch {
         // Not rooted or wrong su variant
       }
@@ -270,6 +274,29 @@ export class AdbConnection {
   /** Reconnect to a previously paired device. */
   async reconnect(usbDev: USBDevice): Promise<void> {
     this.device = await AdbDevice.connect(usbDev, this.keyMgr);
+  }
+
+  /** Find debuggable packages on the device. */
+  async getDebuggablePackages(signal?: AbortSignal): Promise<Set<string>> {
+    if (!this.device) return new Set();
+    try {
+      const out = await this.device.shell(
+        "dumpsys package | grep -E 'Package \\[|pkgFlags='", signal,
+      );
+      const result = new Set<string>();
+      let currentPkg = "";
+      for (const line of out.split("\n")) {
+        const pkgMatch = line.match(/Package \[([^\]]+)\]/);
+        if (pkgMatch) { currentPkg = pkgMatch[1]; continue; }
+        if (currentPkg && /pkgFlags=.*DEBUGGABLE/.test(line)) {
+          result.add(currentPkg);
+          currentPkg = "";
+        }
+      }
+      return result;
+    } catch {
+      return new Set();
+    }
   }
 
   async getProcessList(signal?: AbortSignal): Promise<ProcessInfo[]> {
@@ -437,6 +464,7 @@ export class AdbConnection {
   disconnect(): void {
     this.device?.close();
     this.device = null;
+    this._isRoot = false;
   }
 }
 
