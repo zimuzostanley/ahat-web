@@ -1645,7 +1645,7 @@ export default function App() {
          Hidden via CSS when not active; wrapper styling adapts to context. */}
       <div className={showCapture && !isLoading ? "" : "hidden"}>
         {!hasSession && (
-          <div className="p-8 pb-0 max-w-3xl mx-auto">
+          <div className="p-8 pb-0 max-w-[80%] mx-auto">
             <div className="flex items-center gap-4 mb-6">
               <button className="text-stone-400 hover:text-stone-600" onClick={() => setShowCapture(false)}>
                 &larr; Back
@@ -1654,7 +1654,7 @@ export default function App() {
             </div>
           </div>
         )}
-        <div className={hasSession ? "flex-1 p-4 max-w-7xl mx-auto w-full text-sm" : "max-w-3xl mx-auto px-8"}>
+        <div className={hasSession ? "flex-1 p-4 max-w-[80%] mx-auto w-full text-sm" : "max-w-[80%] mx-auto px-8"}>
           <CaptureView onCaptured={handleCaptured} conn={adbConnRef.current} />
         </div>
       </div>
