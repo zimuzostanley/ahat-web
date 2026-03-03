@@ -6,6 +6,7 @@ import type {
   PrimOrRef, BitmapListRow,
 } from "./hprof.worker";
 import { AdbConnection, type ProcessInfo, type CapturePhase } from "./adb/capture";
+import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 
 // ─── Worker proxy ─────────────────────────────────────────────────────────────
 
@@ -1400,10 +1401,7 @@ export default function App() {
     setError(null);
     setShowCapture(false);
     try {
-      const worker = new Worker(
-        new URL("./hprof.worker.ts", import.meta.url),
-        { type: "module" },
-      );
+      const worker = new HprofWorkerInline();
       const { proxy: p, overview: ov } = await makeWorkerProxy(
         worker,
         buffer,
