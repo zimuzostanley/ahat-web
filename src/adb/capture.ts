@@ -67,10 +67,14 @@ export class AdbConnection {
     const usbDev = await navigator.usb.requestDevice({ filters: [ADB_DEVICE_FILTER] });
     this.device = await AdbDevice.connect(usbDev, this.keyMgr);
     // Try to get root — best-effort, ignore failures (device may not be rooted)
-    try {
-      await this.device.shell("su -c id");
-    } catch {
-      // Not rooted, that's fine
+    // Android su variants: "su 0 id" (toybox), "su -c id" (Magisk/SuperSU)
+    for (const cmd of ["su 0 id", "su -c id"]) {
+      try {
+        const result = await this.device.shell(cmd);
+        if (result.includes("uid=0")) break;
+      } catch {
+        // Not rooted or wrong su variant
+      }
     }
   }
 
@@ -81,7 +85,7 @@ export class AdbConnection {
 
   async getProcessList(): Promise<ProcessInfo[]> {
     if (!this.device) throw new Error("Not connected");
-    const output = await this.device.shell("dumpsys meminfo --sort-by-pss");
+    const output = await this.device.shell("dumpsys -t 30 meminfo --sort-by-pss");
     return parseMemInfo(output);
   }
 

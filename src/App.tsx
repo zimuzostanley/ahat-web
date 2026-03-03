@@ -292,8 +292,8 @@ function PrimOrRefCell({ v, navigate }: { v: PrimOrRef; navigate: NavFn }) {
 }
 
 /** Renders a bitmap from either raw RGBA data or a compressed image blob. */
-function BitmapImage({ width, height, format, data, maxSize = 512 }: {
-  width: number; height: number; format: string; data: Uint8Array; maxSize?: number;
+function BitmapImage({ width, height, format, data }: {
+  width: number; height: number; format: string; data: Uint8Array;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
@@ -320,15 +320,11 @@ function BitmapImage({ width, height, format, data, maxSize = 512 }: {
     return () => URL.revokeObjectURL(url);
   }, [width, height, format, data]);
 
-  const scale = Math.min(1, maxSize / Math.max(width, height));
-  const displayW = Math.round(width * scale);
-  const displayH = Math.round(height * scale);
-
   if (format === "rgba") {
-    return <canvas ref={canvasRef} style={{ width: displayW, height: displayH, imageRendering: "pixelated" }} />;
+    return <canvas ref={canvasRef} style={{ width: "100%", height: "auto", imageRendering: "pixelated" }} />;
   }
   if (!blobUrl) return null;
-  return <img src={blobUrl} width={displayW} height={displayH} style={{ imageRendering: "pixelated" }} />;
+  return <img src={blobUrl} style={{ width: "100%", height: "auto", imageRendering: "pixelated" }} />;
 }
 
 // ─── Views ────────────────────────────────────────────────────────────────────
@@ -828,14 +824,13 @@ function SearchView({ proxy, navigate, initialQuery }: { proxy: WorkerProxy; nav
 // ─── Bitmap Gallery View ─────────────────────────────────────────────────────
 
 /** Lazy-loaded thumbnail for a single bitmap in the gallery. */
-function BitmapThumbnail({ row, proxy, navigate, density, selected, onSelect }: {
+function BitmapCard({ row, proxy, navigate, density }: {
   row: BitmapListRow; proxy: WorkerProxy; navigate: NavFn; density: number;
-  selected: boolean; onSelect: () => void;
 }) {
   const [bitmap, setBitmap] = useState<InstanceDetail["bitmap"] | null | "loading" | "error">(null);
 
   const load = useCallback(() => {
-    if (bitmap !== null) return; // already loaded or loading
+    if (bitmap !== null) return;
     setBitmap("loading");
     proxy.query<InstanceDetail | null>("getInstance", { id: row.row.id })
       .then(detail => setBitmap(detail?.bitmap ?? "error"))
@@ -848,77 +843,59 @@ function BitmapThumbnail({ row, proxy, navigate, density, selected, onSelect }: 
     if (!row.hasPixelData) return;
     const el = ref.current;
     if (!el) return;
-    const obs = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) { load(); obs.disconnect(); } }, { rootMargin: "200px" });
+    const obs = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) { load(); obs.disconnect(); } }, { rootMargin: "400px" });
     obs.observe(el);
     return () => obs.disconnect();
   }, [load, row.hasPixelData]);
 
-  // Scale to physical phone size: dp = px / (density / 160)
   const dpi = density > 0 ? density : 420;
   const dpW = Math.round(row.width / (dpi / 160));
   const dpH = Math.round(row.height / (dpi / 160));
-  // Cap display height for the thumbnail strip
-  const thumbH = Math.min(180, dpH);
-  const thumbScale = thumbH / row.height;
-  const thumbW = Math.round(row.width * thumbScale);
+  // Aspect ratio for proportional scaling
+  const aspect = row.height / row.width;
 
   return (
     <div
       ref={ref}
-      className={`flex-shrink-0 bg-white border flex flex-col cursor-pointer transition-colors ${
-        selected ? "border-sky-500 ring-2 ring-sky-200" : "border-stone-200 hover:border-stone-400"
-      }`}
-      style={{ width: thumbW + 24 }}
-      onClick={onSelect}
+      className="bg-white border border-stone-200"
     >
-      <div className="flex-1 flex items-center justify-center p-2 bg-stone-50 min-h-[80px]" style={{ height: thumbH + 16 }}>
+      {/* Image area — full width, proportional height */}
+      <div
+        className="w-full bg-stone-50 flex items-center justify-center overflow-hidden"
+        style={{ aspectRatio: `${row.width} / ${row.height}`, maxHeight: Math.min(600, Math.round(aspect * 800)) }}
+      >
         {bitmap && typeof bitmap === "object" ? (
-          <BitmapImage width={bitmap.width} height={bitmap.height} format={bitmap.format} data={bitmap.data} maxSize={thumbH} />
+          <BitmapImage width={bitmap.width} height={bitmap.height} format={bitmap.format} data={bitmap.data} />
         ) : bitmap === "loading" ? (
-          <span className="text-stone-300 text-xs">&hellip;</span>
+          <span className="text-stone-300">&hellip;</span>
         ) : bitmap === "error" ? (
-          <span className="text-stone-300 text-xs">no data</span>
+          <span className="text-stone-300 text-sm">no data</span>
         ) : !row.hasPixelData ? (
-          <span className="text-stone-300 text-xs">no pixel data</span>
+          <span className="text-stone-300 text-sm">no pixel data</span>
         ) : null}
       </div>
-      <div className="p-2 border-t border-stone-100">
-        <div className="text-xs font-mono text-stone-600">{row.width}&times;{row.height} px</div>
-        <div className="text-xs text-stone-400">{dpW}&times;{dpH} dp &middot; {fmtSize(row.row.retainedTotal)}</div>
+      {/* Info bar */}
+      <div className="px-3 py-2 border-t border-stone-100 flex items-center justify-between">
+        <div>
+          <span className="text-xs font-mono text-stone-600">{row.width}&times;{row.height} px</span>
+          <span className="text-xs text-stone-400 ml-2">{dpW}&times;{dpH} dp</span>
+          <span className="text-xs text-stone-400 ml-2">{fmtSize(row.row.retainedTotal)}</span>
+        </div>
         <button
-          className="text-xs text-sky-700 underline decoration-sky-300 hover:decoration-sky-500 mt-1"
-          onClick={e => { e.stopPropagation(); navigate("object", { id: row.row.id }); }}
+          className="text-xs text-sky-700 underline decoration-sky-300 hover:decoration-sky-500"
+          onClick={() => navigate("object", { id: row.row.id })}
         >Details</button>
       </div>
     </div>
   );
 }
 
-function BitmapGalleryView({ proxy, navigate, selectedId }: { proxy: WorkerProxy; navigate: NavFn; selectedId?: number }) {
+function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: NavFn }) {
   const [rows, setRows] = useState<BitmapListRow[] | null>(null);
-  const [expandedId, setExpandedId] = useState<number | null>(selectedId ?? null);
-  const [expandedBitmap, setExpandedBitmap] = useState<InstanceDetail["bitmap"]>(null);
 
   useEffect(() => {
     proxy.query<BitmapListRow[]>("getBitmapList").then(setRows).catch(console.error);
   }, [proxy]);
-
-  // Load expanded bitmap when expandedId changes
-  useEffect(() => {
-    if (!expandedId) { setExpandedBitmap(null); return; }
-    setExpandedBitmap(null);
-    proxy.query<InstanceDetail | null>("getInstance", { id: expandedId })
-      .then(d => { if (d?.bitmap) setExpandedBitmap(d.bitmap); })
-      .catch(console.error);
-  }, [proxy, expandedId]);
-
-  const selectBitmap = useCallback((id: number) => {
-    const next = expandedId === id ? null : id;
-    setExpandedId(next);
-    // Update URL without pushing to history
-    const url = next ? `/bitmaps?id=0x${next.toString(16)}` : "/bitmaps";
-    window.history.replaceState({ view: "bitmaps", params: next ? { id: next } : {} }, "", url);
-  }, [expandedId]);
 
   if (!rows) return <div className="text-stone-400 p-4">Loading&hellip;</div>;
 
@@ -951,40 +928,16 @@ function BitmapGalleryView({ proxy, navigate, selectedId }: { proxy: WorkerProxy
             </div>
           </div>
 
-          {/* Expanded bitmap preview */}
-          {expandedId && expandedBitmap && (
-            <div className="bg-white border border-stone-200 p-4 mb-4">
-              <div className="flex items-start justify-between mb-3">
-                <div>
-                  <span className="font-mono">{expandedBitmap.width}&times;{expandedBitmap.height} px</span>
-                  <span className="text-stone-400 ml-2">({expandedBitmap.format.toUpperCase()})</span>
-                </div>
-                <div className="flex gap-2">
-                  <button className="text-sky-700 underline decoration-sky-300 hover:decoration-sky-500"
-                    onClick={() => navigate("object", { id: expandedId })}>Object details</button>
-                  <button className="text-stone-400 hover:text-stone-600" onClick={() => selectBitmap(expandedId)}>&times; Close</button>
-                </div>
-              </div>
-              <BitmapImage width={expandedBitmap.width} height={expandedBitmap.height} format={expandedBitmap.format} data={expandedBitmap.data} maxSize={800} />
-            </div>
-          )}
-          {expandedId && !expandedBitmap && (
-            <div className="bg-white border border-stone-200 p-4 mb-4 text-stone-400">Loading bitmap&hellip;</div>
-          )}
-
-          {/* Horizontal scrolling thumbnail strip */}
+          {/* Vertical bitmap feed */}
           {withPixels.length > 0 && (
             <div className="mb-4">
               <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">
                 {withPixels.length} bitmap{withPixels.length > 1 ? "s" : ""} with pixel data
               </h3>
-              <div className="overflow-x-auto pb-2">
-                <div className="flex gap-2" style={{ minWidth: "min-content" }}>
-                  {withPixels.map(r => (
-                    <BitmapThumbnail key={r.row.id} row={r} proxy={proxy} navigate={navigate} density={r.density}
-                      selected={expandedId === r.row.id} onSelect={() => selectBitmap(r.row.id)} />
-                  ))}
-                </div>
+              <div className="flex flex-col gap-3">
+                {withPixels.map(r => (
+                  <BitmapCard key={r.row.id} row={r} proxy={proxy} navigate={navigate} density={r.density} />
+                ))}
               </div>
             </div>
           )}
@@ -1548,7 +1501,7 @@ export default function App() {
             {view === "objects"  && proxy    && <ObjectsView proxy={proxy} navigate={navigate} params={params as unknown as ObjectsParams} />}
             {view === "site"     && proxy    && <SiteView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as SiteParams} />}
             {view === "search"   && proxy    && <SearchView proxy={proxy} navigate={navigate} initialQuery={params.q as string | undefined} />}
-            {view === "bitmaps"  && proxy    && <BitmapGalleryView proxy={proxy} navigate={navigate} selectedId={params.id as number | undefined} />}
+            {view === "bitmaps"  && proxy    && <BitmapGalleryView proxy={proxy} navigate={navigate} />}
           </>
         )}
       </main>
