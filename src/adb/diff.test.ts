@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { diffProcesses, diffGlobalMemInfo, type ProcessInfo, type GlobalMemInfo } from "./capture";
+import { diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, type ProcessInfo, type GlobalMemInfo, type SmapsAggregated, type SmapsEntry } from "./capture";
 import { deltaBgClass, fmtDelta } from "../App";
 
 function makeProc(pid: number, name: string, pssKb: number, overrides?: Partial<ProcessInfo>): ProcessInfo {
@@ -193,5 +193,152 @@ describe("fmtDelta", () => {
   it("formats GB-range deltas", () => {
     expect(fmtDelta(1_048_576)).toBe("+1.0 GB");
     expect(fmtDelta(-2_097_152)).toBe("\u22122.0 GB");
+  });
+});
+
+// ─── diffSmaps ───────────────────────────────────────────────────────────────
+
+function makeSmaps(name: string, pssKb: number, overrides?: Partial<SmapsAggregated>): SmapsAggregated {
+  return {
+    name, count: 1, sizeKb: 0, rssKb: 0, pssKb,
+    sharedCleanKb: 0, sharedDirtyKb: 0,
+    privateCleanKb: 0, privateDirtyKb: 0,
+    swapKb: 0, swapPssKb: 0, entries: [],
+    ...overrides,
+  };
+}
+
+describe("diffSmaps", () => {
+  it("matches aggregations by name", () => {
+    const prev = [makeSmaps("[anon:libc_malloc]", 5000)];
+    const curr = [makeSmaps("[anon:libc_malloc]", 7000)];
+    const diffs = diffSmaps(prev, curr);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("matched");
+    expect(diffs[0].deltaPssKb).toBe(2000);
+  });
+
+  it("marks new mappings as added", () => {
+    const diffs = diffSmaps([], [makeSmaps("/lib/foo.so", 3000)]);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("added");
+    expect(diffs[0].deltaPssKb).toBe(3000);
+    expect(diffs[0].prev).toBeNull();
+  });
+
+  it("marks disappeared mappings as removed", () => {
+    const diffs = diffSmaps([makeSmaps("/lib/bar.so", 2000)], []);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("removed");
+    expect(diffs[0].deltaPssKb).toBe(-2000);
+  });
+
+  it("computes deltas for all fields", () => {
+    const prev = [makeSmaps("a", 100, { rssKb: 200, sizeKb: 300, sharedCleanKb: 10, sharedDirtyKb: 20, privateCleanKb: 30, privateDirtyKb: 40, swapKb: 5 })];
+    const curr = [makeSmaps("a", 150, { rssKb: 250, sizeKb: 350, sharedCleanKb: 15, sharedDirtyKb: 25, privateCleanKb: 35, privateDirtyKb: 45, swapKb: 10 })];
+    const d = diffSmaps(prev, curr)[0];
+    expect(d.deltaPssKb).toBe(50);
+    expect(d.deltaRssKb).toBe(50);
+    expect(d.deltaSizeKb).toBe(50);
+    expect(d.deltaSharedCleanKb).toBe(5);
+    expect(d.deltaSharedDirtyKb).toBe(5);
+    expect(d.deltaPrivateCleanKb).toBe(5);
+    expect(d.deltaPrivateDirtyKb).toBe(5);
+    expect(d.deltaSwapKb).toBe(5);
+  });
+
+  it("handles mixed add/remove/match", () => {
+    const prev = [makeSmaps("a", 100), makeSmaps("b", 200)];
+    const curr = [makeSmaps("a", 150), makeSmaps("c", 300)];
+    const diffs = diffSmaps(prev, curr);
+    expect(diffs).toHaveLength(3);
+    expect(diffs.find(d => d.current.name === "a")?.status).toBe("matched");
+    expect(diffs.find(d => d.current.name === "c")?.status).toBe("added");
+    expect(diffs.find(d => d.current.name === "b")?.status).toBe("removed");
+  });
+
+  it("handles empty lists", () => {
+    expect(diffSmaps([], [])).toHaveLength(0);
+  });
+
+  it("returns zero deltas for unchanged mappings", () => {
+    const s = makeSmaps("x", 500, { rssKb: 1000 });
+    const diffs = diffSmaps([s], [{ ...s, entries: [] }]);
+    expect(diffs[0].deltaPssKb).toBe(0);
+    expect(diffs[0].deltaRssKb).toBe(0);
+  });
+});
+
+// ─── diffSmapsEntries ────────────────────────────────────────────────────────
+
+function makeEntry(addrStart: string, pssKb: number, overrides?: Partial<SmapsEntry>): SmapsEntry {
+  return {
+    addrStart, addrEnd: addrStart.replace(/0$/, "f"), perms: "r--p", name: "/lib/test.so",
+    sizeKb: 0, rssKb: 0, pssKb,
+    sharedCleanKb: 0, sharedDirtyKb: 0,
+    privateCleanKb: 0, privateDirtyKb: 0,
+    swapKb: 0, swapPssKb: 0,
+    ...overrides,
+  };
+}
+
+describe("diffSmapsEntries", () => {
+  it("matches VMAs by address start", () => {
+    const prev = [makeEntry("7f000000", 100)];
+    const curr = [makeEntry("7f000000", 150)];
+    const diffs = diffSmapsEntries(prev, curr);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("matched");
+    expect(diffs[0].deltaPssKb).toBe(50);
+  });
+
+  it("marks new VMAs as added", () => {
+    const diffs = diffSmapsEntries([], [makeEntry("7f100000", 200)]);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("added");
+    expect(diffs[0].deltaPssKb).toBe(200);
+    expect(diffs[0].prev).toBeNull();
+  });
+
+  it("marks disappeared VMAs as removed", () => {
+    const diffs = diffSmapsEntries([makeEntry("7f200000", 300)], []);
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("removed");
+    expect(diffs[0].deltaPssKb).toBe(-300);
+  });
+
+  it("computes deltas for all fields", () => {
+    const prev = [makeEntry("a0", 100, { rssKb: 200, sizeKb: 300, sharedCleanKb: 10, sharedDirtyKb: 20, privateCleanKb: 30, privateDirtyKb: 40, swapKb: 5 })];
+    const curr = [makeEntry("a0", 150, { rssKb: 250, sizeKb: 350, sharedCleanKb: 15, sharedDirtyKb: 25, privateCleanKb: 35, privateDirtyKb: 45, swapKb: 10 })];
+    const d = diffSmapsEntries(prev, curr)[0];
+    expect(d.deltaPssKb).toBe(50);
+    expect(d.deltaRssKb).toBe(50);
+    expect(d.deltaSizeKb).toBe(50);
+    expect(d.deltaSharedCleanKb).toBe(5);
+    expect(d.deltaSharedDirtyKb).toBe(5);
+    expect(d.deltaPrivateCleanKb).toBe(5);
+    expect(d.deltaPrivateDirtyKb).toBe(5);
+    expect(d.deltaSwapKb).toBe(5);
+  });
+
+  it("handles mixed add/remove/match", () => {
+    const prev = [makeEntry("a0", 100), makeEntry("b0", 200)];
+    const curr = [makeEntry("a0", 150), makeEntry("c0", 300)];
+    const diffs = diffSmapsEntries(prev, curr);
+    expect(diffs).toHaveLength(3);
+    expect(diffs.find(d => d.current.addrStart === "a0")?.status).toBe("matched");
+    expect(diffs.find(d => d.current.addrStart === "c0")?.status).toBe("added");
+    expect(diffs.find(d => d.current.addrStart === "b0")?.status).toBe("removed");
+  });
+
+  it("handles empty lists", () => {
+    expect(diffSmapsEntries([], [])).toHaveLength(0);
+  });
+
+  it("returns zero deltas for unchanged VMAs", () => {
+    const e = makeEntry("ff", 500, { rssKb: 1000 });
+    const diffs = diffSmapsEntries([e], [{ ...e }]);
+    expect(diffs[0].deltaPssKb).toBe(0);
+    expect(diffs[0].deltaRssKb).toBe(0);
   });
 });

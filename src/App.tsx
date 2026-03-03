@@ -5,7 +5,7 @@ import type {
   SiteData, SiteChildRow, SiteObjectsRow,
   PrimOrRef, BitmapListRow,
 } from "./hprof.worker";
-import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, diffProcesses, diffGlobalMemInfo } from "./adb/capture";
+import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 
 // ─── Worker proxy ─────────────────────────────────────────────────────────────
@@ -1054,13 +1054,39 @@ const SMAPS_COLUMNS: [SmapsSortFieldType, string][] = [
   ["swapKb", "Swap"], ["sizeKb", "VSize"],
 ];
 
-function VmaEntries({ entries, sortField, sortAsc, onToggleSort }: {
+function VmaEntries({ entries, sortField, sortAsc, onToggleSort, entryDiffs }: {
   entries: SmapsEntry[];
   sortField: VmaSortFieldType;
   sortAsc: boolean;
   onToggleSort: (f: VmaSortFieldType) => void;
+  entryDiffs?: SmapsEntryDiff[] | null;
 }) {
+  const diffByAddr = useMemo(() => {
+    if (!entryDiffs) return null;
+    return new Map(entryDiffs.map(d => [d.current.addrStart, d]));
+  }, [entryDiffs]);
+
   const sorted = useMemo(() => {
+    if (entryDiffs) {
+      const deltaKey = SMAPS_DELTA_KEY[sortField === "addrStart" ? "pssKb" : sortField];
+      const copy = [...entryDiffs];
+      if (sortField === "addrStart") {
+        copy.sort((a, b) => {
+          const aPin = a.status !== "matched" ? 1 : 0;
+          const bPin = b.status !== "matched" ? 1 : 0;
+          if (aPin !== bPin) return bPin - aPin;
+          return sortAsc ? a.current.addrStart.localeCompare(b.current.addrStart) : b.current.addrStart.localeCompare(a.current.addrStart);
+        });
+      } else {
+        copy.sort((a, b) => {
+          const aPin = a.status !== "matched" ? 1 : 0;
+          const bPin = b.status !== "matched" ? 1 : 0;
+          if (aPin !== bPin) return bPin - aPin;
+          return sortAsc ? (a[deltaKey] as number) - (b[deltaKey] as number) : (b[deltaKey] as number) - (a[deltaKey] as number);
+        });
+      }
+      return copy.map(d => d.current);
+    }
     const copy = [...entries];
     if (sortField === "addrStart") {
       copy.sort((a, b) => sortAsc ? a.addrStart.localeCompare(b.addrStart) : b.addrStart.localeCompare(a.addrStart));
@@ -1068,7 +1094,7 @@ function VmaEntries({ entries, sortField, sortAsc, onToggleSort }: {
       copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
     }
     return copy;
-  }, [entries, sortField, sortAsc]);
+  }, [entries, entryDiffs, sortField, sortAsc]);
 
   return (
     <>
@@ -1086,25 +1112,51 @@ function VmaEntries({ entries, sortField, sortAsc, onToggleSort }: {
           </td>
         ))}
       </tr>
-      {sorted.map((e, i) => (
-        <tr key={i} className="border-t border-stone-50">
-          <td className="py-0.5 px-2 pl-6 font-mono text-[10px] text-stone-500 whitespace-nowrap">
+      {sorted.map((e, i) => {
+        const ed = diffByAddr?.get(e.addrStart);
+        return (
+        <tr key={i} className={`border-t border-stone-50 ${
+          ed?.status === "removed" ? "opacity-60" :
+          ed?.status === "added" ? "bg-green-50/50" : ""
+        }`}>
+          <td className={`py-0.5 px-2 pl-6 font-mono text-[10px] text-stone-500 whitespace-nowrap ${ed?.status === "removed" ? "line-through" : ""}`}>
             {e.addrStart}-{e.addrEnd}
             <span className="ml-2 text-stone-400">{e.perms}</span>
+            {ed && ed.status !== "matched" && (
+              <span className={`ml-2 font-medium ${ed.status === "added" ? "text-green-600" : "text-red-600"}`}>
+                {ed.status === "added" ? "NEW" : "GONE"}
+              </span>
+            )}
           </td>
           <td />
-          {SMAPS_COLUMNS.map(([f]) => (
-            <td key={f} className="py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap">
+          {SMAPS_COLUMNS.map(([f]) => {
+            const delta = ed ? ed[SMAPS_DELTA_KEY[f]] as number : 0;
+            return (
+            <td key={f} className={`py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap ${ed ? deltaBgClass(delta) : ""}`}>
               {e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014"}
+              {ed && delta !== 0 && (
+                <span className={`ml-1 ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
+                  {fmtDelta(delta)}
+                </span>
+              )}
             </td>
-          ))}
+            );
+          })}
         </tr>
-      ))}
+        );
+      })}
     </>
   );
 }
 
-function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort }: {
+const SMAPS_DELTA_KEY: Record<SmapsSortFieldType, keyof SmapsDiff> = {
+  pssKb: "deltaPssKb", rssKb: "deltaRssKb", sizeKb: "deltaSizeKb",
+  sharedCleanKb: "deltaSharedCleanKb", sharedDirtyKb: "deltaSharedDirtyKb",
+  privateCleanKb: "deltaPrivateCleanKb", privateDirtyKb: "deltaPrivateDirtyKb",
+  swapKb: "deltaSwapKb",
+};
+
+function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, smapsDiffs, prevAggregated }: {
   aggregated: SmapsAggregated[];
   expandedGroup: string | null;
   onToggleGroup: (name: string) => void;
@@ -1114,12 +1166,59 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
   vmaSortField: VmaSortFieldType;
   vmaSortAsc: boolean;
   onToggleVmaSort: (f: VmaSortFieldType) => void;
+  smapsDiffs?: SmapsDiff[] | null;
+  prevAggregated?: SmapsAggregated[] | null;
 }) {
+  const diffByName = useMemo(() => {
+    if (!smapsDiffs) return null;
+    return new Map(smapsDiffs.map(d => [d.current.name, d]));
+  }, [smapsDiffs]);
+
+  const prevByName = useMemo(() => {
+    if (!prevAggregated) return null;
+    return new Map(prevAggregated.map(a => [a.name, a]));
+  }, [prevAggregated]);
+
   const sorted = useMemo(() => {
+    if (smapsDiffs) {
+      const deltaKey = SMAPS_DELTA_KEY[sortField];
+      const copy = [...smapsDiffs];
+      copy.sort((a, b) => {
+        const aPin = a.status !== "matched" ? 1 : 0;
+        const bPin = b.status !== "matched" ? 1 : 0;
+        if (aPin !== bPin) return bPin - aPin;
+        const aVal = a[deltaKey] as number;
+        const bVal = b[deltaKey] as number;
+        return sortAsc ? aVal - bVal : bVal - aVal;
+      });
+      return copy.map(d => d.current);
+    }
     const copy = [...aggregated];
     copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
     return copy;
-  }, [aggregated, sortField, sortAsc]);
+  }, [aggregated, smapsDiffs, sortField, sortAsc]);
+
+  // Totals row
+  const totals = useMemo(() => {
+    const t = { rssKb: 0, pssKb: 0, sizeKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
+      deltaRssKb: 0, deltaPssKb: 0, deltaSizeKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0, deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0 };
+    if (smapsDiffs) {
+      for (const d of smapsDiffs) {
+        if (d.status !== "removed") {
+          for (const [f] of SMAPS_COLUMNS) t[f] += d.current[f];
+        }
+        for (const [f] of SMAPS_COLUMNS) {
+          const dk = SMAPS_DELTA_KEY[f];
+          (t as Record<string, number>)[dk] += d[dk] as number;
+        }
+      }
+    } else {
+      for (const g of aggregated) {
+        for (const [f] of SMAPS_COLUMNS) t[f] += g[f];
+      }
+    }
+    return t;
+  }, [aggregated, smapsDiffs]);
 
   return (
     <div className="bg-stone-50 px-4 pb-2 max-h-[400px] overflow-y-auto">
@@ -1140,33 +1239,73 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
           </tr>
         </thead>
         <tbody>
-          {sorted.map(g => (
+          {sorted.map(g => {
+            const sd = diffByName?.get(g.name);
+            const prevEntries = sd && sd.status === "matched" && prevByName ? prevByName.get(g.name)?.entries ?? null : null;
+            return (
             <Fragment key={g.name}>
               <tr
-                className="border-t border-stone-100 cursor-pointer hover:bg-stone-100"
-                onClick={() => onToggleGroup(g.name)}
+                className={`border-t border-stone-100 cursor-pointer hover:bg-stone-100 ${
+                  sd?.status === "removed" ? "opacity-60" :
+                  sd?.status === "added" ? "bg-green-50/50" : ""
+                }`}
+                onClick={() => sd?.status !== "removed" && onToggleGroup(g.name)}
               >
-                <td className="py-0.5 px-2 font-mono text-stone-700 truncate max-w-[300px]" title={g.name}>
+                <td className={`py-0.5 px-2 font-mono text-stone-700 truncate max-w-[300px] ${sd?.status === "removed" ? "line-through" : ""}`} title={g.name}>
                   <span className="text-stone-400 mr-1">{expandedGroup === g.name ? "\u25BC" : "\u25B6"}</span>
                   {g.name}
+                  {sd && sd.status !== "matched" && (
+                    <span className={`ml-2 text-[10px] font-medium ${sd.status === "added" ? "text-green-600" : "text-red-600"}`}>
+                      {sd.status === "added" ? "NEW" : "GONE"}
+                    </span>
+                  )}
                 </td>
                 <td className="py-0.5 px-1 text-right font-mono text-stone-400">{g.count}</td>
-                {SMAPS_COLUMNS.map(([f]) => (
-                  <td key={f} className="py-0.5 px-2 text-right font-mono whitespace-nowrap">
-                    {g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"}
-                  </td>
-                ))}
+                {SMAPS_COLUMNS.map(([f]) => {
+                  const delta = sd ? sd[SMAPS_DELTA_KEY[f]] as number : 0;
+                  return (
+                    <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
+                      {g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"}
+                      {sd && delta !== 0 && (
+                        <span className={`ml-1 text-[10px] ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
+                          {fmtDelta(delta)}
+                        </span>
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
-              {expandedGroup === g.name && (
+              {expandedGroup === g.name && sd?.status !== "removed" && (
                 <VmaEntries
                   entries={g.entries}
                   sortField={vmaSortField}
                   sortAsc={vmaSortAsc}
                   onToggleSort={onToggleVmaSort}
+                  entryDiffs={prevEntries ? diffSmapsEntries(prevEntries, g.entries) : null}
                 />
               )}
             </Fragment>
-          ))}
+            );
+          })}
+          {/* Totals row */}
+          <tr className="border-t-2 border-stone-300 font-semibold">
+            <td className="py-0.5 px-2 text-stone-600">Total</td>
+            <td />
+            {SMAPS_COLUMNS.map(([f]) => {
+              const dk = SMAPS_DELTA_KEY[f];
+              const delta = (totals as Record<string, number>)[dk];
+              return (
+                <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${smapsDiffs ? deltaBgClass(delta) : ""}`}>
+                  {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
+                  {smapsDiffs && delta !== 0 && (
+                    <span className={`ml-1 text-[10px] font-normal ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
+                      {fmtDelta(delta)}
+                    </span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
         </tbody>
       </table>
     </div>
@@ -1224,6 +1363,7 @@ function CaptureView({ onCaptured, conn }: {
   const [prevGlobalMemInfo, setPrevGlobalMemInfo] = useState<GlobalMemInfo | null>(null);
   const [processDiffs, setProcessDiffs] = useState<ProcessDiff[] | null>(null);
   const [globalMemInfoDiff, setGlobalMemInfoDiff] = useState<GlobalMemInfoDiff | null>(null);
+  const [prevSmapsData, setPrevSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
   const diffTriggeredRef = useRef(false);
 
   const clearDiff = useCallback(() => {
@@ -1232,6 +1372,7 @@ function CaptureView({ onCaptured, conn }: {
     setPrevGlobalMemInfo(null);
     setProcessDiffs(null);
     setGlobalMemInfoDiff(null);
+    setPrevSmapsData(new Map());
     diffTriggeredRef.current = false;
   }, []);
 
@@ -1343,10 +1484,11 @@ function CaptureView({ onCaptured, conn }: {
     // Deep copy current state as baseline (enrichment mutates in place)
     setPrevProcesses(processes.map(p => ({ ...p })));
     if (globalMemInfo) setPrevGlobalMemInfo({ ...globalMemInfo });
+    setPrevSmapsData(new Map(smapsData));
     setDiffMode(true);
     diffTriggeredRef.current = true;
     refreshProcesses();
-  }, [processes, globalMemInfo, refreshProcesses]);
+  }, [processes, globalMemInfo, smapsData, refreshProcesses]);
 
   useEffect(() => {
     if (connected) refreshProcesses();
@@ -1719,6 +1861,9 @@ function CaptureView({ onCaptured, conn }: {
                       {hasOomLabel && <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">{p.oomLabel}</td>}
                       {(() => {
                         // Build the list of numeric columns with their current value and delta
+                        // Suppress breakdown deltas if prev wasn't enriched (all breakdown fields zero)
+                        const prevUnenriched = isDiff && d.prev != null &&
+                          d.prev.javaHeapKb === 0 && d.prev.nativeHeapKb === 0 && d.prev.graphicsKb === 0 && d.prev.codeKb === 0;
                         const cols: { value: number; delta: number; key: string }[] = [];
                         if (hasRss) cols.push({ value: p.rssKb, delta: d.deltaRssKb, key: "rss" });
                         cols.push({ value: p.pssKb, delta: d.deltaPssKb, key: "pss" });
@@ -1730,13 +1875,15 @@ function CaptureView({ onCaptured, conn }: {
                         }
                         return cols.map(({ value, delta, key }) => {
                           const isBreakdownCol = key !== "rss" && key !== "pss";
-                          const showDash = isBreakdownCol && value === 0 && (!isDiff || delta === 0);
+                          const skipDelta = isBreakdownCol && prevUnenriched;
+                          const effectiveDelta = skipDelta ? 0 : delta;
+                          const showDash = isBreakdownCol && value === 0 && (!isDiff || effectiveDelta === 0);
                           return (
-                            <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(delta) : ""}`}>
+                            <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(effectiveDelta) : ""}`}>
                               {showDash ? "\u2014" : fmtSize(value * 1024)}
-                              {isDiff && delta !== 0 && (
-                                <span className={`ml-1 text-xs ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
-                                  {fmtDelta(delta)}
+                              {isDiff && effectiveDelta !== 0 && (
+                                <span className={`ml-1 text-xs ${effectiveDelta > 0 ? "text-green-700" : "text-red-700"}`}>
+                                  {fmtDelta(effectiveDelta)}
                                 </span>
                               )}
                             </td>
@@ -1773,6 +1920,8 @@ function CaptureView({ onCaptured, conn }: {
                             vmaSortField={vmaSortField}
                             vmaSortAsc={vmaSortAsc}
                             onToggleVmaSort={toggleVmaSort}
+                            smapsDiffs={isDiff && prevSmapsData.has(p.pid) ? diffSmaps(prevSmapsData.get(p.pid)!, smapsData.get(p.pid)!) : null}
+                            prevAggregated={isDiff && prevSmapsData.has(p.pid) ? prevSmapsData.get(p.pid)! : null}
                           />
                         </td>
                       </tr>
@@ -1780,6 +1929,52 @@ function CaptureView({ onCaptured, conn }: {
                     </Fragment>
                     );
                   })}
+                  {/* Totals row */}
+                  {(() => {
+                    const isDiff = diffMode && sortedDiffs !== null;
+                    const rows = isDiff ? sortedDiffs! : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }));
+                    const tot = { pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
+                      deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 };
+                    for (const d of rows) {
+                      if (d.status !== "removed") {
+                        tot.pssKb += d.current.pssKb; tot.rssKb += d.current.rssKb;
+                        tot.javaHeapKb += d.current.javaHeapKb; tot.nativeHeapKb += d.current.nativeHeapKb;
+                        tot.graphicsKb += d.current.graphicsKb; tot.codeKb += d.current.codeKb;
+                      }
+                      tot.deltaPssKb += d.deltaPssKb; tot.deltaRssKb += d.deltaRssKb;
+                      // Skip breakdown deltas from unenriched baseline processes
+                      const pu = d.prev != null && d.prev.javaHeapKb === 0 && d.prev.nativeHeapKb === 0 && d.prev.graphicsKb === 0 && d.prev.codeKb === 0;
+                      if (!pu) {
+                        tot.deltaJavaHeapKb += d.deltaJavaHeapKb; tot.deltaNativeHeapKb += d.deltaNativeHeapKb;
+                        tot.deltaGraphicsKb += d.deltaGraphicsKb; tot.deltaCodeKb += d.deltaCodeKb;
+                      }
+                    }
+                    const cols: { value: number; delta: number; key: string }[] = [];
+                    if (hasRss) cols.push({ value: tot.rssKb, delta: tot.deltaRssKb, key: "rss" });
+                    cols.push({ value: tot.pssKb, delta: tot.deltaPssKb, key: "pss" });
+                    if (hasBreakdown) {
+                      cols.push({ value: tot.javaHeapKb, delta: tot.deltaJavaHeapKb, key: "java" });
+                      cols.push({ value: tot.nativeHeapKb, delta: tot.deltaNativeHeapKb, key: "native" });
+                      cols.push({ value: tot.graphicsKb, delta: tot.deltaGraphicsKb, key: "graphics" });
+                      cols.push({ value: tot.codeKb, delta: tot.deltaCodeKb, key: "code" });
+                    }
+                    return (
+                      <tr className="border-t-2 border-stone-300 font-semibold bg-stone-50">
+                        <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 3 : 2}>Total ({rows.filter(d => d.status !== "removed").length})</td>
+                        {cols.map(({ value, delta, key }) => (
+                          <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(delta) : ""}`}>
+                            {fmtSize(value * 1024)}
+                            {isDiff && delta !== 0 && (
+                              <span className={`ml-1 text-xs font-normal ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
+                                {fmtDelta(delta)}
+                              </span>
+                            )}
+                          </td>
+                        ))}
+                        <td />
+                      </tr>
+                    );
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1812,6 +2007,21 @@ function CaptureView({ onCaptured, conn }: {
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
+const PERFETTO_UI = "https://ui.perfetto.dev";
+
+function openInPerfetto(buffer: ArrayBuffer, title: string): void {
+  const win = window.open(PERFETTO_UI);
+  if (!win) return;
+  const timer = setInterval(() => win.postMessage("PING", PERFETTO_UI), 50);
+  const onPong = (evt: MessageEvent) => {
+    if (evt.data !== "PONG") return;
+    clearInterval(timer);
+    window.removeEventListener("message", onPong);
+    win.postMessage({ perfetto: { buffer, title } }, PERFETTO_UI);
+  };
+  window.addEventListener("message", onPong);
+}
+
 function downloadBuffer(name: string, buffer: ArrayBuffer): void {
   const blob = new Blob([buffer], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
@@ -1838,6 +2048,7 @@ export default function App() {
   const [loadingName, setLoadingName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [showCapture, setShowCapture] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const skipPushRef = useRef(false);
   const adbConnRef = useRef(new AdbConnection());
@@ -1854,6 +2065,15 @@ export default function App() {
     window.history.pushState({ view: v, params: p }, "", url);
     window.scrollTo(0, 0);
   }, []);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = () => setMenuOpen(false);
+    // Delay so the opening click doesn't immediately close
+    const id = requestAnimationFrame(() => document.addEventListener("click", handler));
+    return () => { cancelAnimationFrame(id); document.removeEventListener("click", handler); };
+  }, [menuOpen]);
 
   // Listen for browser back/forward
   useEffect(() => {
@@ -2000,15 +2220,6 @@ export default function App() {
             >
               &larr; Back
             </button>
-            {activeSession && (
-              <button
-                className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
-                onClick={() => downloadBuffer(activeSession.name, activeSession.buffer)}
-                title="Download .hprof file"
-              >
-                Download
-              </button>
-            )}
             <button
               className={`text-xs border px-2 py-0.5 transition-colors ${
                 showCapture ? "bg-stone-600 text-white border-stone-500" : "text-stone-400 hover:text-white border-stone-600"
@@ -2017,21 +2228,37 @@ export default function App() {
             >
               Capture
             </button>
-            <button
-              className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
-              onClick={() => fileRef.current?.click()}
-            >
-              Open File
-            </button>
-            <input ref={fileRef} type="file" accept=".hprof" className="hidden" onChange={handleFile} />
-            {activeSession && sessions.length === 1 && (
+            <div className="relative">
               <button
-                className="text-stone-400 hover:text-rose-400 text-xs"
-                onClick={() => discardSession(activeSession.id)}
+                className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
+                onClick={() => setMenuOpen(!menuOpen)}
               >
-                Discard
+                {"\u22EF"}
               </button>
-            )}
+              {menuOpen && (
+                <div className="absolute right-0 top-full mt-1 bg-stone-800 border border-stone-600 shadow-lg z-50 min-w-[140px]">
+                  {activeSession && (
+                    <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { downloadBuffer(activeSession.name, activeSession.buffer); setMenuOpen(false); }}>
+                      Download
+                    </button>
+                  )}
+                  {activeSession && (
+                    <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { openInPerfetto(activeSession.buffer, activeSession.name); setMenuOpen(false); }}>
+                      Perfetto
+                    </button>
+                  )}
+                  <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}>
+                    Open File
+                  </button>
+                  {activeSession && sessions.length === 1 && (
+                    <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-rose-400" onClick={() => { discardSession(activeSession.id); setMenuOpen(false); }}>
+                      Discard
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+            <input ref={fileRef} type="file" accept=".hprof" className="hidden" onChange={handleFile} />
           </div>
         </header>
       )}
@@ -2104,7 +2331,7 @@ export default function App() {
          Hidden via CSS when not active; wrapper styling adapts to context. */}
       <div className={showCapture && !isLoading ? "" : "hidden"}>
         {!hasSession && (
-          <div className="p-8 pb-0 max-w-[90%] mx-auto">
+          <div className="p-8 pb-0 max-w-[95%] mx-auto">
             <div className="flex items-center gap-4 mb-6">
               <button className="text-stone-400 hover:text-stone-600" onClick={() => setShowCapture(false)}>
                 &larr; Back
@@ -2113,14 +2340,14 @@ export default function App() {
             </div>
           </div>
         )}
-        <div className={hasSession ? "flex-1 p-4 max-w-[90%] mx-auto w-full text-sm" : "max-w-[90%] mx-auto px-8"}>
+        <div className={hasSession ? "flex-1 p-4 max-w-[95%] mx-auto w-full text-sm" : "max-w-[95%] mx-auto px-8"}>
           <CaptureView onCaptured={handleCaptured} conn={adbConnRef.current} />
         </div>
       </div>
 
       {/* Main content views */}
       {hasSession && !showCapture && (
-        <main className="flex-1 p-4 max-w-7xl mx-auto w-full text-sm">
+        <main className="flex-1 p-4 max-w-[95%] mx-auto w-full text-sm">
           {view === "overview" && overview && <OverviewView overview={overview} sessions={sessions} activeSessionId={activeSessionId} onSwitch={switchSession} onDiscard={discardSession} />}
           {view === "rooted"   && proxy    && <RootedView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} />}
           {view === "object"   && proxy    && <ObjectView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as ObjectParams} />}

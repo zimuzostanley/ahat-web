@@ -890,3 +890,123 @@ export function diffGlobalMemInfo(prev: GlobalMemInfo, current: GlobalMemInfo): 
     deltaCachedKb: current.cachedKb - prev.cachedKb,
   };
 }
+
+export interface SmapsDiff {
+  status: DiffStatus;
+  current: SmapsAggregated;
+  prev: SmapsAggregated | null;
+  deltaSizeKb: number;
+  deltaRssKb: number;
+  deltaPssKb: number;
+  deltaSharedCleanKb: number;
+  deltaSharedDirtyKb: number;
+  deltaPrivateCleanKb: number;
+  deltaPrivateDirtyKb: number;
+  deltaSwapKb: number;
+}
+
+export interface SmapsEntryDiff {
+  status: DiffStatus;
+  current: SmapsEntry;
+  prev: SmapsEntry | null;
+  deltaSizeKb: number;
+  deltaRssKb: number;
+  deltaPssKb: number;
+  deltaSharedCleanKb: number;
+  deltaSharedDirtyKb: number;
+  deltaPrivateCleanKb: number;
+  deltaPrivateDirtyKb: number;
+  deltaSwapKb: number;
+}
+
+/** Diff two SmapsEntry arrays by address start. */
+export function diffSmapsEntries(prev: SmapsEntry[], current: SmapsEntry[]): SmapsEntryDiff[] {
+  const prevByAddr = new Map(prev.map(e => [e.addrStart, e]));
+  const result: SmapsEntryDiff[] = [];
+  const matchedAddrs = new Set<string>();
+
+  for (const cur of current) {
+    const old = prevByAddr.get(cur.addrStart);
+    if (old) {
+      matchedAddrs.add(cur.addrStart);
+      result.push({
+        status: "matched", current: cur, prev: old,
+        deltaSizeKb: cur.sizeKb - old.sizeKb, deltaRssKb: cur.rssKb - old.rssKb,
+        deltaPssKb: cur.pssKb - old.pssKb,
+        deltaSharedCleanKb: cur.sharedCleanKb - old.sharedCleanKb,
+        deltaSharedDirtyKb: cur.sharedDirtyKb - old.sharedDirtyKb,
+        deltaPrivateCleanKb: cur.privateCleanKb - old.privateCleanKb,
+        deltaPrivateDirtyKb: cur.privateDirtyKb - old.privateDirtyKb,
+        deltaSwapKb: cur.swapKb - old.swapKb,
+      });
+    } else {
+      result.push({
+        status: "added", current: cur, prev: null,
+        deltaSizeKb: cur.sizeKb, deltaRssKb: cur.rssKb, deltaPssKb: cur.pssKb,
+        deltaSharedCleanKb: cur.sharedCleanKb, deltaSharedDirtyKb: cur.sharedDirtyKb,
+        deltaPrivateCleanKb: cur.privateCleanKb, deltaPrivateDirtyKb: cur.privateDirtyKb,
+        deltaSwapKb: cur.swapKb,
+      });
+    }
+  }
+
+  for (const old of prev) {
+    if (!matchedAddrs.has(old.addrStart)) {
+      result.push({
+        status: "removed", current: old, prev: old,
+        deltaSizeKb: -old.sizeKb, deltaRssKb: -old.rssKb, deltaPssKb: -old.pssKb,
+        deltaSharedCleanKb: -old.sharedCleanKb, deltaSharedDirtyKb: -old.sharedDirtyKb,
+        deltaPrivateCleanKb: -old.privateCleanKb, deltaPrivateDirtyKb: -old.privateDirtyKb,
+        deltaSwapKb: -old.swapKb,
+      });
+    }
+  }
+
+  return result;
+}
+
+/** Diff two SmapsAggregated arrays by mapping name. */
+export function diffSmaps(prev: SmapsAggregated[], current: SmapsAggregated[]): SmapsDiff[] {
+  const prevByName = new Map(prev.map(s => [s.name, s]));
+  const result: SmapsDiff[] = [];
+  const matchedNames = new Set<string>();
+
+  for (const cur of current) {
+    const old = prevByName.get(cur.name);
+    if (old) {
+      matchedNames.add(cur.name);
+      result.push({
+        status: "matched", current: cur, prev: old,
+        deltaSizeKb: cur.sizeKb - old.sizeKb, deltaRssKb: cur.rssKb - old.rssKb,
+        deltaPssKb: cur.pssKb - old.pssKb,
+        deltaSharedCleanKb: cur.sharedCleanKb - old.sharedCleanKb,
+        deltaSharedDirtyKb: cur.sharedDirtyKb - old.sharedDirtyKb,
+        deltaPrivateCleanKb: cur.privateCleanKb - old.privateCleanKb,
+        deltaPrivateDirtyKb: cur.privateDirtyKb - old.privateDirtyKb,
+        deltaSwapKb: cur.swapKb - old.swapKb,
+      });
+    } else {
+      result.push({
+        status: "added", current: cur, prev: null,
+        deltaSizeKb: cur.sizeKb, deltaRssKb: cur.rssKb, deltaPssKb: cur.pssKb,
+        deltaSharedCleanKb: cur.sharedCleanKb, deltaSharedDirtyKb: cur.sharedDirtyKb,
+        deltaPrivateCleanKb: cur.privateCleanKb, deltaPrivateDirtyKb: cur.privateDirtyKb,
+        deltaSwapKb: cur.swapKb,
+      });
+    }
+  }
+
+  for (const old of prev) {
+    if (!matchedNames.has(old.name)) {
+      result.push({
+        status: "removed", current: old, prev: old,
+        deltaSizeKb: -old.sizeKb, deltaRssKb: -old.rssKb, deltaPssKb: -old.pssKb,
+        deltaSharedCleanKb: -old.sharedCleanKb, deltaSharedDirtyKb: -old.sharedDirtyKb,
+        deltaPrivateCleanKb: -old.privateCleanKb, deltaPrivateDirtyKb: -old.privateDirtyKb,
+        deltaSwapKb: -old.swapKb,
+      });
+    }
+  }
+
+  return result;
+}
