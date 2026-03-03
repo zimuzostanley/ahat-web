@@ -289,24 +289,26 @@ describe.skipIf(!haveFile)('worker query logic (systemui.hprof)', () => {
       console.log(`Bitmaps: ${total} total, ${hasBuffer} with pixel data (software), ${total - hasBuffer} hardware`);
     });
 
-    it('asBitmap returns valid RGBA data for software bitmaps', () => {
-      // If any software bitmaps exist, verify their data is correct
+    it('asBitmap returns valid data for bitmaps with pixel data', () => {
+      // Test with DumpData if available, else with legacy mBuffer
       for (const [, inst] of snap.instances) {
         const ci = inst.asClassInstance?.();
         if (!ci) continue;
-        const bmp = ci.asBitmap();
+        const bmp = ci.asBitmap(snap.bitmapDumpData);
         if (!bmp) continue;
         expect(bmp.width).toBeGreaterThan(0);
         expect(bmp.height).toBeGreaterThan(0);
-        expect(bmp.rgbaData.length).toBe(bmp.width * bmp.height * 4);
+        expect(bmp.data.length).toBeGreaterThan(0);
+        expect(["rgba", "png", "jpeg", "webp"]).toContain(bmp.format);
+        if (bmp.format === "rgba") {
+          expect(bmp.data.length).toBe(bmp.width * bmp.height * 4);
+        }
         break;
       }
-      // If no software bitmaps, this test passes silently (expected for hardware-only dumps)
     });
 
-    it('matches Java ahat behavior for hardware bitmaps', () => {
-      // Java ahat also cannot render hardware bitmaps (returns 404 from /bitmap endpoint)
-      // Verify our asBitmap() returns null for bitmaps without mBuffer, same as Java ahat
+    it('asBitmap without DumpData returns null for bitmaps missing mBuffer', () => {
+      // Without DumpData, bitmaps that lack mBuffer should return null
       for (const [, inst] of snap.instances) {
         const ci = inst.asClassInstance?.();
         if (!ci || !ci.isInstanceOfClass("android.graphics.Bitmap")) continue;

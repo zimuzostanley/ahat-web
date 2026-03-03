@@ -88,7 +88,10 @@ function stateToUrl(view: string, params: Record<string, unknown>): string {
       const q = String(params.q ?? "");
       return q ? `/search?q=${encodeURIComponent(q)}` : "/search";
     }
-    case "bitmaps": return "/bitmaps";
+    case "bitmaps": {
+      const bid = params.id ? `0x${Number(params.id).toString(16)}` : null;
+      return bid ? `/bitmaps?id=${bid}` : "/bitmaps";
+    }
     default: return "/";
   }
 }
@@ -121,8 +124,11 @@ function urlToState(url: URL): NavState {
       const q = sp.get("q") ?? "";
       return { view: "search", params: { q } };
     }
-    case "/bitmaps":
-      return { view: "bitmaps", params: {} };
+    case "/bitmaps": {
+      const raw = sp.get("id") ?? "";
+      const selectedId = raw.startsWith("0x") ? parseInt(raw.slice(2), 16) : (raw ? parseInt(raw, 10) : 0);
+      return { view: "bitmaps", params: selectedId ? { id: selectedId } : {} };
+    }
     default:
       return { view: "overview", params: {} };
   }
@@ -284,36 +290,44 @@ function PrimOrRefCell({ v, navigate }: { v: PrimOrRef; navigate: NavFn }) {
   return <span className="font-mono">{v.v}</span>;
 }
 
-function BitmapCanvas({ width, height, rgbaData }: { width: number; height: number; rgbaData: Uint8Array }) {
+/** Renders a bitmap from either raw RGBA data or a compressed image blob. */
+function BitmapImage({ width, height, format, data, maxSize = 512 }: {
+  width: number; height: number; format: string; data: Uint8Array; maxSize?: number;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const clamped = new Uint8ClampedArray(rgbaData.length);
-    clamped.set(rgbaData);
-    const imgData = new ImageData(clamped, width, height);
-    ctx.putImageData(imgData, 0, 0);
-  }, [width, height, rgbaData]);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
-  // Scale down large bitmaps to fit, preserving aspect ratio
-  const maxDisplay = 512;
-  const scale = Math.min(1, maxDisplay / Math.max(width, height));
+  useEffect(() => {
+    if (format === "rgba") {
+      const canvas = canvasRef.current;
+      if (!canvas) return undefined;
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return undefined;
+      const clamped = new Uint8ClampedArray(data.length);
+      clamped.set(data);
+      ctx.putImageData(new ImageData(clamped, width, height), 0, 0);
+      return undefined;
+    }
+    const mimeMap: Record<string, string> = { png: "image/png", jpeg: "image/jpeg", webp: "image/webp" };
+    const copy = new Uint8Array(data.length);
+    copy.set(data);
+    const blob = new Blob([copy], { type: mimeMap[format] ?? "image/png" });
+    const url = URL.createObjectURL(blob);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [width, height, format, data]);
+
+  const scale = Math.min(1, maxSize / Math.max(width, height));
   const displayW = Math.round(width * scale);
   const displayH = Math.round(height * scale);
 
-  return (
-    <div>
-      <canvas
-        ref={canvasRef}
-        style={{ width: displayW, height: displayH, imageRendering: "pixelated" }}
-      />
-      <div className="text-xs text-stone-500 mt-1">{width} x {height} px</div>
-    </div>
-  );
+  if (format === "rgba") {
+    return <canvas ref={canvasRef} style={{ width: displayW, height: displayH, imageRendering: "pixelated" }} />;
+  }
+  if (!blobUrl) return null;
+  return <img src={blobUrl} width={displayW} height={displayH} style={{ imageRendering: "pixelated" }} />;
 }
 
 // ─── Views ────────────────────────────────────────────────────────────────────
@@ -436,7 +450,8 @@ function ObjectView({ proxy, heaps, navigate, params }: {
 
       {detail.bitmap && (
         <Section title="Bitmap Image">
-          <BitmapCanvas width={detail.bitmap.width} height={detail.bitmap.height} rgbaData={detail.bitmap.rgbaData} />
+          <BitmapImage width={detail.bitmap.width} height={detail.bitmap.height} format={detail.bitmap.format} data={detail.bitmap.data} />
+          <div className="text-xs text-stone-500 mt-1">{detail.bitmap.width} x {detail.bitmap.height} px ({detail.bitmap.format.toUpperCase()})</div>
         </Section>
       )}
 
@@ -811,116 +826,181 @@ function SearchView({ proxy, navigate, initialQuery }: { proxy: WorkerProxy; nav
 
 // ─── Bitmap Gallery View ─────────────────────────────────────────────────────
 
-function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: NavFn }) {
+/** Lazy-loaded thumbnail for a single bitmap in the gallery. */
+function BitmapThumbnail({ row, proxy, navigate, density, selected, onSelect }: {
+  row: BitmapListRow; proxy: WorkerProxy; navigate: NavFn; density: number;
+  selected: boolean; onSelect: () => void;
+}) {
+  const [bitmap, setBitmap] = useState<InstanceDetail["bitmap"] | null | "loading" | "error">(null);
+
+  const load = useCallback(() => {
+    if (bitmap !== null) return; // already loaded or loading
+    setBitmap("loading");
+    proxy.query<InstanceDetail | null>("getInstance", { id: row.row.id })
+      .then(detail => setBitmap(detail?.bitmap ?? "error"))
+      .catch(() => setBitmap("error"));
+  }, [proxy, row.row.id, bitmap]);
+
+  // Auto-load when element enters viewport
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!row.hasPixelData) return;
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([entry]) => { if (entry.isIntersecting) { load(); obs.disconnect(); } }, { rootMargin: "200px" });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [load, row.hasPixelData]);
+
+  // Scale to physical phone size: dp = px / (density / 160)
+  const dpi = density > 0 ? density : 420;
+  const dpW = Math.round(row.width / (dpi / 160));
+  const dpH = Math.round(row.height / (dpi / 160));
+  // Cap display height for the thumbnail strip
+  const thumbH = Math.min(180, dpH);
+  const thumbScale = thumbH / row.height;
+  const thumbW = Math.round(row.width * thumbScale);
+
+  return (
+    <div
+      ref={ref}
+      className={`flex-shrink-0 bg-white border flex flex-col cursor-pointer transition-colors ${
+        selected ? "border-sky-500 ring-2 ring-sky-200" : "border-stone-200 hover:border-stone-400"
+      }`}
+      style={{ width: thumbW + 24 }}
+      onClick={onSelect}
+    >
+      <div className="flex-1 flex items-center justify-center p-2 bg-stone-50 min-h-[80px]" style={{ height: thumbH + 16 }}>
+        {bitmap && typeof bitmap === "object" ? (
+          <BitmapImage width={bitmap.width} height={bitmap.height} format={bitmap.format} data={bitmap.data} maxSize={thumbH} />
+        ) : bitmap === "loading" ? (
+          <span className="text-stone-300 text-xs">&hellip;</span>
+        ) : bitmap === "error" ? (
+          <span className="text-stone-300 text-xs">no data</span>
+        ) : !row.hasPixelData ? (
+          <span className="text-stone-300 text-xs">no pixel data</span>
+        ) : null}
+      </div>
+      <div className="p-2 border-t border-stone-100">
+        <div className="text-xs font-mono text-stone-600">{row.width}&times;{row.height} px</div>
+        <div className="text-xs text-stone-400">{dpW}&times;{dpH} dp &middot; {fmtSize(row.row.retainedTotal)}</div>
+        <button
+          className="text-xs text-sky-700 underline decoration-sky-300 hover:decoration-sky-500 mt-1"
+          onClick={e => { e.stopPropagation(); navigate("object", { id: row.row.id }); }}
+        >Details</button>
+      </div>
+    </div>
+  );
+}
+
+function BitmapGalleryView({ proxy, navigate, selectedId }: { proxy: WorkerProxy; navigate: NavFn; selectedId?: number }) {
   const [rows, setRows] = useState<BitmapListRow[] | null>(null);
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const [expandedBitmap, setExpandedBitmap] = useState<{ width: number; height: number; rgbaData: Uint8Array } | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(selectedId ?? null);
+  const [expandedBitmap, setExpandedBitmap] = useState<InstanceDetail["bitmap"]>(null);
 
   useEffect(() => {
     proxy.query<BitmapListRow[]>("getBitmapList").then(setRows).catch(console.error);
   }, [proxy]);
 
-  const [bitmapError, setBitmapError] = useState<string | null>(null);
-
-  const loadBitmap = useCallback((id: number) => {
-    if (expandedId === id) {
-      setExpandedId(null);
-      setExpandedBitmap(null);
-      setBitmapError(null);
-      return;
-    }
-    setExpandedId(id);
+  // Load expanded bitmap when expandedId changes
+  useEffect(() => {
+    if (!expandedId) { setExpandedBitmap(null); return; }
     setExpandedBitmap(null);
-    setBitmapError(null);
-    proxy.query<InstanceDetail | null>("getInstance", { id })
-      .then(detail => {
-        if (detail?.bitmap) {
-          setExpandedBitmap(detail.bitmap);
-        } else {
-          setBitmapError("No bitmap data available");
-        }
-      })
-      .catch(err => {
-        console.error(err);
-        setBitmapError(err instanceof Error ? err.message : "Failed to load bitmap");
-      });
+    proxy.query<InstanceDetail | null>("getInstance", { id: expandedId })
+      .then(d => { if (d?.bitmap) setExpandedBitmap(d.bitmap); })
+      .catch(console.error);
   }, [proxy, expandedId]);
+
+  const selectBitmap = useCallback((id: number) => {
+    const next = expandedId === id ? null : id;
+    setExpandedId(next);
+    // Update URL without pushing to history
+    const url = next ? `/bitmaps?id=0x${next.toString(16)}` : "/bitmaps";
+    window.history.replaceState({ view: "bitmaps", params: next ? { id: next } : {} }, "", url);
+  }, [expandedId]);
 
   if (!rows) return <div className="text-stone-400 p-4">Loading&hellip;</div>;
 
   // Duplicate detection
   const hashCounts = new Map<string, number>();
-  for (const r of rows) hashCounts.set(r.bufferHash, (hashCounts.get(r.bufferHash) ?? 0) + 1);
+  for (const r of rows) if (r.hasPixelData) hashCounts.set(r.bufferHash, (hashCounts.get(r.bufferHash) ?? 0) + 1);
 
   const totalRetained = rows.reduce((sum, r) => sum + r.row.retainedTotal, 0);
-  const uniqueCount = hashCounts.size;
-  const softwareCount = rows.filter(r => r.hasPixelData).length;
+  const withPixels = rows.filter(r => r.hasPixelData);
+  const withoutPixels = rows.filter(r => !r.hasPixelData);
+  const dupCount = [...hashCounts.values()].filter(c => c > 1).reduce((s, c) => s + c, 0);
 
   return (
     <div>
       <h2 className="text-lg font-semibold mb-3 text-stone-800">Bitmaps</h2>
 
       {rows.length === 0 ? (
-        <div className="text-stone-500 text-sm">No bitmaps found in this heap dump.</div>
+        <div className="text-stone-500">No bitmaps found in this heap dump.</div>
       ) : (
         <>
           <div className="bg-white border border-stone-200 p-3 mb-4">
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-              <span className="text-stone-500">Bitmaps found:</span>
-              <span className="font-mono">{rows.length.toLocaleString()}</span>
+              <span className="text-stone-500">Total bitmaps:</span>
+              <span className="font-mono">{rows.length}</span>
               <span className="text-stone-500">With pixel data:</span>
-              <span className="font-mono">{softwareCount.toLocaleString()}{softwareCount === 0 && <span className="text-stone-400 ml-2">(all hardware bitmaps — pixel data in native memory)</span>}</span>
-              <span className="text-stone-500">Unique images:</span>
-              <span className="font-mono">{uniqueCount.toLocaleString()}</span>
+              <span className="font-mono">{withPixels.length}{withPixels.length === 0 && <span className="text-stone-400 ml-2">(dump with <code className="bg-stone-100 px-1">-b</code> to include pixel data)</span>}</span>
+              {dupCount > 0 && (<><span className="text-stone-500">Duplicates:</span><span className="font-mono text-amber-600">{dupCount}</span></>)}
               <span className="text-stone-500">Total retained:</span>
               <span className="font-mono">{fmtSize(totalRetained)}</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-            {rows.map(r => {
-              const dupCount = hashCounts.get(r.bufferHash) ?? 1;
-              const isExpanded = expandedId === r.row.id;
-              return (
-                <div key={r.row.id} className={`bg-white border border-stone-200 p-3 ${isExpanded ? "sm:col-span-2 lg:col-span-3 xl:col-span-4" : ""}`}>
-                  <div className="flex items-start justify-between mb-2">
-                    <span className="text-sm font-mono">{r.width} &times; {r.height} px</span>
-                    <div className="flex items-center gap-1">
-                      {dupCount > 1 && (
-                        <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5">{dupCount}&times; dup</span>
-                      )}
-                      <span className="text-xs text-stone-500 font-mono">{fmtSize(r.row.retainedTotal)}</span>
-                    </div>
-                  </div>
-
-                  {isExpanded && expandedBitmap && (
-                    <div className="mb-2">
-                      <BitmapCanvas width={expandedBitmap.width} height={expandedBitmap.height} rgbaData={expandedBitmap.rgbaData} />
-                    </div>
-                  )}
-                  {isExpanded && !expandedBitmap && !bitmapError && (
-                    <div className="text-stone-400 text-sm mb-2">Loading image&hellip;</div>
-                  )}
-                  {isExpanded && bitmapError && (
-                    <div className="text-rose-500 text-sm mb-2">{bitmapError}</div>
-                  )}
-
-                  <div className="flex items-center gap-2 text-sm">
-                    {r.hasPixelData ? (
-                      <button className="text-sky-700 hover:underline" onClick={() => loadBitmap(r.row.id)}>
-                        {isExpanded ? "Hide" : "Preview"}
-                      </button>
-                    ) : (
-                      <span className="text-stone-400 italic">hardware bitmap</span>
-                    )}
-                    <button className="text-sky-700 hover:underline" onClick={() => navigate("object", { id: r.row.id })}>
-                      Details
-                    </button>
-                  </div>
+          {/* Expanded bitmap preview */}
+          {expandedId && expandedBitmap && (
+            <div className="bg-white border border-stone-200 p-4 mb-4">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <span className="font-mono">{expandedBitmap.width}&times;{expandedBitmap.height} px</span>
+                  <span className="text-stone-400 ml-2">({expandedBitmap.format.toUpperCase()})</span>
                 </div>
-              );
-            })}
-          </div>
+                <div className="flex gap-2">
+                  <button className="text-sky-700 underline decoration-sky-300 hover:decoration-sky-500"
+                    onClick={() => navigate("object", { id: expandedId })}>Object details</button>
+                  <button className="text-stone-400 hover:text-stone-600" onClick={() => selectBitmap(expandedId)}>&times; Close</button>
+                </div>
+              </div>
+              <BitmapImage width={expandedBitmap.width} height={expandedBitmap.height} format={expandedBitmap.format} data={expandedBitmap.data} maxSize={800} />
+            </div>
+          )}
+          {expandedId && !expandedBitmap && (
+            <div className="bg-white border border-stone-200 p-4 mb-4 text-stone-400">Loading bitmap&hellip;</div>
+          )}
+
+          {/* Horizontal scrolling thumbnail strip */}
+          {withPixels.length > 0 && (
+            <div className="mb-4">
+              <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">
+                {withPixels.length} bitmap{withPixels.length > 1 ? "s" : ""} with pixel data
+              </h3>
+              <div className="overflow-x-auto pb-2">
+                <div className="flex gap-2" style={{ minWidth: "min-content" }}>
+                  {withPixels.map(r => (
+                    <BitmapThumbnail key={r.row.id} row={r} proxy={proxy} navigate={navigate} density={r.density}
+                      selected={expandedId === r.row.id} onSelect={() => selectBitmap(r.row.id)} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Table for bitmaps without pixel data */}
+          {withoutPixels.length > 0 && (
+            <Section title={`Bitmaps without pixel data (${withoutPixels.length})`} defaultOpen={withPixels.length === 0}>
+              <SortableTable<BitmapListRow>
+                columns={[
+                  { label: "Size", render: r => <span className="font-mono">{r.width}&times;{r.height}</span> },
+                  { label: "Retained", align: "right", sortKey: r => r.row.retainedTotal, render: r => <span className="font-mono">{fmtSize(r.row.retainedTotal)}</span> },
+                  { label: "Object", render: r => <InstanceLink row={r.row} navigate={navigate} /> },
+                ]}
+                data={withoutPixels}
+              />
+            </Section>
+          )}
         </>
       )}
     </div>
@@ -1121,7 +1201,7 @@ export default function App() {
         {view === "objects"  && proxy    && <ObjectsView proxy={proxy} navigate={navigate} params={params as unknown as ObjectsParams} />}
         {view === "site"     && proxy    && <SiteView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as SiteParams} />}
         {view === "search"   && proxy    && <SearchView proxy={proxy} navigate={navigate} initialQuery={params.q as string | undefined} />}
-        {view === "bitmaps"  && proxy    && <BitmapGalleryView proxy={proxy} navigate={navigate} />}
+        {view === "bitmaps"  && proxy    && <BitmapGalleryView proxy={proxy} navigate={navigate} selectedId={params.id as number | undefined} />}
       </main>
     </div>
   );

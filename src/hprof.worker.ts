@@ -18,7 +18,7 @@ import {
   parseHprof,
   AhatSnapshot, AhatInstance, AhatClassInstance, AhatArrayInstance, AhatClassObj,
   SuperRoot, SiteNode,
-  Type, TypeName, ReachabilityName,
+  TypeName, ReachabilityName,
 } from "./hprof";
 
 type FieldVal = number | boolean | string | AhatInstance | null;
@@ -75,7 +75,7 @@ export interface InstanceDetail {
   arrayLength: number;
   arrayElems: { idx: number; value: PrimOrRef }[];   // first 200
   // Bitmap
-  bitmap: { width: number; height: number; rgbaData: Uint8Array } | null;
+  bitmap: { width: number; height: number; format: string; data: Uint8Array } | null;
   // Relations
   reverseRefs: InstanceRow[];
   dominated: InstanceRow[];
@@ -114,6 +114,7 @@ export interface BitmapListRow {
   pixelCount: number;
   bufferHash: string;
   hasPixelData: boolean;
+  density: number;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -262,9 +263,9 @@ function handleGetInstance(id: number, arrayLimit = 200): InstanceDetail | null 
   let bitmap: InstanceDetail["bitmap"] = null;
   const ci = inst.asClassInstance?.();
   if (ci) {
-    const bmp = ci.asBitmap();
+    const bmp = ci.asBitmap(snap!.bitmapDumpData);
     if (bmp) {
-      bitmap = { width: bmp.width, height: bmp.height, rgbaData: new Uint8Array(bmp.rgbaData.buffer, bmp.rgbaData.byteOffset, bmp.rgbaData.byteLength) };
+      bitmap = { width: bmp.width, height: bmp.height, format: bmp.format, data: bmp.data };
     }
   }
 
@@ -364,7 +365,8 @@ function handleGetObjects(params: { siteId: number; className: string; heap: str
 function handleGetBitmapList(): BitmapListRow[] {
   if (!snap) throw new Error("no snapshot");
 
-  const results: { inst: AhatClassInstance; w: number; h: number; bufHash: string; hasPixelData: boolean }[] = [];
+  const dd = snap.bitmapDumpData;
+  const results: { inst: AhatClassInstance; w: number; h: number; bufHash: string; hasPixelData: boolean; density: number }[] = [];
 
   for (const [, inst] of snap.instances) {
     const ci = inst.asClassInstance?.();
@@ -374,21 +376,19 @@ function handleGetBitmapList(): BitmapListRow[] {
     if (typeof w !== "number" || w <= 0) continue;
     const h = ci.getField("mHeight");
     if (typeof h !== "number" || h <= 0) continue;
+    const density = ci.getField("mDensity");
 
-    // Check if pixel data is available in the heap (software bitmap)
-    const bufRef = ci.getRefField("mBuffer");
-    let bufHash = "no-buffer";
-    let hasPixelData = false;
-    if (bufRef && bufRef.isArrayInstance()) {
-      const arr = bufRef.asArrayInstance()!;
-      if (arr.elemType === Type.BYTE && arr.values.length >= 4 * h * w) {
-        hasPixelData = true;
-        const sample = arr.values.slice(0, 32) as number[];
-        bufHash = sample.map(b => (b & 0xFF).toString(16).padStart(2, "0")).join("");
-      }
+    const bmp = ci.asBitmap(dd);
+    const hasPixelData = bmp !== null;
+
+    let bufHash = "no-data";
+    if (bmp) {
+      // Hash first 32 bytes of pixel data for duplicate detection
+      const sample = bmp.data.slice(0, 32);
+      bufHash = Array.from(sample).map(b => (b & 0xFF).toString(16).padStart(2, "0")).join("");
     }
 
-    results.push({ inst: ci, w, h, bufHash, hasPixelData });
+    results.push({ inst: ci, w, h, bufHash, hasPixelData, density: typeof density === "number" ? density : 0 });
   }
 
   results.sort((a, b) => b.inst.getTotalRetainedSize().total - a.inst.getTotalRetainedSize().total);
@@ -400,6 +400,7 @@ function handleGetBitmapList(): BitmapListRow[] {
     pixelCount: r.w * r.h,
     bufferHash: `${r.w}x${r.h}:${r.bufHash}`,
     hasPixelData: r.hasPixelData,
+    density: r.density,
   }));
 }
 

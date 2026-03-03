@@ -20,7 +20,10 @@ function stateToUrl(view: string, params: Record<string, any>): string {
       const q = params.q ?? "";
       return q ? `/search?q=${encodeURIComponent(q)}` : "/search";
     }
-    case "bitmaps": return "/bitmaps";
+    case "bitmaps": {
+      const bid = params.id ? `0x${Number(params.id).toString(16)}` : null;
+      return bid ? `/bitmaps?id=${bid}` : "/bitmaps";
+    }
     default: return "/";
   }
 }
@@ -55,8 +58,11 @@ function urlToState(url: URL): NavState {
       const q = sp.get("q") ?? "";
       return { view: "search", params: { q } };
     }
-    case "/bitmaps":
-      return { view: "bitmaps", params: {} };
+    case "/bitmaps": {
+      const raw = sp.get("id") ?? "";
+      const selectedId = raw.startsWith("0x") ? parseInt(raw.slice(2), 16) : (raw ? parseInt(raw, 10) : 0);
+      return { view: "bitmaps", params: selectedId ? { id: selectedId } : {} };
+    }
     default:
       return { view: "overview", params: {} };
   }
@@ -109,6 +115,10 @@ describe('URL routing', () => {
 
     it('generates /bitmaps', () => {
       expect(stateToUrl("bitmaps", {})).toBe("/bitmaps");
+    });
+
+    it('generates /bitmaps?id=0x... with selected bitmap', () => {
+      expect(stateToUrl("bitmaps", { id: 0xABC })).toBe("/bitmaps?id=0xabc");
     });
   });
 
@@ -167,6 +177,18 @@ describe('URL routing', () => {
       expect(urlToState(u("/bitmaps"))).toEqual({ view: "bitmaps", params: {} });
     });
 
+    it('parses /bitmaps?id=0xabc with selected bitmap', () => {
+      const state = urlToState(u("/bitmaps?id=0xabc"));
+      expect(state.view).toBe("bitmaps");
+      expect(state.params.id).toBe(0xABC);
+    });
+
+    it('parses /bitmaps?id=2748 (decimal) with selected bitmap', () => {
+      const state = urlToState(u("/bitmaps?id=2748"));
+      expect(state.view).toBe("bitmaps");
+      expect(state.params.id).toBe(2748);
+    });
+
     it('parses unknown paths as overview', () => {
       expect(urlToState(u("/unknown"))).toEqual({ view: "overview", params: {} });
     });
@@ -215,6 +237,14 @@ describe('URL routing', () => {
       const url = stateToUrl("bitmaps", {});
       const state = urlToState(new URL(url, "http://localhost"));
       expect(state.view).toBe("bitmaps");
+    });
+
+    it('bitmaps with selected id roundtrips', () => {
+      const id = 0xDEAD;
+      const url = stateToUrl("bitmaps", { id });
+      const state = urlToState(new URL(url, "http://localhost"));
+      expect(state.view).toBe("bitmaps");
+      expect(state.params.id).toBe(id);
     });
   });
 });

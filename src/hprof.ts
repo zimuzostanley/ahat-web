@@ -349,37 +349,52 @@ export class AhatClassInstance extends AhatInstance {
     return arr.asStringSlice(offset, count, maxChars);
   }
 
-  /** Returns {width, height, rgbaData} if this is an android.graphics.Bitmap, else null. */
-  asBitmap(): { width: number; height: number; rgbaData: Uint8ClampedArray } | null {
+  /**
+   * Returns bitmap data if this is an android.graphics.Bitmap with available pixel data.
+   * Checks legacy mBuffer first, then DumpData (from `am dumpheap -b`).
+   */
+  asBitmap(dumpData?: BitmapDumpData | null): BitmapData | null {
     if (!this.isInstanceOfClass("android.graphics.Bitmap")) return null;
     const w = this.getField("mWidth");
     if (typeof w !== "number" || w <= 0) return null;
     const h = this.getField("mHeight");
     if (typeof h !== "number" || h <= 0) return null;
-    const bufRef = this.getRefField("mBuffer");
-    if (!bufRef || !bufRef.isArrayInstance()) return null;
-    const arr = bufRef.asArrayInstance()!;
-    if (arr.elemType !== Type.BYTE) return null;
-    const buf = arr.values as number[];
-    if (buf.length < 4 * h * w) return null;
-    // Convert BGRA to RGBA
-    const rgba = new Uint8ClampedArray(4 * w * h);
-    for (let i = 0; i < w * h; i++) {
-      const b = buf[i * 4 + 0] & 0xFF;
-      const g = buf[i * 4 + 1] & 0xFF;
-      const r = buf[i * 4 + 2] & 0xFF;
-      const a = buf[i * 4 + 3] & 0xFF;
-      rgba[i * 4 + 0] = r;
-      rgba[i * 4 + 1] = g;
-      rgba[i * 4 + 2] = b;
-      rgba[i * 4 + 3] = a;
-    }
-    return { width: w, height: h, rgbaData: rgba };
-  }
 
-  /** Returns the associated bitmap instance (self if this is a Bitmap, else null). */
-  getAssociatedBitmapInstance(): AhatClassInstance | null {
-    if (this.asBitmap()) return this;
+    // Legacy path: raw BGRA pixels in mBuffer
+    const bufRef = this.getRefField("mBuffer");
+    if (bufRef && bufRef.isArrayInstance()) {
+      const arr = bufRef.asArrayInstance()!;
+      if (arr.elemType === Type.BYTE) {
+        const buf = arr.values as number[];
+        if (buf.length >= 4 * h * w) {
+          const rgba = new Uint8ClampedArray(4 * w * h);
+          for (let i = 0; i < w * h; i++) {
+            rgba[i * 4 + 0] = buf[i * 4 + 2] & 0xFF; // R
+            rgba[i * 4 + 1] = buf[i * 4 + 1] & 0xFF; // G
+            rgba[i * 4 + 2] = buf[i * 4 + 0] & 0xFF; // B
+            rgba[i * 4 + 3] = buf[i * 4 + 3] & 0xFF; // A
+          }
+          return { width: w, height: h, format: "rgba", data: new Uint8Array(rgba.buffer) };
+        }
+      }
+    }
+
+    // DumpData path: compressed image keyed by mNativePtr
+    if (dumpData && dumpData.buffers.size > 0) {
+      const nativePtr = this.getField("mNativePtr");
+      if (typeof nativePtr === "bigint" || typeof nativePtr === "number") {
+        const key = typeof nativePtr === "bigint" ? nativePtr : BigInt(nativePtr);
+        const compressedBuf = dumpData.buffers.get(key);
+        if (compressedBuf && compressedBuf.length > 0) {
+          const fmtNames: Record<number, BitmapData["format"]> = {
+            0: "jpeg", 1: "png", 2: "webp", 3: "webp", 4: "webp",
+          };
+          const format = fmtNames[dumpData.format] ?? "png";
+          return { width: w, height: h, format, data: compressedBuf };
+        }
+      }
+    }
+
     return null;
   }
 
@@ -646,7 +661,28 @@ export class SiteNode {
 
 // ─── Snapshot ────────────────────────────────────────────────────────────────
 
+/** Bitmap pixel data extracted from Bitmap$DumpData or legacy mBuffer. */
+export interface BitmapData {
+  width: number;
+  height: number;
+  /** "rgba" = raw BGRA→RGBA pixels (legacy mBuffer), else compressed image */
+  format: "rgba" | "png" | "jpeg" | "webp";
+  data: Uint8Array;
+}
+
+/**
+ * Maps mNativePtr → compressed pixel buffer for bitmaps dumped with `am dumpheap -b`.
+ * Format codes: 0=JPEG, 1=PNG, 2/3/4=WebP, -1=legacy raw BGRA.
+ */
+export interface BitmapDumpData {
+  format: number; // android.graphics.Bitmap.CompressFormat ordinal, or -1
+  buffers: Map<bigint, Uint8Array>;
+}
+
 export class AhatSnapshot {
+  /** null if dump didn't include bitmap data (no `-b` flag) */
+  bitmapDumpData: BitmapDumpData | null = null;
+
   constructor(
     public superRoot: SuperRoot,
     public instances: Map<number, AhatInstance>,
@@ -1176,6 +1212,37 @@ export function parseHprof(buffer: ArrayBuffer, onProgress?: ProgressCallback): 
     console.log(`[hprof] Attributed native sizes from ${nativeCount} NativeAllocationRegistry entries`);
   }
 
+  // ── Extract Bitmap DumpData (from `am dumpheap -b`) ───────────────────────
+  let bitmapDumpData: BitmapDumpData | null = null;
+  for (const [, inst] of instMap) {
+    if (!(inst instanceof AhatClassObj) || inst.className !== "android.graphics.Bitmap") continue;
+    const ddField = inst.staticFieldValues.find(f => f.name === "dumpData");
+    if (!ddField) break;
+    const ddInst = (ddField.value as AhatInstance | null)?.asClassInstance?.();
+    if (!ddInst || !ddInst.isInstanceOfClass("android.graphics.Bitmap$DumpData")) break;
+    const count = ddInst.getField("count");
+    const format = ddInst.getField("format");
+    if (typeof count !== "number" || typeof format !== "number" || count === 0) break;
+    const nativesArr = ddInst.getRefField("natives")?.asArrayInstance?.();
+    const buffersArr = ddInst.getRefField("buffers")?.asArrayInstance?.();
+    if (!nativesArr || !buffersArr) break;
+
+    const buffers = new Map<bigint, Uint8Array>();
+    for (let i = 0; i < count; i++) {
+      const nativeVal = nativesArr.values[i];
+      const bufInst = buffersArr.values[i];
+      if (nativeVal == null || !(bufInst instanceof AhatArrayInstance)) continue;
+      const key = typeof nativeVal === "bigint" ? nativeVal : BigInt(nativeVal as number);
+      const bytes = bufInst.values as number[];
+      const u8 = new Uint8Array(bytes.length);
+      for (let j = 0; j < bytes.length; j++) u8[j] = bytes[j] & 0xFF;
+      buffers.set(key, u8);
+    }
+    bitmapDumpData = { format, buffers };
+    console.log(`[hprof] Found BitmapDumpData: ${buffers.size} bitmaps, format=${format === 1 ? "PNG" : format === 0 ? "JPEG" : "WebP"}`);
+    break;
+  }
+
   onProgress?.("Computing reachability...", 60);
 
   // Reachability BFS
@@ -1245,7 +1312,9 @@ export function parseHprof(buffer: ArrayBuffer, onProgress?: ProgressCallback): 
   rootSite.prepareForUse(0, numHeaps, retained);
 
   onProgress?.("Done!", 100);
-  return new AhatSnapshot(superRoot, instMap, heapsList, rootSite);
+  const snapshot = new AhatSnapshot(superRoot, instMap, heapsList, rootSite);
+  snapshot.bitmapDumpData = bitmapDumpData;
+  return snapshot;
 }
 
 // ─── Snapshot serialization ──────────────────────────────────────────────────
