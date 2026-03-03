@@ -1127,9 +1127,9 @@ function VmaEntries({ entries, sortField, sortAsc, onToggleSort, entryDiffs }: {
             return (
             <td key={f} className={`py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap ${ed ? deltaBgClass(delta) : ""}`}>
               {e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014"}
-              {ed && delta !== 0 && (
-                <span className={`ml-1 ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
-                  {fmtDelta(delta)}
+              {ed && (
+                <span className={`ml-1 inline-block min-w-[4rem] text-right ${delta > 0 ? "text-green-700" : delta < 0 ? "text-red-700" : ""}`}>
+                  {delta !== 0 ? fmtDelta(delta) : ""}
                 </span>
               )}
             </td>
@@ -1256,9 +1256,9 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
                   return (
                     <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
                       {g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"}
-                      {sd && delta !== 0 && (
-                        <span className={`ml-1 text-[10px] ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
-                          {fmtDelta(delta)}
+                      {sd && (
+                        <span className={`ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-green-700" : delta < 0 ? "text-red-700" : ""}`}>
+                          {delta !== 0 ? fmtDelta(delta) : ""}
                         </span>
                       )}
                     </td>
@@ -1287,9 +1287,9 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
               return (
                 <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${smapsDiffs ? deltaBgClass(delta) : ""}`}>
                   {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
-                  {smapsDiffs && delta !== 0 && (
-                    <span className={`ml-1 text-[10px] font-normal ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
-                      {fmtDelta(delta)}
+                  {smapsDiffs && (
+                    <span className={`ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-green-700" : delta < 0 ? "text-red-700" : ""}`}>
+                      {delta !== 0 ? fmtDelta(delta) : ""}
                     </span>
                   )}
                 </td>
@@ -1866,9 +1866,9 @@ function CaptureView({ onCaptured, conn }: {
                           return (
                             <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(effectiveDelta) : ""}`}>
                               {showDash ? "\u2014" : fmtSize(value * 1024)}
-                              {isDiff && effectiveDelta !== 0 && (
-                                <span className={`ml-1 text-xs ${effectiveDelta > 0 ? "text-green-700" : "text-red-700"}`}>
-                                  {fmtDelta(effectiveDelta)}
+                              {isDiff && (
+                                <span className={`ml-1 text-xs inline-block min-w-[4.5rem] text-right ${effectiveDelta > 0 ? "text-green-700" : effectiveDelta < 0 ? "text-red-700" : ""}`}>
+                                  {effectiveDelta !== 0 ? fmtDelta(effectiveDelta) : ""}
                                 </span>
                               )}
                             </td>
@@ -1949,9 +1949,9 @@ function CaptureView({ onCaptured, conn }: {
                         {cols.map(({ value, delta, key }) => (
                           <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(delta) : ""}`}>
                             {fmtSize(value * 1024)}
-                            {isDiff && delta !== 0 && (
-                              <span className={`ml-1 text-xs font-normal ${delta > 0 ? "text-green-700" : "text-red-700"}`}>
-                                {fmtDelta(delta)}
+                            {isDiff && (
+                              <span className={`ml-1 text-xs font-normal inline-block min-w-[4.5rem] text-right ${delta > 0 ? "text-green-700" : delta < 0 ? "text-red-700" : ""}`}>
+                                {delta !== 0 ? fmtDelta(delta) : ""}
                               </span>
                             )}
                           </td>
