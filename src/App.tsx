@@ -151,7 +151,7 @@ function fmtHex(id: number): string {
   return "0x" + id.toString(16).padStart(8, "0");
 }
 
-function deltaBgClass(deltaKb: number): string {
+export function deltaBgClass(deltaKb: number): string {
   if (deltaKb === 0) return "";
   const abs = Math.abs(deltaKb);
   if (deltaKb > 0) {
@@ -166,10 +166,10 @@ function deltaBgClass(deltaKb: number): string {
   return "";
 }
 
-function fmtDelta(deltaKb: number): string {
+export function fmtDelta(deltaKb: number): string {
   if (deltaKb === 0) return "";
-  const prefix = deltaKb > 0 ? "+" : "";
-  return `${prefix}${fmtSize(deltaKb * 1024)}`;
+  const sign = deltaKb > 0 ? "+" : "\u2212";
+  return `${sign}${fmtSize(Math.abs(deltaKb) * 1024)}`;
 }
 
 // ─── Navigation types ─────────────────────────────────────────────────────────
@@ -1177,6 +1177,11 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
 
 type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb" | "codeKb";
 
+const DELTA_FIELD_MAP: Record<SortField, keyof ProcessDiff> = {
+  pssKb: "deltaPssKb", rssKb: "deltaRssKb", javaHeapKb: "deltaJavaHeapKb",
+  nativeHeapKb: "deltaNativeHeapKb", graphicsKb: "deltaGraphicsKb", codeKb: "deltaCodeKb",
+};
+
 function CaptureView({ onCaptured, conn }: {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
   conn: AdbConnection;
@@ -1266,7 +1271,7 @@ function CaptureView({ onCaptured, conn }: {
     diffTriggeredRef.current = false;
     const ac = new AbortController();
     enrichAbortRef.current = ac;
-    setEnrichStatus(diffMode ? "Diffing: Fetching process list\u2026" : "Fetching process list\u2026");
+    setEnrichStatus("Fetching process list\u2026");
     setEnrichProgress(null);
     setSmapsData(new Map());
     setExpandedSmapsPid(null);
@@ -1306,7 +1311,7 @@ function CaptureView({ onCaptured, conn }: {
           { meminfo: needsMeminfo, smaps: needsSmaps },
           (done, total, current) => {
             if (ac.signal.aborted) return;
-            setEnrichStatus(diffMode ? `Diffing: ${current}` : current);
+            setEnrichStatus(current);
             setEnrichProgress({ done, total });
           },
           () => {
@@ -1331,7 +1336,7 @@ function CaptureView({ onCaptured, conn }: {
         setEnrichProgress(null);
       }
     }
-  }, [cancelEnrichment, clearDiff, diffMode]);
+  }, [cancelEnrichment, clearDiff]);
 
   const handleDiff = useCallback(() => {
     if (!processes) return;
@@ -1448,14 +1453,9 @@ function CaptureView({ onCaptured, conn }: {
     return copy;
   }, [processes, sortField, sortAsc]);
 
-  const deltaFieldMap: Record<SortField, keyof ProcessDiff> = {
-    pssKb: "deltaPssKb", rssKb: "deltaRssKb", javaHeapKb: "deltaJavaHeapKb",
-    nativeHeapKb: "deltaNativeHeapKb", graphicsKb: "deltaGraphicsKb", codeKb: "deltaCodeKb",
-  };
-
   const sortedDiffs = useMemo(() => {
     if (!processDiffs) return null;
-    const deltaKey = deltaFieldMap[sortField];
+    const deltaKey = DELTA_FIELD_MAP[sortField];
     const copy = [...processDiffs];
     copy.sort((a, b) => {
       // Pin added/removed to top
@@ -1526,9 +1526,9 @@ function CaptureView({ onCaptured, conn }: {
             </div>
             <div className="flex items-center gap-3">
               <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses}>
-                {enrichStatus && !diffMode ? "Refreshing\u2026" : "Refresh"}
+                {enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Diffing\u2026" : "Refresh"}
               </button>
-              {processes && !diffMode && !enrichStatus && (
+              {processes && !enrichStatus && (
                 <button
                   className="text-sky-600 hover:text-sky-800 text-xs border border-sky-300 px-2 py-0.5"
                   onClick={handleDiff}
@@ -1536,7 +1536,7 @@ function CaptureView({ onCaptured, conn }: {
                   Diff
                 </button>
               )}
-              {diffMode && (
+              {diffMode && !enrichStatus && (
                 <button
                   className="text-amber-600 hover:text-amber-800 text-xs border border-amber-300 px-2 py-0.5"
                   onClick={clearDiff}
@@ -1579,7 +1579,7 @@ function CaptureView({ onCaptured, conn }: {
           {enrichStatus && (
             <div className="mb-2 text-xs text-stone-500">
               <div className="flex items-center gap-2 mb-1">
-                <span className="truncate">{enrichStatus}</span>
+                <span className="truncate">{diffMode ? `Diffing: ${enrichStatus}` : enrichStatus}</span>
                 {enrichProgress && <span className="text-stone-400 whitespace-nowrap">{enrichProgress.done}/{enrichProgress.total}</span>}
                 <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelEnrichment}>Cancel</button>
               </div>

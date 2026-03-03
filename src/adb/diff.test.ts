@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { diffProcesses, diffGlobalMemInfo, type ProcessInfo, type GlobalMemInfo } from "./capture";
+import { deltaBgClass, fmtDelta } from "../App";
 
 function makeProc(pid: number, name: string, pssKb: number, overrides?: Partial<ProcessInfo>): ProcessInfo {
   return {
@@ -130,5 +131,67 @@ describe("diffGlobalMemInfo", () => {
     expect(d.deltaFreeRamKb).toBe(0);
     expect(d.deltaUsedPssKb).toBe(0);
     expect(d.deltaLostRamKb).toBe(0);
+  });
+});
+
+// ─── deltaBgClass ────────────────────────────────────────────────────────────
+
+describe("deltaBgClass", () => {
+  it("returns empty for zero", () => {
+    expect(deltaBgClass(0)).toBe("");
+  });
+
+  it("returns empty for small changes below 1 MB", () => {
+    expect(deltaBgClass(500)).toBe("");
+    expect(deltaBgClass(-999)).toBe("");
+  });
+
+  it("returns green-50 at 1 MB threshold", () => {
+    expect(deltaBgClass(1000)).toBe("bg-green-50");
+    expect(deltaBgClass(9999)).toBe("bg-green-50");
+  });
+
+  it("returns green-100 at 10 MB threshold", () => {
+    expect(deltaBgClass(10_000)).toBe("bg-green-100");
+    expect(deltaBgClass(49_999)).toBe("bg-green-100");
+  });
+
+  it("returns green-200 at 50 MB threshold", () => {
+    expect(deltaBgClass(50_000)).toBe("bg-green-200");
+    expect(deltaBgClass(500_000)).toBe("bg-green-200");
+  });
+
+  it("returns red classes for negative deltas", () => {
+    expect(deltaBgClass(-1000)).toBe("bg-red-50");
+    expect(deltaBgClass(-10_000)).toBe("bg-red-100");
+    expect(deltaBgClass(-50_000)).toBe("bg-red-200");
+  });
+});
+
+// ─── fmtDelta ────────────────────────────────────────────────────────────────
+
+describe("fmtDelta", () => {
+  it("returns empty for zero", () => {
+    expect(fmtDelta(0)).toBe("");
+  });
+
+  it("formats positive deltas with + sign", () => {
+    expect(fmtDelta(1024)).toBe("+1.0 MB");
+    expect(fmtDelta(5120)).toBe("+5.0 MB");
+  });
+
+  it("formats negative deltas with minus sign", () => {
+    expect(fmtDelta(-1024)).toBe("\u22121.0 MB");
+    expect(fmtDelta(-5120)).toBe("\u22125.0 MB");
+  });
+
+  it("formats KB-range deltas", () => {
+    expect(fmtDelta(1)).toBe("+1.0 KB");
+    expect(fmtDelta(-500)).toBe("\u2212500.0 KB");
+  });
+
+  it("formats GB-range deltas", () => {
+    expect(fmtDelta(1_048_576)).toBe("+1.0 GB");
+    expect(fmtDelta(-2_097_152)).toBe("\u22122.0 GB");
   });
 });
