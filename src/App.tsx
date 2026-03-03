@@ -1027,10 +1027,10 @@ type SmapsSortFieldType = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "shar
 type VmaSortFieldType = SmapsSortFieldType | "addrStart";
 
 const SMAPS_COLUMNS: [SmapsSortFieldType, string][] = [
-  ["pssKb", "PSS"], ["rssKb", "RSS"], ["sizeKb", "VSize"],
+  ["rssKb", "RSS"], ["pssKb", "PSS"],
   ["privateCleanKb", "Priv Clean"], ["privateDirtyKb", "Priv Dirty"],
   ["sharedCleanKb", "Shared Clean"], ["sharedDirtyKb", "Shared Dirty"],
-  ["swapKb", "Swap"],
+  ["swapKb", "Swap"], ["sizeKb", "VSize"],
 ];
 
 function VmaEntries({ entries, sortField, sortAsc, onToggleSort }: {
@@ -1101,7 +1101,7 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
   }, [aggregated, sortField, sortAsc]);
 
   return (
-    <div className="bg-stone-50 px-4 py-2 max-h-[400px] overflow-y-auto">
+    <div className="bg-stone-50 px-4 pb-2 max-h-[400px] overflow-y-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-stone-50 z-10">
           <tr className="border-b border-stone-200">
