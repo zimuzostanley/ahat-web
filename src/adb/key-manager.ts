@@ -31,15 +31,14 @@ export class AdbKeyManager {
 
   private async loadOrGenerate(): Promise<AdbKey> {
     // Try to load from browser credential store
-    if ("PasswordCredential" in window) {
+    if ("PasswordCredential" in window && navigator.credentials) {
       try {
         const cred = await navigator.credentials.get({
           password: true,
-          mediation: "optional",
+          mediation: "silent",
         } as CredentialRequestOptions);
-        if (cred && "password" in cred) {
-          await navigator.credentials.preventSilentAccess();
-          return AdbKey.deserialize(cred.password as string);
+        if (cred && "password" in cred && typeof (cred as PasswordCredential).password === "string") {
+          return AdbKey.deserialize((cred as PasswordCredential).password);
         }
       } catch {
         // Fall through to generate
@@ -53,7 +52,7 @@ export class AdbKeyManager {
   }
 
   private async storeKey(key: AdbKey): Promise<void> {
-    if (!("PasswordCredential" in window)) return;
+    if (!("PasswordCredential" in window) || !navigator.credentials) return;
     try {
       const cred = new PasswordCredential({
         id: "ahat-web-adb-key",
@@ -61,7 +60,6 @@ export class AdbKeyManager {
         name: "ahat.web ADB Key",
       });
       await navigator.credentials.store(cred);
-      await navigator.credentials.preventSilentAccess();
     } catch {
       // Credential storage not available — key stays in memory only
     }

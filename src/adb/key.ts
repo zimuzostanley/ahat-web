@@ -76,7 +76,9 @@ export class AdbKey {
   }
 
   static deserialize(s: string): AdbKey {
-    return new AdbKey(JSON.parse(s));
+    const jwk = JSON.parse(s);
+    if (!isValidJwk(jwk)) throw new Error("Invalid ADB key data");
+    return new AdbKey(jwk);
   }
 
   serialize(): string {
