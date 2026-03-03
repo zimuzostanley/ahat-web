@@ -1068,23 +1068,16 @@ function VmaEntries({ entries, sortField, sortAsc, onToggleSort, entryDiffs }: {
 
   const sorted = useMemo(() => {
     if (entryDiffs) {
-      const deltaKey = SMAPS_DELTA_KEY[sortField === "addrStart" ? "pssKb" : sortField];
       const copy = [...entryDiffs];
-      if (sortField === "addrStart") {
-        copy.sort((a, b) => {
-          const aPin = a.status !== "matched" ? 1 : 0;
-          const bPin = b.status !== "matched" ? 1 : 0;
-          if (aPin !== bPin) return bPin - aPin;
+      copy.sort((a, b) => {
+        const aPin = a.status !== "matched" ? 1 : 0;
+        const bPin = b.status !== "matched" ? 1 : 0;
+        if (aPin !== bPin) return bPin - aPin;
+        if (sortField === "addrStart") {
           return sortAsc ? a.current.addrStart.localeCompare(b.current.addrStart) : b.current.addrStart.localeCompare(a.current.addrStart);
-        });
-      } else {
-        copy.sort((a, b) => {
-          const aPin = a.status !== "matched" ? 1 : 0;
-          const bPin = b.status !== "matched" ? 1 : 0;
-          if (aPin !== bPin) return bPin - aPin;
-          return sortAsc ? (a[deltaKey] as number) - (b[deltaKey] as number) : (b[deltaKey] as number) - (a[deltaKey] as number);
-        });
-      }
+        }
+        return sortAsc ? a.current[sortField] - b.current[sortField] : b.current[sortField] - a.current[sortField];
+      });
       return copy.map(d => d.current);
     }
     const copy = [...entries];
@@ -1181,15 +1174,12 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
 
   const sorted = useMemo(() => {
     if (smapsDiffs) {
-      const deltaKey = SMAPS_DELTA_KEY[sortField];
       const copy = [...smapsDiffs];
       copy.sort((a, b) => {
         const aPin = a.status !== "matched" ? 1 : 0;
         const bPin = b.status !== "matched" ? 1 : 0;
         if (aPin !== bPin) return bPin - aPin;
-        const aVal = a[deltaKey] as number;
-        const bVal = b[deltaKey] as number;
-        return sortAsc ? aVal - bVal : bVal - aVal;
+        return sortAsc ? a.current[sortField] - b.current[sortField] : b.current[sortField] - a.current[sortField];
       });
       return copy.map(d => d.current);
     }
@@ -1316,10 +1306,6 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
 
 type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb" | "codeKb";
 
-const DELTA_FIELD_MAP: Record<SortField, keyof ProcessDiff> = {
-  pssKb: "deltaPssKb", rssKb: "deltaRssKb", javaHeapKb: "deltaJavaHeapKb",
-  nativeHeapKb: "deltaNativeHeapKb", graphicsKb: "deltaGraphicsKb", codeKb: "deltaCodeKb",
-};
 
 function CaptureView({ onCaptured, conn }: {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
@@ -1597,16 +1583,15 @@ function CaptureView({ onCaptured, conn }: {
 
   const sortedDiffs = useMemo(() => {
     if (!processDiffs) return null;
-    const deltaKey = DELTA_FIELD_MAP[sortField];
     const copy = [...processDiffs];
     copy.sort((a, b) => {
       // Pin added/removed to top
       const aPin = a.status !== "matched" ? 1 : 0;
       const bPin = b.status !== "matched" ? 1 : 0;
       if (aPin !== bPin) return bPin - aPin;
-      // Sort by absolute delta descending (default) or by field value
-      const aVal = a[deltaKey] as number;
-      const bVal = b[deltaKey] as number;
+      // Sort by current value (same field as normal mode)
+      const aVal = a.current[sortField];
+      const bVal = b.current[sortField];
       return sortAsc ? aVal - bVal : bVal - aVal;
     });
     return copy;
