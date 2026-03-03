@@ -985,10 +985,10 @@ interface Session {
 
 type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb";
 
-function CaptureView({ onCaptured }: {
+function CaptureView({ onCaptured, conn }: {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
+  conn: AdbConnection;
 }) {
-  const connRef = useRef(new AdbConnection());
   const [connected, setConnected] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
@@ -1027,7 +1027,7 @@ function CaptureView({ onCaptured }: {
   }, []);
 
   const refreshProcesses = useCallback(async () => {
-    if (!connRef.current.connected) return;
+    if (!conn.connected) return;
     cancelEnrichment();
     const ac = new AbortController();
     enrichAbortRef.current = ac;
@@ -1035,11 +1035,11 @@ function CaptureView({ onCaptured }: {
     setEnrichProgress(null);
     setError(null);
     try {
-      const list = await connRef.current.getProcessList(ac.signal);
+      const list = await conn.getProcessList(ac.signal);
       if (ac.signal.aborted) return;
       setProcesses(list);
       // Enrich with per-process details (Java/Native/Graphics breakdown)
-      await connRef.current.enrichProcessDetails(list, (done, total, current) => {
+      await conn.enrichProcessDetails(list, (done, total, current) => {
         if (ac.signal.aborted) return;
         setEnrichStatus(current);
         setEnrichProgress({ done, total });
@@ -1068,7 +1068,7 @@ function CaptureView({ onCaptured }: {
     setConnecting(true);
     setError(null);
     try {
-      await connRef.current.requestAndConnect();
+      await conn.requestAndConnect();
       setConnected(true);
     } catch (e) {
       if (e instanceof Error && e.name === "NotFoundError") {
@@ -1094,7 +1094,7 @@ function CaptureView({ onCaptured }: {
     try {
       const proc = processes?.find(p => p.pid === selectedPid);
       const procName = proc?.name ?? `pid_${selectedPid}`;
-      const buffer = await connRef.current.captureHeapDump(
+      const buffer = await conn.captureHeapDump(
         selectedPid,
         withBitmaps,
         (phase: CapturePhase) => {
@@ -1135,7 +1135,7 @@ function CaptureView({ onCaptured }: {
   const handleDisconnect = useCallback(() => {
     cancelEnrichment();
     cancelCapture();
-    connRef.current.disconnect();
+    conn.disconnect();
     setConnected(false);
     setProcesses(null);
     setSelectedPid(null);
@@ -1149,7 +1149,7 @@ function CaptureView({ onCaptured }: {
 
   // Clean up on unmount
   useEffect(() => {
-    return () => { cancelEnrichment(); cancelCapture(); connRef.current.disconnect(); };
+    return () => { cancelEnrichment(); cancelCapture(); conn.disconnect(); };
   }, [cancelEnrichment, cancelCapture]);
 
   const sorted = useMemo(() => {
@@ -1200,8 +1200,8 @@ function CaptureView({ onCaptured }: {
         <div>
           <div className="flex items-center justify-between mb-4">
             <div>
-              <span className="text-stone-600">{connRef.current.productName}</span>
-              <span className="text-stone-400 ml-2 font-mono text-xs">{connRef.current.serial}</span>
+              <span className="text-stone-600">{conn.productName}</span>
+              <span className="text-stone-400 ml-2 font-mono text-xs">{conn.serial}</span>
             </div>
             <div className="flex items-center gap-3">
               <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses}>
@@ -1364,6 +1364,7 @@ export default function App() {
   const [showCapture, setShowCapture] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const skipPushRef = useRef(false);
+  const adbConnRef = useRef(new AdbConnection());
 
   const activeSession = sessions.find(s => s.id === activeSessionId) ?? null;
   const proxy = activeSession?.proxy ?? null;
@@ -1478,91 +1479,10 @@ export default function App() {
     loadBuffer(name, buffer);
   }, [loadBuffer]);
 
-  // ── Landing page ──
-  if (sessions.length === 0 && !loading && !showCapture) {
-    return (
-      <div
-        className="min-h-screen bg-stone-50 flex items-center justify-center p-8"
-        onDragOver={e => e.preventDefault()}
-        onDrop={handleDrop}
-      >
-        <div className="max-w-lg w-full">
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 bg-stone-800 flex items-center justify-center text-white font-bold text-sm">A</div>
-              <h1 className="text-3xl font-bold text-stone-800 tracking-tight">
-                ahat<span className="text-stone-400 font-normal">.web</span>
-              </h1>
-            </div>
-            <p className="text-stone-500 text-sm">Android Heap Analysis Tool — runs entirely in your browser</p>
-          </div>
-          <div
-            className="bg-white border-2 border-dashed border-stone-300 p-10 text-center cursor-pointer hover:border-sky-400 transition-colors"
-            onClick={() => fileRef.current?.click()}
-          >
-            <div className="mb-4">
-              <svg className="w-12 h-12 mx-auto text-stone-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-              </svg>
-            </div>
-            <p className="text-stone-700 font-medium mb-1">Drop an .hprof file here or click to browse</p>
-            <p className="text-stone-400 text-sm">Supports J2SE HPROF format with Android extensions</p>
-            <input ref={fileRef} type="file" accept=".hprof" className="hidden" onChange={handleFile} />
-          </div>
-          <div className="mt-4 text-center">
-            <button
-              className="px-5 py-2.5 border border-stone-300 text-stone-700 hover:border-stone-400 hover:bg-white transition-colors"
-              onClick={() => setShowCapture(true)}
-            >
-              <span className="inline-flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
-                </svg>
-                Capture from device
-              </span>
-            </button>
-          </div>
-          {error && (
-            <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm">{error}</div>
-          )}
-        </div>
-      </div>
-    );
-  }
+  const isLanding = sessions.length === 0 && !loading;
+  const isLoading = loading;
+  const hasSession = sessions.length > 0 && !loading;
 
-  // ── Capture view (standalone) ──
-  if (showCapture && sessions.length === 0 && !loading) {
-    return (
-      <div className="min-h-screen bg-stone-50 p-8">
-        <div className="max-w-3xl mx-auto">
-          <div className="flex items-center gap-4 mb-6">
-            <button className="text-stone-400 hover:text-stone-600" onClick={() => setShowCapture(false)}>
-              &larr; Back
-            </button>
-            <h1 className="text-lg font-semibold text-stone-800">Capture from Device</h1>
-          </div>
-          <CaptureView onCaptured={handleCaptured} />
-        </div>
-      </div>
-    );
-  }
-
-  // ── Loading screen ──
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center p-8">
-        <div className="max-w-md w-full bg-white border border-stone-200 p-8">
-          <h2 className="text-lg font-semibold text-stone-800 mb-4">Parsing {loadingName || "Heap Dump"}&hellip;</h2>
-          <div className="w-full h-2 bg-stone-100 overflow-hidden mb-3">
-            <div className="h-full bg-sky-500 transition-all duration-300" style={{ width: progress.pct + "%" }} />
-          </div>
-          <p className="text-sm text-stone-500">{progress.msg}</p>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Main app with nav ──
   const navItems = [
     { view: "overview", label: "Overview", params: {} },
     { view: "rooted", label: "Rooted", params: {} },
@@ -1571,106 +1491,188 @@ export default function App() {
     { view: "search", label: "Search", params: {} },
   ];
 
+  // Single render tree — CaptureView is always mounted (one instance) to preserve
+  // USB connection state across landing → loading → main-app transitions.
   return (
     <div className="min-h-screen bg-stone-50 flex flex-col">
-      <header className="bg-stone-800 text-white px-4 py-2 flex items-center gap-4 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-sky-600 flex items-center justify-center text-white font-bold text-xs">A</div>
-          <span className="font-bold tracking-tight text-sm">ahat<span className="text-stone-400 font-normal">.web</span></span>
-        </div>
+      {/* Header — shown only when sessions are loaded */}
+      {hasSession && (
+        <header className="bg-stone-800 text-white px-4 py-2 flex items-center gap-4 flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 bg-sky-600 flex items-center justify-center text-white font-bold text-xs">A</div>
+            <span className="font-bold tracking-tight text-sm">ahat<span className="text-stone-400 font-normal">.web</span></span>
+          </div>
 
-        {/* Session tabs */}
-        {sessions.length > 1 && (
-          <div className="flex gap-0.5 ml-2 border-l border-stone-600 pl-3">
-            {sessions.map(s => (
+          {/* Session tabs */}
+          {sessions.length > 1 && (
+            <div className="flex gap-0.5 ml-2 border-l border-stone-600 pl-3">
+              {sessions.map(s => (
+                <button
+                  key={s.id}
+                  className={`group px-2 py-1 text-xs transition-colors flex items-center gap-1 ${
+                    s.id === activeSessionId ? "bg-stone-600 text-white" : "text-stone-400 hover:text-white hover:bg-stone-700"
+                  }`}
+                  onClick={() => switchSession(s.id)}
+                >
+                  <span className="truncate max-w-[120px]">{s.name}</span>
+                  <span
+                    className="opacity-0 group-hover:opacity-100 text-stone-500 hover:text-rose-400 ml-0.5"
+                    onClick={e => { e.stopPropagation(); discardSession(s.id); }}
+                  >&times;</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <nav className="flex gap-0.5 ml-4">
+            {navItems.map(n => (
               <button
-                key={s.id}
-                className={`group px-2 py-1 text-xs transition-colors flex items-center gap-1 ${
-                  s.id === activeSessionId ? "bg-stone-600 text-white" : "text-stone-400 hover:text-white hover:bg-stone-700"
+                key={n.view}
+                className={`px-3 py-1 text-sm transition-colors ${
+                  view === n.view && !showCapture ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
                 }`}
-                onClick={() => switchSession(s.id)}
+                onClick={() => { setShowCapture(false); navigate(n.view, n.params); }}
               >
-                <span className="truncate max-w-[120px]">{s.name}</span>
-                <span
-                  className="opacity-0 group-hover:opacity-100 text-stone-500 hover:text-rose-400 ml-0.5"
-                  onClick={e => { e.stopPropagation(); discardSession(s.id); }}
-                >&times;</span>
+                {n.label}
               </button>
             ))}
-          </div>
-        )}
-
-        <nav className="flex gap-0.5 ml-4">
-          {navItems.map(n => (
+          </nav>
+          <div className="ml-auto flex items-center gap-3">
             <button
-              key={n.view}
-              className={`px-3 py-1 text-sm transition-colors ${
-                view === n.view && !showCapture ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
-              }`}
-              onClick={() => { setShowCapture(false); navigate(n.view, n.params); }}
+              className="text-stone-400 hover:text-white text-sm"
+              onClick={() => window.history.back()}
             >
-              {n.label}
+              &larr; Back
             </button>
-          ))}
-        </nav>
-        <div className="ml-auto flex items-center gap-3">
-          <button
-            className="text-stone-400 hover:text-white text-sm"
-            onClick={() => window.history.back()}
-          >
-            &larr; Back
-          </button>
-          {activeSession && (
+            {activeSession && (
+              <button
+                className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
+                onClick={() => downloadBuffer(activeSession.name, activeSession.buffer)}
+              >
+                Download
+              </button>
+            )}
+            <button
+              className={`text-xs border px-2 py-0.5 transition-colors ${
+                showCapture ? "bg-stone-600 text-white border-stone-500" : "text-stone-400 hover:text-white border-stone-600"
+              }`}
+              onClick={() => setShowCapture(!showCapture)}
+            >
+              Capture
+            </button>
             <button
               className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
-              onClick={() => downloadBuffer(activeSession.name, activeSession.buffer)}
+              onClick={() => fileRef.current?.click()}
             >
-              Download
+              Open File
             </button>
-          )}
-          <button
-            className={`text-xs border px-2 py-0.5 transition-colors ${
-              showCapture ? "bg-stone-600 text-white border-stone-500" : "text-stone-400 hover:text-white border-stone-600"
-            }`}
-            onClick={() => setShowCapture(!showCapture)}
-          >
-            Capture
-          </button>
-          <button
-            className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
-            onClick={() => fileRef.current?.click()}
-          >
-            Open File
-          </button>
-          <input ref={fileRef} type="file" accept=".hprof" className="hidden" onChange={handleFile} />
-          {activeSession && sessions.length === 1 && (
-            <button
-              className="text-stone-400 hover:text-rose-400 text-xs"
-              onClick={() => discardSession(activeSession.id)}
-            >
-              Discard
-            </button>
-          )}
-        </div>
-      </header>
+            <input ref={fileRef} type="file" accept=".hprof" className="hidden" onChange={handleFile} />
+            {activeSession && sessions.length === 1 && (
+              <button
+                className="text-stone-400 hover:text-rose-400 text-xs"
+                onClick={() => discardSession(activeSession.id)}
+              >
+                Discard
+              </button>
+            )}
+          </div>
+        </header>
+      )}
 
-      <main className="flex-1 p-4 max-w-7xl mx-auto w-full text-sm">
-        {/* CaptureView stays mounted to preserve USB connection across view switches */}
-        <div className={showCapture ? "" : "hidden"}>
-          <CaptureView onCaptured={handleCaptured} />
+      {/* Landing page */}
+      {isLanding && !showCapture && (
+        <div
+          className="flex items-center justify-center p-8 min-h-screen"
+          onDragOver={e => e.preventDefault()}
+          onDrop={handleDrop}
+        >
+          <div className="max-w-lg w-full">
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 mb-3">
+                <div className="w-8 h-8 bg-stone-800 flex items-center justify-center text-white font-bold text-sm">A</div>
+                <h1 className="text-3xl font-bold text-stone-800 tracking-tight">
+                  ahat<span className="text-stone-400 font-normal">.web</span>
+                </h1>
+              </div>
+              <p className="text-stone-500 text-sm">Android Heap Analysis Tool — runs entirely in your browser</p>
+            </div>
+            <div
+              className="bg-white border-2 border-dashed border-stone-300 p-10 text-center cursor-pointer hover:border-sky-400 transition-colors"
+              onClick={() => fileRef.current?.click()}
+            >
+              <div className="mb-4">
+                <svg className="w-12 h-12 mx-auto text-stone-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                </svg>
+              </div>
+              <p className="text-stone-700 font-medium mb-1">Drop an .hprof file here or click to browse</p>
+              <p className="text-stone-400 text-sm">Supports J2SE HPROF format with Android extensions</p>
+              <input ref={fileRef} type="file" accept=".hprof" className="hidden" onChange={handleFile} />
+            </div>
+            <div className="mt-4 text-center">
+              <button
+                className="px-5 py-2.5 border border-stone-300 text-stone-700 hover:border-stone-400 hover:bg-white transition-colors"
+                onClick={() => setShowCapture(true)}
+              >
+                <span className="inline-flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
+                  </svg>
+                  Capture from device
+                </span>
+              </button>
+            </div>
+            {error && (
+              <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm">{error}</div>
+            )}
+          </div>
         </div>
-        {!showCapture && (
-          <>
-            {view === "overview" && overview && <OverviewView overview={overview} />}
-            {view === "rooted"   && proxy    && <RootedView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} />}
-            {view === "object"   && proxy    && <ObjectView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as ObjectParams} />}
-            {view === "objects"  && proxy    && <ObjectsView proxy={proxy} navigate={navigate} params={params as unknown as ObjectsParams} />}
-            {view === "site"     && proxy    && <SiteView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as SiteParams} />}
-            {view === "search"   && proxy    && <SearchView proxy={proxy} navigate={navigate} initialQuery={params.q as string | undefined} />}
-            {view === "bitmaps"  && proxy    && <BitmapGalleryView proxy={proxy} navigate={navigate} />}
-          </>
+      )}
+
+      {/* Loading screen */}
+      {isLoading && (
+        <div className="flex items-center justify-center p-8 min-h-screen">
+          <div className="max-w-md w-full bg-white border border-stone-200 p-8">
+            <h2 className="text-lg font-semibold text-stone-800 mb-4">Parsing {loadingName || "Heap Dump"}&hellip;</h2>
+            <div className="w-full h-2 bg-stone-100 overflow-hidden mb-3">
+              <div className="h-full bg-sky-500 transition-all duration-300" style={{ width: progress.pct + "%" }} />
+            </div>
+            <p className="text-sm text-stone-500">{progress.msg}</p>
+          </div>
+        </div>
+      )}
+
+      {/* CaptureView — ALWAYS mounted, single instance preserves USB connection
+         across landing → loading → main-app state transitions.
+         Hidden via CSS when not active; wrapper styling adapts to context. */}
+      <div className={showCapture && !isLoading ? "" : "hidden"}>
+        {!hasSession && (
+          <div className="p-8 pb-0 max-w-3xl mx-auto">
+            <div className="flex items-center gap-4 mb-6">
+              <button className="text-stone-400 hover:text-stone-600" onClick={() => setShowCapture(false)}>
+                &larr; Back
+              </button>
+              <h1 className="text-lg font-semibold text-stone-800">Capture from Device</h1>
+            </div>
+          </div>
         )}
-      </main>
+        <div className={hasSession ? "flex-1 p-4 max-w-7xl mx-auto w-full text-sm" : "max-w-3xl mx-auto px-8"}>
+          <CaptureView onCaptured={handleCaptured} conn={adbConnRef.current} />
+        </div>
+      </div>
+
+      {/* Main content views */}
+      {hasSession && !showCapture && (
+        <main className="flex-1 p-4 max-w-7xl mx-auto w-full text-sm">
+          {view === "overview" && overview && <OverviewView overview={overview} />}
+          {view === "rooted"   && proxy    && <RootedView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} />}
+          {view === "object"   && proxy    && <ObjectView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as ObjectParams} />}
+          {view === "objects"  && proxy    && <ObjectsView proxy={proxy} navigate={navigate} params={params as unknown as ObjectsParams} />}
+          {view === "site"     && proxy    && <SiteView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as SiteParams} />}
+          {view === "search"   && proxy    && <SearchView proxy={proxy} navigate={navigate} initialQuery={params.q as string | undefined} />}
+          {view === "bitmaps"  && proxy    && <BitmapGalleryView proxy={proxy} navigate={navigate} />}
+        </main>
+      )}
     </div>
   );
 }
