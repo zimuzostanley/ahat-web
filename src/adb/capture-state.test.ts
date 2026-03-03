@@ -567,3 +567,102 @@ describe("AdbConnection.fetchAllSmaps", () => {
     expect(onData).not.toHaveBeenCalled();
   });
 });
+
+// ─── Tests: enrichPerProcess (combined meminfo + smaps) ──────────────────────
+
+describe("AdbConnection.enrichPerProcess", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function setupRooted(deviceOverrides: Record<string, unknown> = {}) {
+    const { conn, mockDevice } = setupConnected(deviceOverrides);
+    (conn as any)._isRoot = true;      // eslint-disable-line @typescript-eslint/no-explicit-any
+    (conn as any)._suPrefix = "su 0";  // eslint-disable-line @typescript-eslint/no-explicit-any
+    return { conn, mockDevice };
+  }
+
+  it("fetches meminfo and smaps per process in single pass", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(2); // pssKb: 200, 100
+    const callOrder: string[] = [];
+
+    mockDevice.shell.mockImplementation(async (cmd: string) => {
+      if (cmd.startsWith("dumpsys")) {
+        callOrder.push(`meminfo:${cmd.match(/\d+$/)?.[0]}`);
+        return DETAILED_SINGLE;
+      }
+      if (cmd.includes("/smaps")) {
+        callOrder.push(`smaps:${cmd.match(/\/proc\/(\d+)/)?.[1]}`);
+        return SMAPS_OUTPUT;
+      }
+      return "";
+    });
+
+    const onMeminfo = vi.fn();
+    const onSmaps = vi.fn();
+    await conn.enrichPerProcess(processes, { meminfo: true, smaps: true }, undefined, onMeminfo, onSmaps);
+
+    // Both meminfo and smaps called for each process
+    expect(onMeminfo).toHaveBeenCalledTimes(2);
+    expect(onSmaps).toHaveBeenCalledTimes(2);
+    // Interleaved: meminfo then smaps for first process, then meminfo then smaps for second
+    expect(callOrder[0]).toBe("meminfo:1000"); // biggest PSS first
+    expect(callOrder[1]).toBe("smaps:1000");
+    expect(callOrder[2]).toBe("meminfo:1001");
+    expect(callOrder[3]).toBe("smaps:1001");
+  });
+
+  it("fetches only smaps when meminfo not needed", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(2);
+    mockDevice.shell.mockResolvedValue(SMAPS_OUTPUT);
+
+    const onMeminfo = vi.fn();
+    const onSmaps = vi.fn();
+    await conn.enrichPerProcess(processes, { meminfo: false, smaps: true }, undefined, onMeminfo, onSmaps);
+
+    expect(onMeminfo).not.toHaveBeenCalled();
+    expect(onSmaps).toHaveBeenCalledTimes(2);
+    // No meminfo calls
+    const meminfoCalls = mockDevice.shell.mock.calls.filter((c: string[]) => c[0].startsWith("dumpsys"));
+    expect(meminfoCalls).toHaveLength(0);
+  });
+
+  it("reports progress for combined pass", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(3);
+    mockDevice.shell.mockResolvedValue(SMAPS_OUTPUT);
+
+    const onProgress = vi.fn();
+    await conn.enrichPerProcess(processes, { smaps: true }, onProgress);
+
+    expect(onProgress).toHaveBeenCalledTimes(4); // 0/3, 1/3, 2/3, 3/3
+    expect(onProgress).toHaveBeenNthCalledWith(1, 0, 3, "proc0");
+    expect(onProgress).toHaveBeenNthCalledWith(4, 3, 3, "");
+  });
+
+  it("stops on abort", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(5);
+    const ac = new AbortController();
+    let callCount = 0;
+
+    mockDevice.shell.mockImplementation(async () => {
+      callCount++;
+      if (callCount >= 3) ac.abort();
+      return SMAPS_OUTPUT;
+    });
+
+    await conn.enrichPerProcess(processes, { smaps: true }, undefined, undefined, undefined, ac.signal);
+    expect(callCount).toBeLessThan(10); // 5 processes * 1 smaps each = at most 5
+  });
+
+  it("does nothing when both options are false", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(3);
+
+    await conn.enrichPerProcess(processes, { meminfo: false, smaps: false });
+    expect(mockDevice.shell).not.toHaveBeenCalled();
+  });
+});

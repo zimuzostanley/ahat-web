@@ -1180,10 +1180,8 @@ function CaptureView({ onCaptured, conn }: {
   const [captureStatus, setCaptureStatus] = useState("");
   const [captureProgress, setCaptureProgress] = useState<{ done: number; total: number } | null>(null);
 
-  // Smaps — progressive background fetch, root-only
-  const smapsAbortRef = useRef<AbortController | null>(null);
+  // Smaps — fetched alongside meminfo enrichment (root-only)
   const [smapsData, setSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
-  const [smapsFetchProgress, setSmapsFetchProgress] = useState<{ done: number; total: number } | null>(null);
   const [expandedSmapsPid, setExpandedSmapsPid] = useState<number | null>(null);
   const [expandedSmapsGroup, setExpandedSmapsGroup] = useState<string | null>(null);
   type SmapsSortField = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
@@ -1210,17 +1208,9 @@ function CaptureView({ onCaptured, conn }: {
     setCaptureProgress(null);
   }, []);
 
-  const cancelSmapsFetch = useCallback(() => {
-    if (!smapsAbortRef.current) return;
-    smapsAbortRef.current.abort();
-    smapsAbortRef.current = null;
-    setSmapsFetchProgress(null);
-  }, []);
-
   const refreshProcesses = useCallback(async () => {
     if (!conn.connected) return;
     cancelEnrichment();
-    cancelSmapsFetch();
     const ac = new AbortController();
     enrichAbortRef.current = ac;
     setEnrichStatus("Fetching process list\u2026");
@@ -1229,10 +1219,9 @@ function CaptureView({ onCaptured, conn }: {
     setExpandedSmapsPid(null);
     setExpandedSmapsGroup(null);
     setError(null);
-    let list: ProcessInfo[] = [];
     try {
       const result = await conn.getProcessList(ac.signal);
-      list = result.list;
+      const list = result.list;
       if (ac.signal.aborted) return;
       // On non-rooted devices, annotate processes with debuggable status
       if (!conn.isRoot) {
@@ -1241,14 +1230,29 @@ function CaptureView({ onCaptured, conn }: {
         for (const p of list) p.debuggable = debuggable.has(p.name);
       }
       setProcesses(list);
-      // Only enrich with per-process details if compact format lacked breakdown.
-      if (!result.hasBreakdown) {
-        await conn.enrichProcessDetails(list, (done, total, current) => {
-          if (ac.signal.aborted) return;
-          setEnrichStatus(current);
-          setEnrichProgress({ done, total });
-          setProcesses([...list]);
-        }, ac.signal);
+      // Single per-process pass: enrich meminfo (if needed) + smaps (if root).
+      // Each process is fully ready before moving to the next.
+      const needsMeminfo = !result.hasBreakdown;
+      const needsSmaps = conn.isRoot;
+      if (needsMeminfo || needsSmaps) {
+        await conn.enrichPerProcess(
+          list,
+          { meminfo: needsMeminfo, smaps: needsSmaps },
+          (done, total, current) => {
+            if (ac.signal.aborted) return;
+            setEnrichStatus(current);
+            setEnrichProgress({ done, total });
+          },
+          () => {
+            if (ac.signal.aborted) return;
+            setProcesses([...list]);
+          },
+          (pid, data) => {
+            if (ac.signal.aborted) return;
+            setSmapsData(prev => new Map(prev).set(pid, data));
+          },
+          ac.signal,
+        );
       }
     } catch (e) {
       if (ac.signal.aborted) return;
@@ -1261,34 +1265,7 @@ function CaptureView({ onCaptured, conn }: {
         setEnrichProgress(null);
       }
     }
-    // Start progressive smaps fetch in background (root-only)
-    if (conn.isRoot && !ac.signal.aborted && list.length > 0) {
-      const smapsAc = new AbortController();
-      smapsAbortRef.current = smapsAc;
-      setSmapsFetchProgress({ done: 0, total: list.length });
-      try {
-        await conn.fetchAllSmaps(
-          list,
-          (pid, data) => {
-            if (smapsAc.signal.aborted) return;
-            setSmapsData(prev => new Map(prev).set(pid, data));
-          },
-          (done, total) => {
-            if (smapsAc.signal.aborted) return;
-            setSmapsFetchProgress({ done, total });
-          },
-          smapsAc.signal,
-        );
-      } catch {
-        // Non-fatal — smaps is supplementary
-      } finally {
-        if (smapsAbortRef.current === smapsAc) {
-          smapsAbortRef.current = null;
-          setSmapsFetchProgress(null);
-        }
-      }
-    }
-  }, [cancelEnrichment, cancelSmapsFetch]);
+  }, [cancelEnrichment]);
 
   useEffect(() => {
     if (connected) refreshProcesses();
@@ -1314,9 +1291,8 @@ function CaptureView({ onCaptured, conn }: {
   const handleCapture = useCallback(async (overridePid?: number) => {
     const pid = overridePid ?? selectedPid;
     if (pid === null || capturing) return;
-    // Cancel enrichment + smaps — ADB device handles one command at a time
+    // Cancel enrichment (includes smaps) — ADB device handles one command at a time
     cancelEnrichment();
-    cancelSmapsFetch();
     if (overridePid !== undefined) setSelectedPid(overridePid);
     const ac = new AbortController();
     captureAbortRef.current = ac;
@@ -1363,12 +1339,11 @@ function CaptureView({ onCaptured, conn }: {
         setCaptureProgress(null);
       }
     }
-  }, [selectedPid, withBitmaps, processes, onCaptured, capturing, cancelEnrichment, cancelSmapsFetch]);
+  }, [selectedPid, withBitmaps, processes, onCaptured, capturing, cancelEnrichment]);
 
   const handleDisconnect = useCallback(() => {
     cancelEnrichment();
     cancelCapture();
-    cancelSmapsFetch();
     conn.disconnect();
     setConnected(false);
     setProcesses(null);
@@ -1380,15 +1355,14 @@ function CaptureView({ onCaptured, conn }: {
     setCaptureStatus("");
     setCaptureProgress(null);
     setSmapsData(new Map());
-    setSmapsFetchProgress(null);
     setExpandedSmapsPid(null);
     setExpandedSmapsGroup(null);
-  }, [cancelEnrichment, cancelCapture, cancelSmapsFetch]);
+  }, [cancelEnrichment, cancelCapture]);
 
   // Clean up on unmount
   useEffect(() => {
-    return () => { cancelEnrichment(); cancelCapture(); cancelSmapsFetch(); conn.disconnect(); };
-  }, [cancelEnrichment, cancelCapture, cancelSmapsFetch]);
+    return () => { cancelEnrichment(); cancelCapture(); conn.disconnect(); };
+  }, [cancelEnrichment, cancelCapture]);
 
   const sorted = useMemo(() => {
     if (!processes) return null;
@@ -1485,6 +1459,22 @@ function CaptureView({ onCaptured, conn }: {
               {capturing ? (captureStatus || "Capturing\u2026") : "Capture Heap Dump"}
             </button>
           </div>
+
+          {/* Enrichment / smaps progress */}
+          {enrichStatus && (
+            <div className="mb-2 text-xs text-stone-500">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="truncate">{enrichStatus}</span>
+                {enrichProgress && <span className="text-stone-400 whitespace-nowrap">{enrichProgress.done}/{enrichProgress.total}</span>}
+                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelEnrichment}>Cancel</button>
+              </div>
+              {enrichProgress && enrichProgress.total > 0 && (
+                <div className="h-1 bg-stone-100 rounded overflow-hidden">
+                  <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Process list */}
           {sorted === null ? (
@@ -1583,7 +1573,7 @@ function CaptureView({ onCaptured, conn }: {
                             >
                               {isSmapsExpanded ? "\u25BC" : "\u25B6"}
                             </button>
-                          ) : smapsFetchProgress ? (
+                          ) : enrichProgress ? (
                             <span className="text-stone-300 text-[10px]">{"\u2026"}</span>
                           ) : null}
                         </td>
@@ -1611,36 +1601,6 @@ function CaptureView({ onCaptured, conn }: {
                   })}
                 </tbody>
               </table>
-            </div>
-          )}
-
-          {/* Enrichment status */}
-          {enrichStatus && (
-            <div className="mt-2 text-xs text-stone-500">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="truncate">{enrichStatus}</span>
-                {enrichProgress && <span className="text-stone-400 whitespace-nowrap">{enrichProgress.done}/{enrichProgress.total}</span>}
-                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelEnrichment}>Cancel</button>
-              </div>
-              {enrichProgress && enrichProgress.total > 0 && (
-                <div className="h-1 bg-stone-100 rounded overflow-hidden">
-                  <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Smaps fetch progress (root-only) */}
-          {conn.isRoot && smapsFetchProgress && smapsFetchProgress.total > 0 && (
-            <div className="mt-2 text-xs text-stone-500">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="truncate">Fetching memory maps{"\u2026"}</span>
-                <span className="text-stone-400 whitespace-nowrap">{smapsFetchProgress.done}/{smapsFetchProgress.total}</span>
-                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelSmapsFetch}>Cancel</button>
-              </div>
-              <div className="h-1 bg-stone-100 rounded overflow-hidden">
-                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(smapsFetchProgress.done / smapsFetchProgress.total) * 100}%` }} />
-              </div>
             </div>
           )}
 

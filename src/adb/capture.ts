@@ -502,6 +502,68 @@ export class AdbConnection {
     return buffer;
   }
 
+  /**
+   * Single per-process pass: enrich meminfo + fetch smaps together.
+   * Each process is fully ready (breakdown + memory maps) before moving to the next.
+   */
+  async enrichPerProcess(
+    processes: ProcessInfo[],
+    options: { meminfo?: boolean; smaps?: boolean },
+    onProgress?: (done: number, total: number, name: string) => void,
+    onMeminfo?: () => void,
+    onSmaps?: (pid: number, data: SmapsAggregated[]) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!this.device) return;
+    const needsMeminfo = options.meminfo ?? false;
+    const needsSmaps = (options.smaps ?? false) && this._isRoot;
+    if (!needsMeminfo && !needsSmaps) return;
+
+    // Process in PSS-descending order (biggest first = most interesting)
+    const sorted = [...processes].sort((a, b) => b.pssKb - a.pssKb);
+
+    for (let i = 0; i < sorted.length; i++) {
+      if (signal?.aborted || !this.device?.connected) break;
+      const proc = sorted[i];
+      onProgress?.(i, sorted.length, proc.name);
+
+      // 1. Enrich with per-process meminfo breakdown
+      if (needsMeminfo) {
+        try {
+          const output = await this.device.shell(`dumpsys -t 30 meminfo ${proc.pid}`, signal);
+          const details = parseDetailedSections(output);
+          if (details.length > 0) {
+            const d = details[0];
+            proc.javaHeapKb = d.javaHeapKb;
+            proc.nativeHeapKb = d.nativeHeapKb;
+            proc.graphicsKb = d.graphicsKb;
+            if (d.pssKb > 0) proc.pssKb = d.pssKb;
+            if (d.rssKb > 0) proc.rssKb = d.rssKb;
+          }
+          onMeminfo?.();
+        } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") break;
+          // Process may have died — skip
+        }
+      }
+
+      // 2. Fetch smaps (root-only)
+      if (needsSmaps) {
+        try {
+          const entries = await this.getSmapsForPid(proc.pid, signal);
+          if (entries.length > 0) {
+            onSmaps?.(proc.pid, aggregateSmaps(entries));
+          }
+        } catch (e) {
+          if (e instanceof DOMException && e.name === "AbortError") break;
+          // Process may have died — skip
+        }
+      }
+    }
+
+    onProgress?.(sorted.length, sorted.length, "");
+  }
+
   /** Fetch parsed smaps data for a single process (requires root). */
   async getSmapsForPid(pid: number, signal?: AbortSignal): Promise<SmapsEntry[]> {
     if (!this.device) throw new Error("Not connected");
