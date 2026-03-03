@@ -146,25 +146,27 @@ describe("AdbConnection.getProcessList", () => {
   });
 });
 
+// ─── Test data factory ───────────────────────────────────────────────────────
+
+function makeProcesses(count: number): ProcessInfo[] {
+  return Array.from({ length: count }, (_, i) => ({
+    pid: 1000 + i,
+    name: `proc${i}`,
+    oomLabel: "",
+    pssKb: (count - i) * 100,
+    rssKb: 0,
+    javaHeapKb: 0,
+    nativeHeapKb: 0,
+    graphicsKb: 0,
+  }));
+}
+
 // ─── Tests: enrichProcessDetails ──────────────────────────────────────────────
 
 describe("AdbConnection.enrichProcessDetails", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });
-
-  function makeProcesses(count: number): ProcessInfo[] {
-    return Array.from({ length: count }, (_, i) => ({
-      pid: 1000 + i,
-      name: `proc${i}`,
-      oomLabel: "",
-      pssKb: (count - i) * 100,
-      rssKb: 0,
-      javaHeapKb: 0,
-      nativeHeapKb: 0,
-      graphicsKb: 0,
-    }));
-  }
 
   it("enriches processes with per-pid meminfo data", async () => {
     const { conn, mockDevice } = setupConnected();
@@ -380,5 +382,188 @@ describe("AdbConnection.captureHeapDump", () => {
   it("throws when not connected", async () => {
     const conn = new AdbConnection();
     await expect(conn.captureHeapDump(1234, false)).rejects.toThrow("Not connected");
+  });
+});
+
+// ─── Fixture: smaps output ───────────────────────────────────────────────────
+
+const SMAPS_OUTPUT = `7f1234000-7f1235000 r-xp 00000000 fd:01 100  /system/lib64/libart.so
+Size:                  4 kB
+Rss:                   4 kB
+Pss:                   2 kB
+Shared_Clean:          4 kB
+Shared_Dirty:          0 kB
+Private_Clean:         0 kB
+Private_Dirty:         0 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+7f2000000-7f2100000 rw-p 00000000 00:00 0      [anon:libc_malloc]
+Size:               1024 kB
+Rss:                 512 kB
+Pss:                 512 kB
+Shared_Clean:          0 kB
+Shared_Dirty:          0 kB
+Private_Clean:         0 kB
+Private_Dirty:       512 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+`;
+
+// ─── Tests: getSmapsForPid ───────────────────────────────────────────────────
+
+describe("AdbConnection.getSmapsForPid", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns parsed smaps entries for a valid pid", async () => {
+    const { conn, mockDevice } = setupConnected();
+    (conn as any)._isRoot = true;      // eslint-disable-line @typescript-eslint/no-explicit-any
+    (conn as any)._suPrefix = "su 0";  // eslint-disable-line @typescript-eslint/no-explicit-any
+    mockDevice.shell.mockResolvedValueOnce(SMAPS_OUTPUT);
+
+    const entries = await conn.getSmapsForPid(1234);
+    expect(entries).toHaveLength(2);
+    expect(entries[0].name).toBe("/system/lib64/libart.so");
+    expect(entries[0].pssKb).toBe(2);
+    expect(entries[1].name).toBe("[anon:libc_malloc]");
+    expect(entries[1].pssKb).toBe(512);
+    expect(mockDevice.shell).toHaveBeenCalledWith("su 0 cat /proc/1234/smaps", undefined);
+  });
+
+  it("uses su -c variant when that prefix was detected", async () => {
+    const { conn, mockDevice } = setupConnected();
+    (conn as any)._isRoot = true;       // eslint-disable-line @typescript-eslint/no-explicit-any
+    (conn as any)._suPrefix = "su -c";  // eslint-disable-line @typescript-eslint/no-explicit-any
+    mockDevice.shell.mockResolvedValueOnce("");
+
+    await conn.getSmapsForPid(999);
+    expect(mockDevice.shell).toHaveBeenCalledWith("su -c 'cat /proc/999/smaps'", undefined);
+  });
+
+  it("throws AbortError when signal is pre-aborted", async () => {
+    const { conn } = setupConnected();
+    (conn as any)._isRoot = true;  // eslint-disable-line @typescript-eslint/no-explicit-any
+    const ac = new AbortController();
+    ac.abort();
+
+    await expect(conn.getSmapsForPid(1234, ac.signal)).rejects.toThrow("Aborted");
+  });
+
+  it("throws when device is null", async () => {
+    const conn = new AdbConnection();
+    await expect(conn.getSmapsForPid(1234)).rejects.toThrow("Not connected");
+  });
+});
+
+// ─── Tests: fetchAllSmaps ────────────────────────────────────────────────────
+
+describe("AdbConnection.fetchAllSmaps", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function setupRooted(deviceOverrides: Record<string, unknown> = {}) {
+    const { conn, mockDevice } = setupConnected(deviceOverrides);
+    (conn as any)._isRoot = true;      // eslint-disable-line @typescript-eslint/no-explicit-any
+    (conn as any)._suPrefix = "su 0";  // eslint-disable-line @typescript-eslint/no-explicit-any
+    return { conn, mockDevice };
+  }
+
+  it("fetches smaps in PSS-descending order", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(3); // pssKb: 300, 200, 100
+    const fetchedPids: number[] = [];
+
+    mockDevice.shell.mockImplementation(async (cmd: string) => {
+      const m = cmd.match(/\/proc\/(\d+)\/smaps/);
+      if (m) fetchedPids.push(parseInt(m[1], 10));
+      return SMAPS_OUTPUT;
+    });
+
+    await conn.fetchAllSmaps(processes);
+
+    // Should be fetched in PSS-desc order: pid 1000 (300), 1001 (200), 1002 (100)
+    expect(fetchedPids).toEqual([1000, 1001, 1002]);
+  });
+
+  it("calls onData for each process with aggregated data", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(2);
+    mockDevice.shell.mockResolvedValue(SMAPS_OUTPUT);
+
+    const onData = vi.fn();
+    await conn.fetchAllSmaps(processes, onData);
+
+    expect(onData).toHaveBeenCalledTimes(2);
+    // First call: biggest PSS process (pid 1000)
+    expect(onData.mock.calls[0][0]).toBe(1000);
+    const agg = onData.mock.calls[0][1];
+    expect(agg).toHaveLength(2); // libart + libc_malloc
+  });
+
+  it("calls onProgress for each process", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(3);
+    mockDevice.shell.mockResolvedValue(SMAPS_OUTPUT);
+
+    const onProgress = vi.fn();
+    await conn.fetchAllSmaps(processes, undefined, onProgress);
+
+    // 3 progress calls + 1 final
+    expect(onProgress).toHaveBeenCalledTimes(4);
+    expect(onProgress).toHaveBeenNthCalledWith(1, 0, 3, "proc0");
+    expect(onProgress).toHaveBeenNthCalledWith(4, 3, 3, "");
+  });
+
+  it("stops when signal is aborted", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(5);
+    const ac = new AbortController();
+    let callCount = 0;
+
+    mockDevice.shell.mockImplementation(async () => {
+      callCount++;
+      if (callCount >= 2) ac.abort();
+      return SMAPS_OUTPUT;
+    });
+
+    await conn.fetchAllSmaps(processes, undefined, undefined, ac.signal);
+    expect(callCount).toBeLessThan(5);
+  });
+
+  it("skips processes that throw non-abort errors", async () => {
+    const { conn, mockDevice } = setupRooted();
+    const processes = makeProcesses(3);
+
+    mockDevice.shell
+      .mockResolvedValueOnce(SMAPS_OUTPUT)       // proc0 OK
+      .mockRejectedValueOnce(new Error("died"))  // proc1 fails
+      .mockResolvedValueOnce(SMAPS_OUTPUT);      // proc2 OK
+
+    const onData = vi.fn();
+    await conn.fetchAllSmaps(processes, onData);
+
+    // proc0 and proc2 succeeded, proc1 skipped
+    expect(onData).toHaveBeenCalledTimes(2);
+    expect(mockDevice.shell).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns immediately when not root", async () => {
+    const { conn, mockDevice } = setupConnected();
+    // _isRoot defaults to false
+    const processes = makeProcesses(3);
+    const onData = vi.fn();
+
+    await conn.fetchAllSmaps(processes, onData);
+    expect(onData).not.toHaveBeenCalled();
+    expect(mockDevice.shell).not.toHaveBeenCalled();
+  });
+
+  it("returns immediately when device is null", async () => {
+    const conn = new AdbConnection();
+    const onData = vi.fn();
+    await conn.fetchAllSmaps(makeProcesses(1), onData);
+    expect(onData).not.toHaveBeenCalled();
   });
 });

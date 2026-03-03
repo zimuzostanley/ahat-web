@@ -1,11 +1,11 @@
-import { useState, useCallback, useRef, useMemo, useEffect } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "react";
 import type {
   OverviewData, HeapInfo,
   InstanceRow, InstanceDetail,
   SiteData, SiteChildRow, SiteObjectsRow,
   PrimOrRef, BitmapListRow,
 } from "./hprof.worker";
-import { AdbConnection, type ProcessInfo, type CapturePhase } from "./adb/capture";
+import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 
 // ─── Worker proxy ─────────────────────────────────────────────────────────────
@@ -1021,6 +1021,137 @@ interface Session {
   overview: OverviewData;
 }
 
+// ─── Smaps sub-table components ──────────────────────────────────────────────
+
+type SmapsSortFieldType = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
+type VmaSortFieldType = SmapsSortFieldType | "addrStart";
+
+const SMAPS_COLUMNS: [SmapsSortFieldType, string][] = [
+  ["pssKb", "PSS"], ["rssKb", "RSS"], ["sizeKb", "VSize"],
+  ["privateCleanKb", "Priv Clean"], ["privateDirtyKb", "Priv Dirty"],
+  ["sharedCleanKb", "Shared Clean"], ["sharedDirtyKb", "Shared Dirty"],
+  ["swapKb", "Swap"],
+];
+
+function VmaEntries({ entries, sortField, sortAsc, onToggleSort }: {
+  entries: SmapsEntry[];
+  sortField: VmaSortFieldType;
+  sortAsc: boolean;
+  onToggleSort: (f: VmaSortFieldType) => void;
+}) {
+  const sorted = useMemo(() => {
+    const copy = [...entries];
+    if (sortField === "addrStart") {
+      copy.sort((a, b) => sortAsc ? a.addrStart.localeCompare(b.addrStart) : b.addrStart.localeCompare(a.addrStart));
+    } else {
+      copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
+    }
+    return copy;
+  }, [entries, sortField, sortAsc]);
+
+  return (
+    <>
+      <tr className="bg-stone-100">
+        <td className="py-0.5 px-2 pl-6">
+          <span className="text-stone-500 text-[10px] font-medium cursor-pointer hover:text-stone-700" onClick={() => onToggleSort("addrStart")}>
+            Address {sortField === "addrStart" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+          </span>
+          <span className="ml-3 text-stone-400 text-[10px]">Perms</span>
+        </td>
+        <td />
+        {SMAPS_COLUMNS.map(([f, label]) => (
+          <td key={f} className="py-0.5 px-2 text-right text-stone-500 text-[10px] font-medium cursor-pointer hover:text-stone-700" onClick={() => onToggleSort(f)}>
+            {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+          </td>
+        ))}
+      </tr>
+      {sorted.map((e, i) => (
+        <tr key={i} className="border-t border-stone-50">
+          <td className="py-0.5 px-2 pl-6 font-mono text-[10px] text-stone-500 whitespace-nowrap">
+            {e.addrStart}-{e.addrEnd}
+            <span className="ml-2 text-stone-400">{e.perms}</span>
+          </td>
+          <td />
+          {SMAPS_COLUMNS.map(([f]) => (
+            <td key={f} className="py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap">
+              {e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014"}
+            </td>
+          ))}
+        </tr>
+      ))}
+    </>
+  );
+}
+
+function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort }: {
+  aggregated: SmapsAggregated[];
+  expandedGroup: string | null;
+  onToggleGroup: (name: string) => void;
+  sortField: SmapsSortFieldType;
+  sortAsc: boolean;
+  onToggleSort: (f: SmapsSortFieldType) => void;
+  vmaSortField: VmaSortFieldType;
+  vmaSortAsc: boolean;
+  onToggleVmaSort: (f: VmaSortFieldType) => void;
+}) {
+  const sorted = useMemo(() => {
+    const copy = [...aggregated];
+    copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
+    return copy;
+  }, [aggregated, sortField, sortAsc]);
+
+  return (
+    <div className="bg-stone-50 px-4 py-2 max-h-[400px] overflow-y-auto">
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="border-b border-stone-200">
+            <th className="text-left py-1 px-2 text-stone-500 font-medium">Mapping</th>
+            <th className="text-right py-1 px-1 text-stone-400 font-medium w-8">#</th>
+            {SMAPS_COLUMNS.map(([f, label]) => (
+              <th
+                key={f}
+                className="text-right py-1 px-2 text-stone-500 font-medium cursor-pointer select-none hover:text-stone-700 whitespace-nowrap"
+                onClick={() => onToggleSort(f)}
+              >
+                {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map(g => (
+            <Fragment key={g.name}>
+              <tr
+                className="border-t border-stone-100 cursor-pointer hover:bg-stone-100"
+                onClick={() => onToggleGroup(g.name)}
+              >
+                <td className="py-0.5 px-2 font-mono text-stone-700 truncate max-w-[300px]" title={g.name}>
+                  <span className="text-stone-400 mr-1">{expandedGroup === g.name ? "\u25BC" : "\u25B6"}</span>
+                  {g.name}
+                </td>
+                <td className="py-0.5 px-1 text-right font-mono text-stone-400">{g.count}</td>
+                {SMAPS_COLUMNS.map(([f]) => (
+                  <td key={f} className="py-0.5 px-2 text-right font-mono whitespace-nowrap">
+                    {g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"}
+                  </td>
+                ))}
+              </tr>
+              {expandedGroup === g.name && (
+                <VmaEntries
+                  entries={g.entries}
+                  sortField={vmaSortField}
+                  sortAsc={vmaSortAsc}
+                  onToggleSort={onToggleVmaSort}
+                />
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
 type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb";
@@ -1049,6 +1180,19 @@ function CaptureView({ onCaptured, conn }: {
   const [captureStatus, setCaptureStatus] = useState("");
   const [captureProgress, setCaptureProgress] = useState<{ done: number; total: number } | null>(null);
 
+  // Smaps — progressive background fetch, root-only
+  const smapsAbortRef = useRef<AbortController | null>(null);
+  const [smapsData, setSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
+  const [smapsFetchProgress, setSmapsFetchProgress] = useState<{ done: number; total: number } | null>(null);
+  const [expandedSmapsPid, setExpandedSmapsPid] = useState<number | null>(null);
+  const [expandedSmapsGroup, setExpandedSmapsGroup] = useState<string | null>(null);
+  type SmapsSortField = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
+  const [smapsSortField, setSmapsSortField] = useState<SmapsSortField>("pssKb");
+  const [smapsSortAsc, setSmapsSortAsc] = useState(false);
+  type VmaSortField = SmapsSortField | "addrStart";
+  const [vmaSortField, setVmaSortField] = useState<VmaSortField>("pssKb");
+  const [vmaSortAsc, setVmaSortAsc] = useState(false);
+
   const cancelEnrichment = useCallback(() => {
     if (!enrichAbortRef.current) return;
     enrichAbortRef.current.abort();
@@ -1066,16 +1210,29 @@ function CaptureView({ onCaptured, conn }: {
     setCaptureProgress(null);
   }, []);
 
+  const cancelSmapsFetch = useCallback(() => {
+    if (!smapsAbortRef.current) return;
+    smapsAbortRef.current.abort();
+    smapsAbortRef.current = null;
+    setSmapsFetchProgress(null);
+  }, []);
+
   const refreshProcesses = useCallback(async () => {
     if (!conn.connected) return;
     cancelEnrichment();
+    cancelSmapsFetch();
     const ac = new AbortController();
     enrichAbortRef.current = ac;
     setEnrichStatus("Fetching process list\u2026");
     setEnrichProgress(null);
+    setSmapsData(new Map());
+    setExpandedSmapsPid(null);
+    setExpandedSmapsGroup(null);
     setError(null);
+    let list: ProcessInfo[] = [];
     try {
-      const { list, hasBreakdown } = await conn.getProcessList(ac.signal);
+      const result = await conn.getProcessList(ac.signal);
+      list = result.list;
       if (ac.signal.aborted) return;
       // On non-rooted devices, annotate processes with debuggable status
       if (!conn.isRoot) {
@@ -1085,9 +1242,7 @@ function CaptureView({ onCaptured, conn }: {
       }
       setProcesses(list);
       // Only enrich with per-process details if compact format lacked breakdown.
-      // The compact format already provides Java/Native/Graphics on most devices,
-      // so this avoids N sequential `dumpsys meminfo <pid>` calls.
-      if (!hasBreakdown) {
+      if (!result.hasBreakdown) {
         await conn.enrichProcessDetails(list, (done, total, current) => {
           if (ac.signal.aborted) return;
           setEnrichStatus(current);
@@ -1100,15 +1255,40 @@ function CaptureView({ onCaptured, conn }: {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Failed to get process list");
     } finally {
-      // Only clear state if we're still the active enrichment.
-      // If a new refresh started, it owns the state now.
       if (enrichAbortRef.current === ac) {
         enrichAbortRef.current = null;
         setEnrichStatus(null);
         setEnrichProgress(null);
       }
     }
-  }, [cancelEnrichment]);
+    // Start progressive smaps fetch in background (root-only)
+    if (conn.isRoot && !ac.signal.aborted && list.length > 0) {
+      const smapsAc = new AbortController();
+      smapsAbortRef.current = smapsAc;
+      setSmapsFetchProgress({ done: 0, total: list.length });
+      try {
+        await conn.fetchAllSmaps(
+          list,
+          (pid, data) => {
+            if (smapsAc.signal.aborted) return;
+            setSmapsData(prev => new Map(prev).set(pid, data));
+          },
+          (done, total) => {
+            if (smapsAc.signal.aborted) return;
+            setSmapsFetchProgress({ done, total });
+          },
+          smapsAc.signal,
+        );
+      } catch {
+        // Non-fatal — smaps is supplementary
+      } finally {
+        if (smapsAbortRef.current === smapsAc) {
+          smapsAbortRef.current = null;
+          setSmapsFetchProgress(null);
+        }
+      }
+    }
+  }, [cancelEnrichment, cancelSmapsFetch]);
 
   useEffect(() => {
     if (connected) refreshProcesses();
@@ -1134,8 +1314,9 @@ function CaptureView({ onCaptured, conn }: {
   const handleCapture = useCallback(async (overridePid?: number) => {
     const pid = overridePid ?? selectedPid;
     if (pid === null || capturing) return;
-    // Cancel enrichment — ADB device handles one command at a time
+    // Cancel enrichment + smaps — ADB device handles one command at a time
     cancelEnrichment();
+    cancelSmapsFetch();
     if (overridePid !== undefined) setSelectedPid(overridePid);
     const ac = new AbortController();
     captureAbortRef.current = ac;
@@ -1182,11 +1363,12 @@ function CaptureView({ onCaptured, conn }: {
         setCaptureProgress(null);
       }
     }
-  }, [selectedPid, withBitmaps, processes, onCaptured, capturing, cancelEnrichment]);
+  }, [selectedPid, withBitmaps, processes, onCaptured, capturing, cancelEnrichment, cancelSmapsFetch]);
 
   const handleDisconnect = useCallback(() => {
     cancelEnrichment();
     cancelCapture();
+    cancelSmapsFetch();
     conn.disconnect();
     setConnected(false);
     setProcesses(null);
@@ -1197,12 +1379,16 @@ function CaptureView({ onCaptured, conn }: {
     setCapturing(false);
     setCaptureStatus("");
     setCaptureProgress(null);
-  }, [cancelEnrichment, cancelCapture]);
+    setSmapsData(new Map());
+    setSmapsFetchProgress(null);
+    setExpandedSmapsPid(null);
+    setExpandedSmapsGroup(null);
+  }, [cancelEnrichment, cancelCapture, cancelSmapsFetch]);
 
   // Clean up on unmount
   useEffect(() => {
-    return () => { cancelEnrichment(); cancelCapture(); conn.disconnect(); };
-  }, [cancelEnrichment, cancelCapture]);
+    return () => { cancelEnrichment(); cancelCapture(); cancelSmapsFetch(); conn.disconnect(); };
+  }, [cancelEnrichment, cancelCapture, cancelSmapsFetch]);
 
   const sorted = useMemo(() => {
     if (!processes) return null;
@@ -1220,6 +1406,16 @@ function CaptureView({ onCaptured, conn }: {
     if (sortField === field) setSortAsc(!sortAsc);
     else { setSortField(field); setSortAsc(false); }
   }, [sortField, sortAsc]);
+
+  const toggleSmapsSort = useCallback((field: SmapsSortField) => {
+    if (smapsSortField === field) setSmapsSortAsc(!smapsSortAsc);
+    else { setSmapsSortField(field); setSmapsSortAsc(false); }
+  }, [smapsSortField, smapsSortAsc]);
+
+  const toggleVmaSort = useCallback((field: VmaSortField) => {
+    if (vmaSortField === field) setVmaSortAsc(!vmaSortAsc);
+    else { setVmaSortField(field); setVmaSortAsc(false); }
+  }, [vmaSortField, vmaSortAsc]);
 
   const hasWebUsb = typeof navigator !== "undefined" && "usb" in navigator;
 
@@ -1326,15 +1522,19 @@ function CaptureView({ onCaptured, conn }: {
                       </th>
                     ))}
                     <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-20"></th>
+                    {conn.isRoot && <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-8"></th>}
                   </tr>
                 </thead>
                 <tbody>
                   {sorted.map(p => {
                     const canCapture = conn.isRoot || p.debuggable !== false;
                     const isCapturingThis = capturing && selectedPid === p.pid;
+                    const hasSmaps = smapsData.has(p.pid);
+                    const isSmapsExpanded = expandedSmapsPid === p.pid && hasSmaps;
+                    const colCount = 2 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 3 : 0) + 1 + (conn.isRoot ? 1 : 0);
                     return (
+                    <Fragment key={p.pid}>
                     <tr
-                      key={p.pid}
                       className={`border-t border-stone-100 cursor-pointer transition-colors ${
                         selectedPid === p.pid ? "bg-sky-50" : "hover:bg-stone-50"
                       } ${!canCapture ? "opacity-50" : ""}`}
@@ -1364,7 +1564,49 @@ function CaptureView({ onCaptured, conn }: {
                           </button>
                         )}
                       </td>
+                      {conn.isRoot && (
+                        <td className="py-1 px-1 text-center">
+                          {hasSmaps ? (
+                            <button
+                              className="text-stone-400 hover:text-stone-600 text-xs leading-none"
+                              title="Memory maps"
+                              onClick={e => {
+                                e.stopPropagation();
+                                if (expandedSmapsPid === p.pid) {
+                                  setExpandedSmapsPid(null);
+                                  setExpandedSmapsGroup(null);
+                                } else {
+                                  setExpandedSmapsPid(p.pid);
+                                  setExpandedSmapsGroup(null);
+                                }
+                              }}
+                            >
+                              {isSmapsExpanded ? "\u25BC" : "\u25B6"}
+                            </button>
+                          ) : smapsFetchProgress ? (
+                            <span className="text-stone-300 text-[10px]">{"\u2026"}</span>
+                          ) : null}
+                        </td>
+                      )}
                     </tr>
+                    {isSmapsExpanded && (
+                      <tr>
+                        <td colSpan={colCount} className="p-0 border-t border-stone-200">
+                          <SmapsSubTable
+                            aggregated={smapsData.get(p.pid)!}
+                            expandedGroup={expandedSmapsGroup}
+                            onToggleGroup={name => setExpandedSmapsGroup(expandedSmapsGroup === name ? null : name)}
+                            sortField={smapsSortField}
+                            sortAsc={smapsSortAsc}
+                            onToggleSort={toggleSmapsSort}
+                            vmaSortField={vmaSortField}
+                            vmaSortAsc={vmaSortAsc}
+                            onToggleVmaSort={toggleVmaSort}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                     );
                   })}
                 </tbody>
@@ -1385,6 +1627,20 @@ function CaptureView({ onCaptured, conn }: {
                   <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Smaps fetch progress (root-only) */}
+          {conn.isRoot && smapsFetchProgress && smapsFetchProgress.total > 0 && (
+            <div className="mt-2 text-xs text-stone-500">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="truncate">Fetching memory maps{"\u2026"}</span>
+                <span className="text-stone-400 whitespace-nowrap">{smapsFetchProgress.done}/{smapsFetchProgress.total}</span>
+                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelSmapsFetch}>Cancel</button>
+              </div>
+              <div className="h-1 bg-stone-100 rounded overflow-hidden">
+                <div className="h-full bg-emerald-500 transition-all" style={{ width: `${(smapsFetchProgress.done / smapsFetchProgress.total) * 100}%` }} />
+              </div>
             </div>
           )}
 

@@ -18,6 +18,39 @@ export interface ProcessInfo {
   debuggable?: boolean;
 }
 
+/** A single VMA entry from /proc/<pid>/smaps. */
+export interface SmapsEntry {
+  addrStart: string;
+  addrEnd: string;
+  perms: string;
+  name: string;
+  sizeKb: number;
+  rssKb: number;
+  pssKb: number;
+  sharedCleanKb: number;
+  sharedDirtyKb: number;
+  privateCleanKb: number;
+  privateDirtyKb: number;
+  swapKb: number;
+  swapPssKb: number;
+}
+
+/** VMAs aggregated by mapped file/region name. */
+export interface SmapsAggregated {
+  name: string;
+  count: number;
+  sizeKb: number;
+  rssKb: number;
+  pssKb: number;
+  sharedCleanKb: number;
+  sharedDirtyKb: number;
+  privateCleanKb: number;
+  privateDirtyKb: number;
+  swapKb: number;
+  swapPssKb: number;
+  entries: SmapsEntry[];
+}
+
 // Map compact-format OOM adj labels to human-readable AOSP process states.
 // Labels from dumpsys meminfo -c: native, sys, pers, fore, vis, percep,
 // backup, heavy, svcb, svcrst, home, prev, lstact, bfgs, fgs, btop, top,
@@ -246,6 +279,7 @@ export class AdbConnection {
   private device: AdbDevice | null = null;
   private keyMgr = new AdbKeyManager();
   private _isRoot = false;
+  private _suPrefix = "";
 
   get connected(): boolean { return this.device?.connected ?? false; }
   get serial(): string { return this.device?.serial ?? ""; }
@@ -261,10 +295,15 @@ export class AdbConnection {
     // Try to get root — best-effort, ignore failures (device may not be rooted)
     // Android su variants: "su 0 id" (toybox), "su -c id" (Magisk/SuperSU)
     this._isRoot = false;
-    for (const cmd of ["su 0 id", "su -c id"]) {
+    this._suPrefix = "";
+    for (const prefix of ["su 0", "su -c"]) {
       try {
-        const result = await this.device.shell(cmd);
-        if (result.includes("uid=0")) { this._isRoot = true; break; }
+        const result = await this.device.shell(`${prefix} id`);
+        if (result.includes("uid=0")) {
+          this._isRoot = true;
+          this._suPrefix = prefix;
+          break;
+        }
       } catch {
         // Not rooted or wrong su variant
       }
@@ -463,10 +502,55 @@ export class AdbConnection {
     return buffer;
   }
 
+  /** Fetch parsed smaps data for a single process (requires root). */
+  async getSmapsForPid(pid: number, signal?: AbortSignal): Promise<SmapsEntry[]> {
+    if (!this.device) throw new Error("Not connected");
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const cmd = this._suPrefix === "su -c"
+      ? `su -c 'cat /proc/${pid}/smaps'`
+      : `su 0 cat /proc/${pid}/smaps`;
+    const output = await this.device.shell(cmd, signal);
+    return parseSmaps(output);
+  }
+
+  /**
+   * Progressively fetch smaps for all processes (biggest PSS first).
+   * Fires onData per process as results arrive. Respects abort signal.
+   */
+  async fetchAllSmaps(
+    processes: ProcessInfo[],
+    onData?: (pid: number, data: SmapsAggregated[]) => void,
+    onProgress?: (completed: number, total: number, current: string) => void,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (!this.device || !this._isRoot) return;
+    const sorted = [...processes].sort((a, b) => b.pssKb - a.pssKb);
+
+    for (let i = 0; i < sorted.length; i++) {
+      if (signal?.aborted || !this.device?.connected) break;
+      const proc = sorted[i];
+      onProgress?.(i, sorted.length, proc.name);
+
+      try {
+        const entries = await this.getSmapsForPid(proc.pid, signal);
+        if (entries.length > 0) {
+          const aggregated = aggregateSmaps(entries);
+          onData?.(proc.pid, aggregated);
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") break;
+        // Process may have died — skip
+      }
+    }
+
+    onProgress?.(sorted.length, sorted.length, "");
+  }
+
   disconnect(): void {
     this.device?.close();
     this.device = null;
     this._isRoot = false;
+    this._suPrefix = "";
   }
 }
 
@@ -483,4 +567,90 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
     }, ms);
     signal?.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+// ─── Smaps parsing ──────────────────────────────────────────────────────────
+
+const SMAPS_HEADER_RE = /^([0-9a-f]+)-([0-9a-f]+)\s+([\w-]{4})\s+[0-9a-f]+\s+[0-9a-f]+:[0-9a-f]+\s+\d+\s*(.*)?$/i;
+const SMAPS_KV_RE = /^(\w[\w_]*):\s+(\d+)\s+kB$/i;
+
+/** Parse raw /proc/<pid>/smaps output into individual VMA entries. */
+export function parseSmaps(output: string): SmapsEntry[] {
+  const entries: SmapsEntry[] = [];
+  let cur: SmapsEntry | null = null;
+
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const hdr = SMAPS_HEADER_RE.exec(trimmed);
+    if (hdr) {
+      if (cur) entries.push(cur);
+      cur = {
+        addrStart: hdr[1], addrEnd: hdr[2], perms: hdr[3],
+        name: (hdr[4] ?? "").trim(),
+        sizeKb: 0, rssKb: 0, pssKb: 0,
+        sharedCleanKb: 0, sharedDirtyKb: 0,
+        privateCleanKb: 0, privateDirtyKb: 0,
+        swapKb: 0, swapPssKb: 0,
+      };
+      continue;
+    }
+
+    if (!cur) continue;
+    const kv = SMAPS_KV_RE.exec(trimmed);
+    if (kv) {
+      const val = parseInt(kv[2], 10) || 0;
+      switch (kv[1]) {
+        case "Size": cur.sizeKb = val; break;
+        case "Rss": cur.rssKb = val; break;
+        case "Pss": cur.pssKb = val; break;
+        case "Shared_Clean": cur.sharedCleanKb = val; break;
+        case "Shared_Dirty": cur.sharedDirtyKb = val; break;
+        case "Private_Clean": cur.privateCleanKb = val; break;
+        case "Private_Dirty": cur.privateDirtyKb = val; break;
+        case "Swap": cur.swapKb = val; break;
+        case "SwapPss": cur.swapPssKb = val; break;
+      }
+    }
+  }
+
+  if (cur) entries.push(cur);
+  return entries;
+}
+
+/** Group SmapsEntry[] by name, summing all numeric fields. Sorted by PSS desc. */
+export function aggregateSmaps(entries: SmapsEntry[]): SmapsAggregated[] {
+  const groups = new Map<string, SmapsAggregated>();
+
+  for (const e of entries) {
+    const key = e.name || "[anonymous]";
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        name: key, count: 0,
+        sizeKb: 0, rssKb: 0, pssKb: 0,
+        sharedCleanKb: 0, sharedDirtyKb: 0,
+        privateCleanKb: 0, privateDirtyKb: 0,
+        swapKb: 0, swapPssKb: 0,
+        entries: [],
+      };
+      groups.set(key, g);
+    }
+    g.count++;
+    g.sizeKb += e.sizeKb;
+    g.rssKb += e.rssKb;
+    g.pssKb += e.pssKb;
+    g.sharedCleanKb += e.sharedCleanKb;
+    g.sharedDirtyKb += e.sharedDirtyKb;
+    g.privateCleanKb += e.privateCleanKb;
+    g.privateDirtyKb += e.privateDirtyKb;
+    g.swapKb += e.swapKb;
+    g.swapPssKb += e.swapPssKb;
+    g.entries.push(e);
+  }
+
+  const result = [...groups.values()];
+  result.sort((a, b) => b.pssKb - a.pssKb);
+  return result;
 }
