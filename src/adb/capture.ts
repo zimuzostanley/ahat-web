@@ -271,22 +271,25 @@ export class AdbConnection {
     this.device = await AdbDevice.connect(usbDev, this.keyMgr);
   }
 
-  async getProcessList(): Promise<ProcessInfo[]> {
+  async getProcessList(signal?: AbortSignal): Promise<ProcessInfo[]> {
     if (!this.device) throw new Error("Not connected");
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     // Try compact format first — includes per-process Java/Native/Graphics breakdown
     // on devices that support it, and always has OOM labels per process.
     let compactResults: ProcessInfo[] = [];
     try {
-      const compact = await this.device.shell("dumpsys -t 60 meminfo -c");
+      const compact = await this.device.shell("dumpsys -t 60 meminfo -c", signal);
       // Only use compact as primary results if it has category breakdown lines
       const hasCategories = /^(?:cat,)?(?:Native Heap|Dalvik Heap),\d/m.test(compact);
       compactResults = parseMemInfo(compact);
       if (hasCategories && compactResults.length > 0) return compactResults;
-    } catch {
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") throw e;
       // compact format failed, fall through
     }
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     // Fallback: regular format (PSS + RSS summary sections)
-    const output = await this.device.shell("dumpsys -t 60 meminfo");
+    const output = await this.device.shell("dumpsys -t 60 meminfo", signal);
     const results = parseMemInfo(output);
     // Merge OOM labels from compact results into regular results
     if (compactResults.length > 0) {
@@ -303,19 +306,18 @@ export class AdbConnection {
   /**
    * Fetch detailed memory breakdown (Java/Native/Graphics) per process.
    * Runs `dumpsys meminfo <pid>` for each process and updates in place.
-   * @param processes - the process list to enrich
-   * @param onProgress - called after each process is fetched
    */
   async enrichProcessDetails(
     processes: ProcessInfo[],
     onProgress?: (completed: number, total: number, current: string) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     if (!this.device) return;
     for (let i = 0; i < processes.length; i++) {
-      if (!this.device?.connected) break;
+      if (signal?.aborted || !this.device?.connected) break;
       onProgress?.(i, processes.length, processes[i].name);
       try {
-        const output = await this.device.shell(`dumpsys -t 30 meminfo ${processes[i].pid}`);
+        const output = await this.device.shell(`dumpsys -t 30 meminfo ${processes[i].pid}`, signal);
         const details = parseDetailedSections(output);
         if (details.length > 0) {
           const d = details[0];
@@ -325,7 +327,8 @@ export class AdbConnection {
           if (d.pssKb > 0) processes[i].pssKb = d.pssKb;
           if (d.rssKb > 0) processes[i].rssKb = d.rssKb;
         }
-      } catch {
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") break;
         // Process may have died, skip
       }
     }
@@ -337,23 +340,34 @@ export class AdbConnection {
    * @param pid - process ID
    * @param withBitmaps - if true, uses `-b png` flag to include bitmap pixel data
    * @param onProgress - progress callback
+   * @param signal - abort signal to cancel the operation
    * @returns the .hprof file contents as an ArrayBuffer
    */
   async captureHeapDump(
     pid: number,
     withBitmaps: boolean,
     onProgress?: (phase: CapturePhase) => void,
+    signal?: AbortSignal,
   ): Promise<ArrayBuffer> {
     if (!this.device) throw new Error("Not connected");
 
     const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
     const remotePath = `/data/local/tmp/ahat_${pid}_${ts}.hprof`;
 
+    const cleanup = async () => {
+      try { await this.device?.shell(`rm '${remotePath}'`); } catch { /* best-effort */ }
+    };
+
     // 1. Trigger heap dump
     const bmpFlag = withBitmaps ? "-b png " : "";
     const dumpCmd = `am dumpheap ${bmpFlag}${pid} ${remotePath}`;
     onProgress?.({ step: "dumping", pid });
-    await this.device.shell(dumpCmd);
+    try {
+      await this.device.shell(dumpCmd, signal);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") { await cleanup(); throw e; }
+      throw e;
+    }
 
     // 2. Wait for dump to complete (file size stabilizes)
     onProgress?.({ step: "waiting", pid, elapsed: 0 });
@@ -362,14 +376,20 @@ export class AdbConnection {
     const startTime = Date.now();
 
     for (let i = 0; i < 120; i++) { // Max 60 seconds
-      await sleep(500);
+      try {
+        await abortableSleep(500, signal);
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") { await cleanup(); throw e; }
+        throw e;
+      }
       onProgress?.({ step: "waiting", pid, elapsed: Date.now() - startTime });
 
       let size: number;
       try {
-        const out = await this.device.shell(`stat -c %s '${remotePath}' 2>/dev/null || echo -1`);
+        const out = await this.device.shell(`stat -c %s '${remotePath}' 2>/dev/null || echo -1`, signal);
         size = parseInt(out.trim(), 10);
-      } catch {
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") { await cleanup(); throw e; }
         size = -1;
       }
 
@@ -393,17 +413,19 @@ export class AdbConnection {
     }
 
     // 3. Pull file
-    const data = await pullFile(this.device, remotePath, (received, total) => {
-      onProgress?.({ step: "pulling", received, total });
-    });
+    let data: Uint8Array;
+    try {
+      data = await pullFile(this.device, remotePath, (received, total) => {
+        onProgress?.({ step: "pulling", received, total });
+      }, signal);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") { await cleanup(); throw e; }
+      throw e;
+    }
 
     // 4. Clean up remote file
     onProgress?.({ step: "cleaning" });
-    try {
-      await this.device.shell(`rm '${remotePath}'`);
-    } catch {
-      // Best-effort cleanup
-    }
+    await cleanup();
 
     const buffer = new ArrayBuffer(data.byteLength);
     new Uint8Array(buffer).set(data);
@@ -417,6 +439,17 @@ export class AdbConnection {
   }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
+  return new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
 }

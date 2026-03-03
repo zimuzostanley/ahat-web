@@ -210,7 +210,7 @@ function Section({ title, children, defaultOpen = true }: {
         <span className="text-sm font-semibold text-stone-700">{title}</span>
         <span className="text-stone-400 text-xs">{open ? "\u25BC" : "\u25B6"}</span>
       </button>
-      {open && <div className="px-4 pb-3 border-t border-stone-100 pt-3">{children}</div>}
+      {open && <div className="px-4 pb-3 border-t border-stone-100 pt-3 overflow-x-auto">{children}</div>}
     </div>
   );
 }
@@ -240,7 +240,7 @@ function SortableTable<T>({ columns, data, limit = SHOW_LIMIT }: {
   const visible = sorted.slice(0, showCount);
 
   return (
-    <div>
+    <div className="overflow-x-auto">
       <table className="w-full border-collapse">
         <thead>
           <tr>
@@ -321,10 +321,10 @@ function BitmapImage({ width, height, format, data }: {
   }, [width, height, format, data]);
 
   if (format === "rgba") {
-    return <canvas ref={canvasRef} style={{ width: "100%", height: "auto", imageRendering: "pixelated" }} />;
+    return <canvas ref={canvasRef} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", imageRendering: "pixelated" }} />;
   }
   if (!blobUrl) return null;
-  return <img src={blobUrl} style={{ width: "100%", height: "auto", imageRendering: "pixelated" }} />;
+  return <img src={blobUrl} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", imageRendering: "pixelated" }} />;
 }
 
 // ─── Views ────────────────────────────────────────────────────────────────────
@@ -464,7 +464,7 @@ function ObjectView({ proxy, heaps, navigate, params }: {
         <Section title="Sample Path from GC Root">
           <div className="space-y-0.5">
             {detail.pathFromRoot.map((pe, i) => (
-              <div key={i} className={`flex items-baseline gap-1 ${pe.isDominator ? "font-semibold" : ""}`} style={{ paddingLeft: i * 12 }}>
+              <div key={i} className={`flex items-baseline gap-1 min-w-0 ${pe.isDominator ? "font-semibold" : ""}`} style={{ paddingLeft: Math.min(i, 20) * 12 }}>
                 <span className="text-stone-400">{i === 0 ? "" : "\u2192"}</span>
                 <InstanceLink row={pe.row} navigate={navigate} />
                 {pe.field && <span className="text-stone-500">{pe.field}</span>}
@@ -579,7 +579,7 @@ function SiteChainView({ siteId, proxy, navigate }: { siteId: number; proxy: Wor
   }, [siteId, proxy]);
   if (!chain) return <span className="text-stone-400">&hellip;</span>;
   return <>{chain.map((s, i) => (
-    <div key={i} style={{ paddingLeft: i * 16 }}>
+    <div key={i} style={{ paddingLeft: Math.min(i, 20) * 16 }}>
       {i > 0 && "\u2192 "}
       <SiteLinkRaw {...s} navigate={navigate} />
     </div>
@@ -591,24 +591,26 @@ function FieldsTable({ fields, navigate }: {
   navigate: NavFn;
 }) {
   return (
-    <table className="w-full border-collapse">
-      <thead>
-        <tr>
-          <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Type</th>
-          <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Name</th>
-          <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Value</th>
-        </tr>
-      </thead>
-      <tbody>
-        {fields.map((f, i) => (
-          <tr key={i} className="border-t border-stone-100">
-            <td className="px-2 py-0.5 text-stone-500 font-mono">{f.typeName}</td>
-            <td className="px-2 py-0.5 font-mono">{f.name}</td>
-            <td className="px-2 py-0.5"><PrimOrRefCell v={f.value} navigate={navigate} /></td>
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse">
+        <thead>
+          <tr>
+            <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Type</th>
+            <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Name</th>
+            <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Value</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {fields.map((f, i) => (
+            <tr key={i} className="border-t border-stone-100">
+              <td className="px-2 py-0.5 text-stone-500 font-mono">{f.typeName}</td>
+              <td className="px-2 py-0.5 font-mono">{f.name}</td>
+              <td className="px-2 py-0.5"><PrimOrRefCell v={f.value} navigate={navigate} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -710,7 +712,7 @@ function SiteView({ proxy, heaps, navigate, params }: { proxy: WorkerProxy; heap
       <Section title="Allocation Site">
         <div className="space-y-0.5">
           {data.chain.map((s, i) => (
-            <div key={i} style={{ paddingLeft: i * 16 }}>{i > 0 && "\u2192 "}<SiteLinkRaw {...s} navigate={navigate} /></div>
+            <div key={i} style={{ paddingLeft: Math.min(i, 20) * 16 }}>{i > 0 && "\u2192 "}<SiteLinkRaw {...s} navigate={navigate} /></div>
           ))}
         </div>
       </Section>
@@ -824,11 +826,10 @@ function SearchView({ proxy, navigate, initialQuery }: { proxy: WorkerProxy; nav
 // ─── Bitmap Gallery View ─────────────────────────────────────────────────────
 
 /** Lazy-loaded thumbnail for a single bitmap in the gallery. */
-function BitmapCard({ row, proxy, navigate, density }: {
-  row: BitmapListRow; proxy: WorkerProxy; navigate: NavFn; density: number;
+function BitmapCard({ row, proxy, navigate, density, deviceScale }: {
+  row: BitmapListRow; proxy: WorkerProxy; navigate: NavFn; density: number; deviceScale: boolean;
 }) {
   const [bitmap, setBitmap] = useState<InstanceDetail["bitmap"] | null | "loading" | "error">(null);
-  const [deviceScale, setDeviceScale] = useState(false);
 
   const load = useCallback(() => {
     if (bitmap !== null) return;
@@ -861,8 +862,8 @@ function BitmapCard({ row, proxy, navigate, density }: {
       <div
         className="bg-stone-50 flex items-center justify-center overflow-hidden"
         style={deviceScale
-          ? { width: dpW, height: dpH, margin: "0 auto" }
-          : { width: "100%", aspectRatio: `${row.width} / ${row.height}` }
+          ? { maxWidth: dpW, maxHeight: "45vh", aspectRatio: `${row.width} / ${row.height}`, margin: "0 auto" }
+          : { width: "100%", maxHeight: "45vh", aspectRatio: `${row.width} / ${row.height}` }
         }
       >
         {bitmap && typeof bitmap === "object" ? (
@@ -883,16 +884,10 @@ function BitmapCard({ row, proxy, navigate, density }: {
           <span className="text-xs text-stone-400 ml-2">@{dpi}dpi</span>
           <span className="text-xs text-stone-400 ml-2">{fmtSize(row.row.retainedTotal)}</span>
         </div>
-        <div className="flex items-center gap-3">
-          <button
-            className={`text-xs ${deviceScale ? "text-sky-700 font-medium" : "text-stone-400 hover:text-stone-600"}`}
-            onClick={() => setDeviceScale(!deviceScale)}
-          >{deviceScale ? "Full width" : "Device size"}</button>
-          <button
-            className="text-xs text-sky-700 underline decoration-sky-300 hover:decoration-sky-500"
-            onClick={() => navigate("object", { id: row.row.id })}
-          >Details</button>
-        </div>
+        <button
+          className="text-xs text-sky-700 underline decoration-sky-300 hover:decoration-sky-500"
+          onClick={() => navigate("object", { id: row.row.id })}
+        >Details</button>
       </div>
     </div>
   );
@@ -900,6 +895,7 @@ function BitmapCard({ row, proxy, navigate, density }: {
 
 function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: NavFn }) {
   const [rows, setRows] = useState<BitmapListRow[] | null>(null);
+  const [deviceScale, setDeviceScale] = useState(false);
 
   useEffect(() => {
     proxy.query<BitmapListRow[]>("getBitmapList").then(setRows).catch(console.error);
@@ -939,12 +935,18 @@ function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: 
           {/* Vertical bitmap feed */}
           {withPixels.length > 0 && (
             <div className="mb-4">
-              <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">
-                {withPixels.length} bitmap{withPixels.length > 1 ? "s" : ""} with pixel data
-              </h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
+                  {withPixels.length} bitmap{withPixels.length > 1 ? "s" : ""} with pixel data
+                </h3>
+                <button
+                  className={`text-xs px-2 py-0.5 border ${deviceScale ? "border-sky-300 bg-sky-50 text-sky-700" : "border-stone-200 text-stone-500 hover:text-stone-700"}`}
+                  onClick={() => setDeviceScale(!deviceScale)}
+                >{deviceScale ? "Device size" : "Full width"}</button>
+              </div>
               <div className="flex flex-col gap-3">
                 {withPixels.map(r => (
-                  <BitmapCard key={r.row.id} row={r} proxy={proxy} navigate={navigate} density={r.density} />
+                  <BitmapCard key={r.row.id} row={r} proxy={proxy} navigate={navigate} density={r.density} deviceScale={deviceScale} />
                 ))}
               </div>
             </div>
@@ -994,33 +996,62 @@ function CaptureView({ onCaptured }: {
   const [withBitmaps, setWithBitmaps] = useState(false);
   const [sortField, setSortField] = useState<SortField>("pssKb");
   const [sortAsc, setSortAsc] = useState(false);
-  const [capturing, setCapturing] = useState(false);
-  const [captureStatus, setCaptureStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Load process list once on connect, then enrich with per-process details
-  const [refreshing, setRefreshing] = useState(false);
-  const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number; current: string } | null>(null);
+  // Enrichment runs in the background — doesn't block capture
+  const enrichAbortRef = useRef<AbortController | null>(null);
+  const [enrichStatus, setEnrichStatus] = useState<string | null>(null);
+  const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
+
+  // Capture is a foreground operation — auto-cancels enrichment since ADB is serial
+  const captureAbortRef = useRef<AbortController | null>(null);
+  const [capturing, setCapturing] = useState(false);
+  const [captureStatus, setCaptureStatus] = useState("");
+  const [captureProgress, setCaptureProgress] = useState<{ done: number; total: number } | null>(null);
+
+  const cancelEnrichment = useCallback(() => {
+    enrichAbortRef.current?.abort();
+    enrichAbortRef.current = null;
+  }, []);
+
+  const cancelCapture = useCallback(() => {
+    captureAbortRef.current?.abort();
+    captureAbortRef.current = null;
+  }, []);
+
   const refreshProcesses = useCallback(async () => {
     if (!connRef.current.connected) return;
-    setRefreshing(true);
+    cancelEnrichment();
+    const ac = new AbortController();
+    enrichAbortRef.current = ac;
+    setEnrichStatus("Fetching process list\u2026");
     setEnrichProgress(null);
+    setError(null);
     try {
-      const list = await connRef.current.getProcessList();
+      const list = await connRef.current.getProcessList(ac.signal);
+      if (ac.signal.aborted) return;
       setProcesses(list);
-      setRefreshing(false);
       // Enrich with per-process details (Java/Native/Graphics breakdown)
       await connRef.current.enrichProcessDetails(list, (done, total, current) => {
-        setEnrichProgress({ done, total, current });
-        // Trigger re-render with updated breakdown data
+        if (ac.signal.aborted) return;
+        setEnrichStatus(current);
+        setEnrichProgress({ done, total });
         setProcesses([...list]);
-      });
-      setEnrichProgress(null);
+      }, ac.signal);
     } catch (e) {
+      if (ac.signal.aborted) return;
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Failed to get process list");
-      setRefreshing(false);
+    } finally {
+      // Only clear state if we're still the active enrichment.
+      // If a new refresh started, it owns the state now.
+      if (enrichAbortRef.current === ac) {
+        enrichAbortRef.current = null;
+        setEnrichStatus(null);
+        setEnrichProgress(null);
+      }
     }
-  }, []);
+  }, [cancelEnrichment]);
 
   useEffect(() => {
     if (connected) refreshProcesses();
@@ -1044,9 +1075,14 @@ function CaptureView({ onCaptured }: {
   }, []);
 
   const handleCapture = useCallback(async () => {
-    if (selectedPid === null) return;
+    if (selectedPid === null || capturing) return;
+    // Cancel enrichment — ADB device handles one command at a time
+    cancelEnrichment();
+    const ac = new AbortController();
+    captureAbortRef.current = ac;
     setCapturing(true);
     setCaptureStatus("Starting heap dump\u2026");
+    setCaptureProgress(null);
     setError(null);
     try {
       const proc = processes?.find(p => p.pid === selectedPid);
@@ -1062,27 +1098,52 @@ function CaptureView({ onCaptured }: {
               const pct = phase.total > 0 ? Math.round(phase.received / phase.total * 100) : 0;
               const mb = (phase.received / 1048576).toFixed(1);
               setCaptureStatus(phase.total > 0 ? `Pulling: ${mb} MB (${pct}%)` : `Pulling: ${mb} MB`);
+              if (phase.total > 0) setCaptureProgress({ done: phase.received, total: phase.total });
               break;
             }
             case "cleaning": setCaptureStatus("Cleaning up\u2026"); break;
             case "done": break;
           }
         },
+        ac.signal,
       );
       const ts = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "");
       const name = `${procName}_${ts}`;
       onCaptured(name, buffer);
     } catch (e) {
+      if (ac.signal.aborted) return;
+      if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "Capture failed");
     } finally {
-      setCapturing(false);
+      // Only clear state if we're still the active capture
+      if (captureAbortRef.current === ac) {
+        captureAbortRef.current = null;
+        setCapturing(false);
+        setCaptureStatus("");
+        setCaptureProgress(null);
+      }
     }
-  }, [selectedPid, withBitmaps, processes, onCaptured]);
+  }, [selectedPid, withBitmaps, processes, onCaptured, capturing, cancelEnrichment]);
+
+  const handleDisconnect = useCallback(() => {
+    cancelEnrichment();
+    cancelCapture();
+    connRef.current.disconnect();
+    setConnected(false);
+    setProcesses(null);
+    setSelectedPid(null);
+    setError(null);
+    setEnrichStatus(null);
+    setEnrichProgress(null);
+    setCapturing(false);
+    setCaptureStatus("");
+    setCaptureProgress(null);
+  }, [cancelEnrichment, cancelCapture]);
 
   // Clean up on unmount
   useEffect(() => {
-    return () => { connRef.current.disconnect(); };
-  }, []);
+    return () => { cancelEnrichment(); cancelCapture(); connRef.current.disconnect(); };
+  }, [cancelEnrichment, cancelCapture]);
 
   const sorted = useMemo(() => {
     if (!processes) return null;
@@ -1093,7 +1154,7 @@ function CaptureView({ onCaptured }: {
 
   const hasRss = processes ? processes.some(p => p.rssKb > 0) : false;
   // Show breakdown columns as soon as enrichment starts or any data arrives
-  const hasBreakdown = enrichProgress !== null || (processes ? processes.some(p => p.javaHeapKb > 0 || p.nativeHeapKb > 0 || p.graphicsKb > 0) : false);
+  const hasBreakdown = enrichStatus !== null || (processes ? processes.some(p => p.javaHeapKb > 0 || p.nativeHeapKb > 0 || p.graphicsKb > 0) : false);
   const hasOomLabel = processes ? processes.some(p => p.oomLabel !== "") : false;
 
   const toggleSort = useCallback((field: SortField) => {
@@ -1136,10 +1197,10 @@ function CaptureView({ onCaptured }: {
               <span className="text-stone-400 ml-2 font-mono text-xs">{connRef.current.serial}</span>
             </div>
             <div className="flex items-center gap-3">
-              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses} disabled={refreshing}>
-                {refreshing ? "Refreshing\u2026" : "Refresh"}
+              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses}>
+                {enrichStatus ? "Refreshing\u2026" : "Refresh"}
               </button>
-              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={() => { connRef.current.disconnect(); setConnected(false); setProcesses(null); }}>
+              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={handleDisconnect}>
                 Disconnect
               </button>
             </div>
@@ -1152,11 +1213,13 @@ function CaptureView({ onCaptured }: {
               Include bitmaps (-b)
             </label>
             <button
-              className="px-4 py-1.5 bg-sky-600 text-white hover:bg-sky-700 transition-colors disabled:opacity-50 ml-auto"
+              className={`px-4 py-1.5 text-white transition-colors disabled:opacity-50 ml-auto ${
+                capturing ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
+              }`}
               onClick={handleCapture}
               disabled={selectedPid === null || capturing}
             >
-              {capturing ? captureStatus : "Capture Heap Dump"}
+              {capturing ? (captureStatus || "Capturing\u2026") : "Capture Heap Dump"}
             </button>
           </div>
 
@@ -1166,8 +1229,8 @@ function CaptureView({ onCaptured }: {
           ) : sorted.length === 0 ? (
             <div className="text-stone-400 p-4 flex items-center gap-3">
               No processes found.
-              <button className="text-sky-700 underline decoration-sky-300" onClick={refreshProcesses} disabled={refreshing}>
-                {refreshing ? "Refreshing\u2026" : "Refresh"}
+              <button className="text-sky-700 underline decoration-sky-300" onClick={refreshProcesses}>
+                Refresh
               </button>
             </div>
           ) : (
@@ -1223,16 +1286,35 @@ function CaptureView({ onCaptured }: {
             </div>
           )}
 
-          {/* Per-process detail fetch progress */}
-          {enrichProgress && enrichProgress.done < enrichProgress.total && (
+          {/* Enrichment status */}
+          {enrichStatus && (
             <div className="mt-2 text-xs text-stone-500">
               <div className="flex items-center gap-2 mb-1">
-                <span>Fetching details: {enrichProgress.done}/{enrichProgress.total}</span>
-                <span className="text-stone-400 truncate max-w-[300px]">{enrichProgress.current}</span>
+                <span className="truncate">{enrichStatus}</span>
+                {enrichProgress && <span className="text-stone-400 whitespace-nowrap">{enrichProgress.done}/{enrichProgress.total}</span>}
+                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelEnrichment}>Cancel</button>
               </div>
-              <div className="h-1 bg-stone-100 rounded overflow-hidden">
-                <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
+              {enrichProgress && enrichProgress.total > 0 && (
+                <div className="h-1 bg-stone-100 rounded overflow-hidden">
+                  <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Capture status */}
+          {capturing && (
+            <div className="mt-2 text-xs text-stone-600">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="truncate font-medium">{captureStatus}</span>
+                {captureProgress && <span className="text-stone-400 whitespace-nowrap">{(captureProgress.done / 1048576).toFixed(1)}/{(captureProgress.total / 1048576).toFixed(1)} MB</span>}
+                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelCapture}>Cancel</button>
               </div>
+              {captureProgress && captureProgress.total > 0 && (
+                <div className="h-1 bg-stone-100 rounded overflow-hidden">
+                  <div className="h-full bg-sky-600 transition-all" style={{ width: `${(captureProgress.done / captureProgress.total) * 100}%` }} />
+                </div>
+              )}
             </div>
           )}
         </div>

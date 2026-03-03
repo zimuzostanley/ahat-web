@@ -21,41 +21,69 @@ function decodeSyncResponse(data: Uint8Array): { cmd: string; length: number } {
   return { cmd, length };
 }
 
+// Exported for testing
+export { encodeSyncCmd, decodeSyncResponse };
+
 /**
  * Pull a file from the device using ADB sync protocol.
  * Returns the file contents as a Uint8Array.
  *
  * @param onProgress - callback with (bytesReceived, totalBytes). totalBytes
  *   is the file size from STAT, or -1 if unknown.
+ * @param signal - AbortSignal to cancel the transfer. On abort, the sync
+ *   stream is closed and the promise rejects with AbortError.
  */
 export async function pullFile(
   device: AdbDevice,
   remotePath: string,
   onProgress?: (received: number, total: number) => void,
+  signal?: AbortSignal,
 ): Promise<Uint8Array> {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
   // First, get file size via STAT
   let fileSize = -1;
   try {
-    const statOut = await device.shell(`stat -c %s '${remotePath}'`);
+    const statOut = await device.shell(`stat -c %s '${remotePath}'`, signal);
     const parsed = parseInt(statOut.trim(), 10);
     if (isFinite(parsed) && parsed > 0) fileSize = parsed;
-  } catch {
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") throw e;
     // stat failed — we'll still try to pull
   }
+
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
   // Open sync: stream
   const stream = await device.createStream("sync:");
 
   return new Promise<Uint8Array>((resolve, reject) => {
+    let settled = false;
     const chunks: Uint8Array[] = [];
     let received = 0;
     let headerBuf = new Uint8Array(0); // For buffering partial sync headers
+
+    const settle = () => {
+      if (settled) return false;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      return true;
+    };
+
+    const onAbort = () => {
+      if (!settle()) return;
+      stream.close();
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     // Incoming data handler — ADB sync protocol is a sequence of:
     //   DATA <length> <data>   (file chunks)
     //   DONE <ignored>         (end of file)
     //   FAIL <length> <message> (error)
     stream.onData = (raw: Uint8Array) => {
+      if (settled) return;
+
       // Concatenate with any leftover from previous chunk
       let buf: Uint8Array;
       if (headerBuf.length > 0) {
@@ -92,7 +120,7 @@ export async function pullFile(
           onProgress?.(received, fileSize);
           offset = dataEnd;
         } else if (resp.cmd === "DONE") {
-          // All done
+          if (!settle()) return;
           stream.close();
           const total = chunks.reduce((s, c) => s + c.length, 0);
           const result = new Uint8Array(total);
@@ -101,6 +129,7 @@ export async function pullFile(
           resolve(result);
           return;
         } else if (resp.cmd === "FAIL") {
+          if (!settle()) return;
           offset += 8;
           const msgEnd = offset + resp.length;
           const msg = textDec.decode(buf.subarray(offset, Math.min(msgEnd, buf.length)));
@@ -108,6 +137,7 @@ export async function pullFile(
           reject(new Error(`ADB sync FAIL: ${msg}`));
           return;
         } else {
+          if (!settle()) return;
           stream.close();
           reject(new Error(`Unexpected sync response: ${resp.cmd}`));
           return;
@@ -116,6 +146,7 @@ export async function pullFile(
     };
 
     stream.onClose = () => {
+      if (!settle()) return;
       // If we get here without resolving, assemble whatever we have
       if (chunks.length > 0) {
         const total = chunks.reduce((s, c) => s + c.length, 0);
@@ -134,6 +165,9 @@ export async function pullFile(
     const sendBuf = new Uint8Array(recvCmd.length + pathBytes.length);
     sendBuf.set(recvCmd, 0);
     sendBuf.set(pathBytes, recvCmd.length);
-    stream.write(sendBuf).catch(reject);
+    stream.write(sendBuf).catch(e => {
+      if (!settle()) return;
+      reject(e);
+    });
   });
 }

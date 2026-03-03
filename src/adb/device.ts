@@ -233,12 +233,24 @@ export class AdbDevice {
   }
 
   /** Run a shell command, collect all output, return as string. */
-  async shell(cmd: string): Promise<string> {
+  async shell(cmd: string, signal?: AbortSignal): Promise<string> {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const stream = await this.createStream(`shell:${cmd}`);
     const chunks: Uint8Array[] = [];
     const done = defer<string>();
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      stream.close();
+      done.reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
     stream.onData = (data: Uint8Array) => chunks.push(data.slice());
     stream.onClose = () => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
       const total = chunks.reduce((s, c) => s + c.length, 0);
       const buf = new Uint8Array(total);
       let off = 0;
@@ -249,12 +261,24 @@ export class AdbDevice {
   }
 
   /** Run a shell command and stream binary output. */
-  async shellRaw(cmd: string): Promise<{ stream: AdbStream; data: Promise<Uint8Array> }> {
+  async shellRaw(cmd: string, signal?: AbortSignal): Promise<{ stream: AdbStream; data: Promise<Uint8Array> }> {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const stream = await this.createStream(`shell:${cmd}`);
     const chunks: Uint8Array[] = [];
     const done = defer<Uint8Array>();
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      stream.close();
+      done.reject(new DOMException("Aborted", "AbortError"));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
     stream.onData = (data: Uint8Array) => chunks.push(data.slice());
     stream.onClose = () => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
       const total = chunks.reduce((s, c) => s + c.length, 0);
       const buf = new Uint8Array(total);
       let off = 0;
