@@ -141,9 +141,9 @@ function urlToState(url: URL): NavState {
 
 function fmtSize(n: number): string {
   if (n === 0) return "0";
-  if (n >= 1_073_741_824) return `${(n / 1_073_741_824).toFixed(1)} GB`;
-  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MB`;
-  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n >= 1_073_741_824) return `${(n / 1_073_741_824).toFixed(1)} GiB`;
+  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MiB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} KiB`;
   return n.toLocaleString();
 }
 
@@ -1409,25 +1409,27 @@ function CaptureView({ onCaptured, conn }: {
       const result = await conn.getProcessList(ac.signal);
       const list = result.list;
       if (ac.signal.aborted) return;
-      // Set global memory info (from compact format), enrich with /proc/meminfo if root
-      if (result.globalMemInfo) {
-        let gmi = result.globalMemInfo;
-        if (conn.isRoot) {
-          const procInfo = await conn.getProcMeminfo(ac.signal);
-          if (!ac.signal.aborted) {
-            gmi = { ...gmi, memAvailableKb: procInfo.memAvailableKb ?? 0, buffersKb: procInfo.buffersKb ?? 0, cachedKb: procInfo.cachedKb ?? 0 };
-          }
-        }
-        if (!ac.signal.aborted) setGlobalMemInfo(gmi);
-      }
-      if (ac.signal.aborted) return;
-      // On non-rooted devices, annotate processes with debuggable status
-      if (!conn.isRoot) {
-        const debuggable = await conn.getDebuggablePackages(ac.signal);
-        if (ac.signal.aborted) return;
-        for (const p of list) p.debuggable = debuggable.has(p.name);
-      }
+      // Show process list immediately, then enrich in background
       setProcesses(list);
+      if (result.globalMemInfo) setGlobalMemInfo(result.globalMemInfo);
+      // Fetch supplementary data in parallel (non-blocking for first render)
+      if (!ac.signal.aborted) {
+        const supplementary: Promise<void>[] = [];
+        if (result.globalMemInfo && conn.isRoot) {
+          supplementary.push(conn.getProcMeminfo(ac.signal).then(procInfo => {
+            if (ac.signal.aborted) return;
+            setGlobalMemInfo(gmi => gmi ? { ...gmi, memAvailableKb: procInfo.memAvailableKb ?? 0, buffersKb: procInfo.buffersKb ?? 0, cachedKb: procInfo.cachedKb ?? 0 } : gmi);
+          }).catch(() => {}));
+        }
+        if (!conn.isRoot) {
+          supplementary.push(conn.getDebuggablePackages(ac.signal).then(debuggable => {
+            if (ac.signal.aborted) return;
+            for (const p of list) p.debuggable = debuggable.has(p.name);
+            setProcesses([...list]);
+          }).catch(() => {}));
+        }
+        await Promise.all(supplementary);
+      }
       // Single per-process pass: enrich meminfo (if needed) + smaps (if root).
       // Each process is fully ready before moving to the next.
       const needsMeminfo = !result.hasBreakdown;
@@ -1522,7 +1524,7 @@ function CaptureView({ onCaptured, conn }: {
             case "pulling": {
               const pct = phase.total > 0 ? Math.round(phase.received / phase.total * 100) : 0;
               const mb = (phase.received / 1048576).toFixed(1);
-              setCaptureStatus(phase.total > 0 ? `Pulling: ${mb} MB (${pct}%)` : `Pulling: ${mb} MB`);
+              setCaptureStatus(phase.total > 0 ? `Pulling: ${mb} MiB (${pct}%)` : `Pulling: ${mb} MiB`);
               if (phase.total > 0) setCaptureProgress({ done: phase.received, total: phase.total });
               break;
             }
@@ -1646,35 +1648,45 @@ function CaptureView({ onCaptured, conn }: {
         </div>
       ) : (
         <div>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <span className="text-stone-600">{conn.productName}</span>
-              <span className="text-stone-400 ml-2 font-mono text-xs">{conn.serial}</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses}>
-                {enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Diffing\u2026" : "Refresh"}
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <span className="text-stone-600">{conn.productName}</span>
+            <span className="text-stone-400 font-mono text-xs">{conn.serial}</span>
+            <label className="flex items-center gap-1.5 text-stone-500 text-xs ml-auto">
+              <input type="checkbox" checked={withBitmaps} onChange={e => setWithBitmaps(e.target.checked)} className="accent-sky-600" />
+              Bitmaps (-b)
+            </label>
+            <button
+              className={`px-3 py-0.5 text-xs text-white transition-colors disabled:opacity-50 ${
+                capturing ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
+              }`}
+              onClick={() => handleCapture()}
+              disabled={selectedPid === null || capturing}
+              title={selectedPid === null ? "Select a process first" : capturing ? "Dump in progress" : "Dump Java heap"}
+            >
+              {capturing ? (captureStatus || "Dumping\u2026") : "Java dump"}
+            </button>
+            <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses}>
+              {enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Diffing\u2026" : "Refresh"}
+            </button>
+            {processes && !enrichStatus && (
+              <button
+                className="text-sky-600 hover:text-sky-800 text-xs border border-sky-300 px-2 py-0.5"
+                onClick={handleDiff}
+              >
+                Diff
               </button>
-              {processes && !enrichStatus && (
-                <button
-                  className="text-sky-600 hover:text-sky-800 text-xs border border-sky-300 px-2 py-0.5"
-                  onClick={handleDiff}
-                >
-                  Diff
-                </button>
-              )}
-              {diffMode && !enrichStatus && (
-                <button
-                  className="text-amber-600 hover:text-amber-800 text-xs border border-amber-300 px-2 py-0.5"
-                  onClick={clearDiff}
-                >
-                  Clear Diff
-                </button>
-              )}
-              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={handleDisconnect}>
-                Disconnect
+            )}
+            {diffMode && !enrichStatus && (
+              <button
+                className="text-amber-600 hover:text-amber-800 text-xs border border-amber-300 px-2 py-0.5"
+                onClick={clearDiff}
+              >
+                Clear Diff
               </button>
-            </div>
+            )}
+            <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={handleDisconnect}>
+              Disconnect
+            </button>
           </div>
 
           {/* Non-root banner */}
@@ -1683,24 +1695,6 @@ function CaptureView({ onCaptured, conn }: {
               Non-rooted device — only debuggable apps can be captured
             </div>
           )}
-
-          {/* Capture controls */}
-          <div className="bg-white border border-stone-200 p-3 mb-4 flex items-center gap-4">
-            <label className="flex items-center gap-2 text-stone-600">
-              <input type="checkbox" checked={withBitmaps} onChange={e => setWithBitmaps(e.target.checked)} className="accent-sky-600" />
-              Include bitmaps (-b)
-            </label>
-            <button
-              className={`px-4 py-1.5 text-white transition-colors disabled:opacity-50 ml-auto ${
-                capturing ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
-              }`}
-              onClick={() => handleCapture()}
-              disabled={selectedPid === null || capturing}
-              title={selectedPid === null ? "Select a process first" : capturing ? "Capture in progress" : "Capture heap dump"}
-            >
-              {capturing ? (captureStatus || "Capturing\u2026") : "Capture Heap Dump"}
-            </button>
-          </div>
 
           {/* Enrichment / smaps progress */}
           {enrichStatus && (
@@ -1771,6 +1765,7 @@ function CaptureView({ onCaptured, conn }: {
               <table className="w-full min-w-[700px] text-sm">
                 <thead>
                   <tr className="bg-stone-50 border-b border-stone-200">
+                    <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-16"></th>
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14">PID</th>
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">Process</th>
                     {hasOomLabel && <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">State</th>}
@@ -1792,17 +1787,16 @@ function CaptureView({ onCaptured, conn }: {
                         {label} {sortField === field ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
                       </th>
                     ))}
-                    <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-20"></th>
                   </tr>
                 </thead>
                 <tbody>
                   {(diffMode && sortedDiffs ? sortedDiffs : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }))).map(d => {
                     const p = d.current;
-                    const canCapture = conn.isRoot || p.debuggable !== false;
+                    const canCapture = p.javaHeapKb > 0 && (conn.isRoot || p.debuggable !== false);
                     const isCapturingThis = capturing && selectedPid === p.pid;
                     const hasSmaps = smapsData.has(p.pid);
                     const isSmapsExpanded = expandedSmapsPid === p.pid && hasSmaps;
-                    const colCount = 2 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 4 : 0) + 1;
+                    const colCount = 3 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 4 : 0);
                     const isDiff = diffMode && sortedDiffs !== null;
                     const rowKey = `${d.status}-${p.pid}`;
                     return (
@@ -1812,7 +1806,7 @@ function CaptureView({ onCaptured, conn }: {
                         d.status === "removed" ? "opacity-60" :
                         d.status === "added" ? "bg-green-50/50" :
                         isSmapsExpanded ? "bg-sky-50" : "hover:bg-stone-50"
-                      } ${!canCapture && d.status !== "removed" ? "opacity-50" : ""}`}
+                      }`}
                       onClick={() => {
                         if (d.status === "removed") return;
                         if (hasSmaps) {
@@ -1827,6 +1821,22 @@ function CaptureView({ onCaptured, conn }: {
                         setSelectedPid(p.pid);
                       }}
                     >
+                      <td className="py-1 px-2 text-center whitespace-nowrap">
+                        {p.javaHeapKb > 0 && d.status !== "removed" && (
+                          canCapture ? (
+                            <button
+                              className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
+                              disabled={capturing}
+                              title={capturing ? "Dump in progress" : "Dump Java heap"}
+                              onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
+                            >
+                              {isCapturingThis ? "\u2026" : "Java dump"}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-stone-400" title="Only debuggable apps can be dumped on non-rooted devices">locked</span>
+                          )
+                        )}
+                      </td>
                       <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">
                         {hasSmaps && d.status !== "removed" ? (
                           <span className="text-stone-400 mr-1">{isSmapsExpanded ? "\u25BC" : "\u25B6"}</span>
@@ -1875,22 +1885,6 @@ function CaptureView({ onCaptured, conn }: {
                           );
                         });
                       })()}
-                      <td className="py-1 px-2 text-center whitespace-nowrap">
-                        {d.status === "removed" ? (
-                          <span className="text-xs text-stone-400">removed</span>
-                        ) : !canCapture ? (
-                          <span className="text-xs text-stone-400" title="Only debuggable apps can be captured on non-rooted devices">locked</span>
-                        ) : (
-                          <button
-                            className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
-                            disabled={capturing}
-                            title={capturing ? "Capture in progress" : "Capture heap dump"}
-                            onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
-                          >
-                            {isCapturingThis ? "\u2026" : "Capture"}
-                          </button>
-                        )}
-                      </td>
                     </tr>
                     {isSmapsExpanded && d.status !== "removed" && (
                       <tr>
@@ -1945,7 +1939,7 @@ function CaptureView({ onCaptured, conn }: {
                     }
                     return (
                       <tr className="border-t-2 border-stone-300 font-semibold bg-stone-50">
-                        <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 3 : 2}>Total ({rows.filter(d => d.status !== "removed").length})</td>
+                        <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 4 : 3}>Total ({rows.filter(d => d.status !== "removed").length})</td>
                         {cols.map(({ value, delta, key }) => (
                           <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(delta) : ""}`}>
                             {fmtSize(value * 1024)}
@@ -1956,7 +1950,6 @@ function CaptureView({ onCaptured, conn }: {
                             )}
                           </td>
                         ))}
-                        <td />
                       </tr>
                     );
                   })()}
@@ -1970,7 +1963,7 @@ function CaptureView({ onCaptured, conn }: {
             <div className="mt-2 text-xs text-stone-600">
               <div className="flex items-center gap-2 mb-1">
                 <span className="truncate font-medium">{captureStatus}</span>
-                {captureProgress && <span className="text-stone-400 whitespace-nowrap">{(captureProgress.done / 1048576).toFixed(1)}/{(captureProgress.total / 1048576).toFixed(1)} MB</span>}
+                {captureProgress && <span className="text-stone-400 whitespace-nowrap">{(captureProgress.done / 1048576).toFixed(1)}/{(captureProgress.total / 1048576).toFixed(1)} MiB</span>}
                 <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelCapture}>Cancel</button>
               </div>
               {captureProgress && captureProgress.total > 0 && (
@@ -2321,7 +2314,7 @@ export default function App() {
               <button className="text-stone-400 hover:text-stone-600" onClick={() => setShowCapture(false)}>
                 &larr; Back
               </button>
-              <h1 className="text-lg font-semibold text-stone-800">Capture from Device</h1>
+              <h1 className="text-lg font-semibold text-stone-800">Capture from device</h1>
             </div>
           </div>
         )}

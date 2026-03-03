@@ -373,6 +373,13 @@ proc,cch3,com.example.cached,400,5000,N/A,e
 proc,btop,com.example.btop,500,20000,N/A,e
 proc,bfgs,com.example.bfgs,600,15000,N/A,e
 proc,top,com.example.top,700,60000,N/A,e
+proc,impfg,com.example.impfg,800,10000,N/A,e
+proc,impbg,com.example.impbg,900,8000,N/A,e
+proc,service,com.example.svc,1000,12000,N/A,e
+proc,service-rs,com.example.svcrst,1100,6000,N/A,e
+proc,receiver,com.example.recv,1200,4000,N/A,e
+proc,frzn,com.example.frozen,1300,3000,N/A,e
+proc,lastact,com.example.lastact,1400,2000,N/A,e
 `;
       const result = parseMemInfo(COMPACT_OOM_LABELS);
       expect(result.find(p => p.pid === 100)!.oomLabel).toBe("Persistent");
@@ -382,6 +389,13 @@ proc,top,com.example.top,700,60000,N/A,e
       expect(result.find(p => p.pid === 500)!.oomLabel).toBe("Bound Top");
       expect(result.find(p => p.pid === 600)!.oomLabel).toBe("Bound FG Service");
       expect(result.find(p => p.pid === 700)!.oomLabel).toBe("Top");
+      expect(result.find(p => p.pid === 800)!.oomLabel).toBe("Important Foreground");
+      expect(result.find(p => p.pid === 900)!.oomLabel).toBe("Important Background");
+      expect(result.find(p => p.pid === 1000)!.oomLabel).toBe("Service");
+      expect(result.find(p => p.pid === 1100)!.oomLabel).toBe("Service Restarting");
+      expect(result.find(p => p.pid === 1200)!.oomLabel).toBe("Receiver");
+      expect(result.find(p => p.pid === 1300)!.oomLabel).toBe("Frozen");
+      expect(result.find(p => p.pid === 1400)!.oomLabel).toBe("Last Activity");
     });
 
     it("skips oom lines as category data", () => {

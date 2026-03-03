@@ -176,23 +176,23 @@ describe("fmtDelta", () => {
   });
 
   it("formats positive deltas with + sign", () => {
-    expect(fmtDelta(1024)).toBe("+1.0 MB");
-    expect(fmtDelta(5120)).toBe("+5.0 MB");
+    expect(fmtDelta(1024)).toBe("+1.0 MiB");
+    expect(fmtDelta(5120)).toBe("+5.0 MiB");
   });
 
   it("formats negative deltas with minus sign", () => {
-    expect(fmtDelta(-1024)).toBe("\u22121.0 MB");
-    expect(fmtDelta(-5120)).toBe("\u22125.0 MB");
+    expect(fmtDelta(-1024)).toBe("\u22121.0 MiB");
+    expect(fmtDelta(-5120)).toBe("\u22125.0 MiB");
   });
 
   it("formats KB-range deltas", () => {
-    expect(fmtDelta(1)).toBe("+1.0 KB");
-    expect(fmtDelta(-500)).toBe("\u2212500.0 KB");
+    expect(fmtDelta(1)).toBe("+1.0 KiB");
+    expect(fmtDelta(-500)).toBe("\u2212500.0 KiB");
   });
 
   it("formats GB-range deltas", () => {
-    expect(fmtDelta(1_048_576)).toBe("+1.0 GB");
-    expect(fmtDelta(-2_097_152)).toBe("\u22122.0 GB");
+    expect(fmtDelta(1_048_576)).toBe("+1.0 GiB");
+    expect(fmtDelta(-2_097_152)).toBe("\u22122.0 GiB");
   });
 });
 
