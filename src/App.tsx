@@ -5,7 +5,7 @@ import type {
   SiteData, SiteChildRow, SiteObjectsRow,
   PrimOrRef, BitmapListRow,
 } from "./hprof.worker";
-import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry } from "./adb/capture";
+import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type GlobalMemInfo } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 
 // ─── Worker proxy ─────────────────────────────────────────────────────────────
@@ -1182,6 +1182,7 @@ function CaptureView({ onCaptured, conn }: {
 
   // Smaps — fetched alongside meminfo enrichment (root-only)
   const [smapsData, setSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
+  const [globalMemInfo, setGlobalMemInfo] = useState<GlobalMemInfo | null>(null);
   const [expandedSmapsPid, setExpandedSmapsPid] = useState<number | null>(null);
   const [expandedSmapsGroup, setExpandedSmapsGroup] = useState<string | null>(null);
   type SmapsSortField = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
@@ -1218,10 +1219,23 @@ function CaptureView({ onCaptured, conn }: {
     setSmapsData(new Map());
     setExpandedSmapsPid(null);
     setExpandedSmapsGroup(null);
+    setGlobalMemInfo(null);
     setError(null);
     try {
       const result = await conn.getProcessList(ac.signal);
       const list = result.list;
+      if (ac.signal.aborted) return;
+      // Set global memory info (from compact format), enrich with /proc/meminfo if root
+      if (result.globalMemInfo) {
+        let gmi = result.globalMemInfo;
+        if (conn.isRoot) {
+          const procInfo = await conn.getProcMeminfo(ac.signal);
+          if (!ac.signal.aborted) {
+            gmi = { ...gmi, memAvailableKb: procInfo.memAvailableKb ?? 0, buffersKb: procInfo.buffersKb ?? 0, cachedKb: procInfo.cachedKb ?? 0 };
+          }
+        }
+        if (!ac.signal.aborted) setGlobalMemInfo(gmi);
+      }
       if (ac.signal.aborted) return;
       // On non-rooted devices, annotate processes with debuggable status
       if (!conn.isRoot) {
@@ -1473,6 +1487,26 @@ function CaptureView({ onCaptured, conn }: {
                   <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Global memory summary */}
+          {globalMemInfo && (
+            <div className="mb-3 bg-white border border-stone-200 px-3 py-2">
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+                <span className="text-stone-500">Total <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.totalRamKb * 1024)}</span></span>
+                <span className="text-stone-500">Free <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.freeRamKb * 1024)}</span></span>
+                <span className="text-stone-500">Used <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.usedPssKb * 1024)}</span></span>
+                {globalMemInfo.memAvailableKb > 0 && (
+                  <span className="text-stone-500">Available <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.memAvailableKb * 1024)}</span></span>
+                )}
+                {globalMemInfo.lostRamKb > 0 && (
+                  <span className="text-stone-500">Lost <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.lostRamKb * 1024)}</span></span>
+                )}
+                {globalMemInfo.swapTotalKb > 0 && (
+                  <span className="text-stone-500">ZRAM <span className="font-mono text-stone-800">{fmtSize(globalMemInfo.zramPhysicalKb * 1024)}{" / "}{fmtSize(globalMemInfo.swapTotalKb * 1024)}</span></span>
+                )}
+              </div>
             </div>
           )}
 

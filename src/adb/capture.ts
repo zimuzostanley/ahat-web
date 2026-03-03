@@ -19,6 +19,19 @@ export interface ProcessInfo {
   debuggable?: boolean;
 }
 
+export interface GlobalMemInfo {
+  totalRamKb: number;
+  freeRamKb: number;
+  usedPssKb: number;
+  lostRamKb: number;
+  zramPhysicalKb: number;
+  swapTotalKb: number;
+  swapFreeKb: number;
+  memAvailableKb: number;
+  buffersKb: number;
+  cachedKb: number;
+}
+
 /** A single VMA entry from /proc/<pid>/smaps. */
 export interface SmapsEntry {
   addrStart: string;
@@ -344,19 +357,21 @@ export class AdbConnection {
     }
   }
 
-  async getProcessList(signal?: AbortSignal): Promise<{ list: ProcessInfo[]; hasBreakdown: boolean }> {
+  async getProcessList(signal?: AbortSignal): Promise<{ list: ProcessInfo[]; hasBreakdown: boolean; globalMemInfo: GlobalMemInfo | null }> {
     if (!this.device) throw new Error("Not connected");
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     // Try compact format first — includes per-process Java/Native/Graphics breakdown
     // on devices that support it, and always has OOM labels per process.
     let compactResults: ProcessInfo[] = [];
+    let globalMemInfo: GlobalMemInfo | null = null;
     try {
       const compact = await this.device.shell("dumpsys -t 60 meminfo -c", signal);
+      globalMemInfo = parseGlobalMemInfo(compact);
       // Only use compact as primary results if it has category breakdown lines
       const hasCategories = /^(?:cat,)?(?:Native Heap|Dalvik Heap),\d/m.test(compact);
       compactResults = parseMemInfo(compact);
       if (hasCategories && compactResults.length > 0) {
-        return { list: compactResults, hasBreakdown: true };
+        return { list: compactResults, hasBreakdown: true, globalMemInfo };
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") throw e;
@@ -375,7 +390,7 @@ export class AdbConnection {
         }
       }
     }
-    return { list: results, hasBreakdown: false };
+    return { list: results, hasBreakdown: false, globalMemInfo };
   }
 
   /**
@@ -583,6 +598,20 @@ export class AdbConnection {
     return parseSmaps(output);
   }
 
+  /** Fetch /proc/meminfo for extra global memory details (root-only). */
+  async getProcMeminfo(signal?: AbortSignal): Promise<Partial<GlobalMemInfo>> {
+    if (!this.device || !this._isRoot) return {};
+    try {
+      const cmd = this._suPrefix === "su -c"
+        ? "su -c 'cat /proc/meminfo'"
+        : "su 0 cat /proc/meminfo";
+      const output = await this.device.shell(cmd, signal);
+      return parseProcMeminfo(output);
+    } catch {
+      return {};
+    }
+  }
+
   /**
    * Progressively fetch smaps for all processes (biggest PSS first).
    * Fires onData per process as results arrive. Respects abort signal.
@@ -722,5 +751,53 @@ export function aggregateSmaps(entries: SmapsEntry[]): SmapsAggregated[] {
 
   const result = [...groups.values()];
   result.sort((a, b) => b.pssKb - a.pssKb);
+  return result;
+}
+
+// ─── Global memory info parsers ─────────────────────────────────────────────
+
+/** Parse global memory stats from `dumpsys meminfo -c` compact output. */
+export function parseGlobalMemInfo(output: string): GlobalMemInfo | null {
+  const info: GlobalMemInfo = {
+    totalRamKb: 0, freeRamKb: 0, usedPssKb: 0, lostRamKb: 0,
+    zramPhysicalKb: 0, swapTotalKb: 0, swapFreeKb: 0,
+    memAvailableKb: 0, buffersKb: 0, cachedKb: 0,
+  };
+  let found = false;
+  for (const line of output.split("\n")) {
+    const parts = line.split(",");
+    if (parts[0] === "ram" && parts.length >= 4) {
+      info.totalRamKb = parseInt(parts[1], 10) || 0;
+      info.freeRamKb = parseInt(parts[2], 10) || 0;
+      info.usedPssKb = parseInt(parts[3], 10) || 0;
+      found = true;
+    } else if (parts[0] === "lostram" && parts.length >= 2) {
+      info.lostRamKb = parseInt(parts[1], 10) || 0;
+    } else if (parts[0] === "zram" && parts.length >= 4) {
+      info.zramPhysicalKb = parseInt(parts[1], 10) || 0;
+      info.swapTotalKb = parseInt(parts[2], 10) || 0;
+      info.swapFreeKb = parseInt(parts[3], 10) || 0;
+    }
+  }
+  return found ? info : null;
+}
+
+/** Parse /proc/meminfo kernel output. */
+export function parseProcMeminfo(output: string): Partial<GlobalMemInfo> {
+  const result: Partial<GlobalMemInfo> = {};
+  for (const line of output.split("\n")) {
+    const m = line.match(/^(\w+):\s+(\d+)\s+kB/);
+    if (!m) continue;
+    const val = parseInt(m[2], 10);
+    switch (m[1]) {
+      case "MemTotal": result.totalRamKb = val; break;
+      case "MemFree": result.freeRamKb = val; break;
+      case "MemAvailable": result.memAvailableKb = val; break;
+      case "Buffers": result.buffersKb = val; break;
+      case "Cached": result.cachedKb = val; break;
+      case "SwapTotal": result.swapTotalKb = val; break;
+      case "SwapFree": result.swapFreeKb = val; break;
+    }
+  }
   return result;
 }

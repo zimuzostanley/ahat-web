@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseMemInfo } from "./capture";
+import { parseMemInfo, parseGlobalMemInfo, parseProcMeminfo } from "./capture";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -397,5 +397,101 @@ proc,pers,com.android.phone,100,50000,N/A,e
       // No category data should have leaked from oom lines
       expect(result.every(p => p.nativeHeapKb === 0 && p.javaHeapKb === 0 && p.graphicsKb === 0)).toBe(true);
     });
+  });
+});
+
+// ─── parseGlobalMemInfo ─────────────────────────────────────────────────────
+
+describe("parseGlobalMemInfo", () => {
+  it("parses ram, lostram, and zram lines", () => {
+    const input = `version,1
+time,187036613,187036613
+proc,fore,com.example,100,5000,N/A,e
+ram,7890000,3456000,2345000
+lostram,123456
+zram,50000,200000,150000
+`;
+    const g = parseGlobalMemInfo(input);
+    expect(g).not.toBeNull();
+    expect(g!.totalRamKb).toBe(7890000);
+    expect(g!.freeRamKb).toBe(3456000);
+    expect(g!.usedPssKb).toBe(2345000);
+    expect(g!.lostRamKb).toBe(123456);
+    expect(g!.zramPhysicalKb).toBe(50000);
+    expect(g!.swapTotalKb).toBe(200000);
+    expect(g!.swapFreeKb).toBe(150000);
+  });
+
+  it("returns null when no ram line present", () => {
+    const input = `version,1
+proc,fore,com.example,100,5000,N/A,e
+lostram,100
+`;
+    expect(parseGlobalMemInfo(input)).toBeNull();
+  });
+
+  it("handles missing zram line (zeros)", () => {
+    const input = `ram,4000000,2000000,1500000
+lostram,50000
+`;
+    const g = parseGlobalMemInfo(input)!;
+    expect(g.totalRamKb).toBe(4000000);
+    expect(g.zramPhysicalKb).toBe(0);
+    expect(g.swapTotalKb).toBe(0);
+    expect(g.swapFreeKb).toBe(0);
+  });
+
+  it("handles negative lostram", () => {
+    const input = `ram,4000000,2000000,1500000
+lostram,-5000
+`;
+    const g = parseGlobalMemInfo(input)!;
+    expect(g.lostRamKb).toBe(-5000);
+  });
+
+  it("returns empty /proc/meminfo fields as zero", () => {
+    const input = `ram,4000000,2000000,1500000\n`;
+    const g = parseGlobalMemInfo(input)!;
+    expect(g.memAvailableKb).toBe(0);
+    expect(g.buffersKb).toBe(0);
+    expect(g.cachedKb).toBe(0);
+  });
+});
+
+// ─── parseProcMeminfo ───────────────────────────────────────────────────────
+
+describe("parseProcMeminfo", () => {
+  it("parses standard /proc/meminfo format", () => {
+    const input = `MemTotal:       16357328 kB
+MemFree:        13212984 kB
+MemAvailable:   14576056 kB
+Buffers:          257216 kB
+Cached:          1297452 kB
+SwapTotal:       4194300 kB
+SwapFree:         731280 kB
+`;
+    const r = parseProcMeminfo(input);
+    expect(r.totalRamKb).toBe(16357328);
+    expect(r.freeRamKb).toBe(13212984);
+    expect(r.memAvailableKb).toBe(14576056);
+    expect(r.buffersKb).toBe(257216);
+    expect(r.cachedKb).toBe(1297452);
+    expect(r.swapTotalKb).toBe(4194300);
+    expect(r.swapFreeKb).toBe(731280);
+  });
+
+  it("handles missing fields", () => {
+    const input = `MemTotal:       8000000 kB
+MemFree:        2000000 kB
+`;
+    const r = parseProcMeminfo(input);
+    expect(r.totalRamKb).toBe(8000000);
+    expect(r.freeRamKb).toBe(2000000);
+    expect(r.memAvailableKb).toBeUndefined();
+    expect(r.buffersKb).toBeUndefined();
+  });
+
+  it("returns empty object for garbage input", () => {
+    expect(parseProcMeminfo("hello world\nfoo bar\n")).toEqual({});
   });
 });
