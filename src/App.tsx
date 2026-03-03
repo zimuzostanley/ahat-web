@@ -940,10 +940,16 @@ function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: 
                 <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
                   {withPixels.length} bitmap{withPixels.length > 1 ? "s" : ""} with pixel data
                 </h3>
-                <button
-                  className={`text-xs px-2 py-0.5 border ${deviceScale ? "border-sky-300 bg-sky-50 text-sky-700" : "border-stone-200 text-stone-500 hover:text-stone-700"}`}
-                  onClick={() => setDeviceScale(!deviceScale)}
-                >{deviceScale ? "Device size" : "Full width"}</button>
+                <div className="inline-flex text-xs border border-stone-200 divide-x divide-stone-200">
+                  <button
+                    className={`px-2 py-0.5 ${deviceScale ? "bg-sky-50 text-sky-700 font-medium" : "text-stone-400 hover:text-stone-600"}`}
+                    onClick={() => setDeviceScale(true)}
+                  >Device size</button>
+                  <button
+                    className={`px-2 py-0.5 ${!deviceScale ? "bg-sky-50 text-sky-700 font-medium" : "text-stone-400 hover:text-stone-600"}`}
+                    onClick={() => setDeviceScale(false)}
+                  >Full width</button>
+                </div>
               </div>
               <div className="flex flex-col gap-3">
                 {withPixels.map(r => (
@@ -991,7 +997,7 @@ function CaptureView({ onCaptured, conn }: {
   conn: AdbConnection;
 }) {
   const [connected, setConnected] = useState(false);
-  const [connecting, setConnecting] = useState(false);
+  const [connectStatus, setConnectStatus] = useState<string | null>(null);
   const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
   const [selectedPid, setSelectedPid] = useState<number | null>(null);
   const [withBitmaps, setWithBitmaps] = useState(false);
@@ -1066,10 +1072,10 @@ function CaptureView({ onCaptured, conn }: {
   }, [connected, refreshProcesses]);
 
   const handleConnect = useCallback(async () => {
-    setConnecting(true);
+    setConnectStatus("Connecting\u2026");
     setError(null);
     try {
-      await conn.requestAndConnect();
+      await conn.requestAndConnect((msg) => setConnectStatus(msg));
       setConnected(true);
     } catch (e) {
       if (e instanceof Error && e.name === "NotFoundError") {
@@ -1078,7 +1084,7 @@ function CaptureView({ onCaptured, conn }: {
         setError(e instanceof Error ? e.message : "Connection failed");
       }
     } finally {
-      setConnecting(false);
+      setConnectStatus(null);
     }
   }, []);
 
@@ -1189,9 +1195,9 @@ function CaptureView({ onCaptured, conn }: {
           <button
             className="px-6 py-3 bg-stone-800 text-white hover:bg-stone-700 transition-colors disabled:opacity-50"
             onClick={handleConnect}
-            disabled={connecting}
+            disabled={connectStatus !== null}
           >
-            {connecting ? "Connecting\u2026" : "Connect USB Device"}
+            {connectStatus ?? "Connect USB Device"}
           </button>
           <p className="text-stone-400 text-xs mt-3">
             Enable USB debugging on device. If ADB is running, stop it first: <code className="bg-stone-100 px-1">adb kill-server</code>

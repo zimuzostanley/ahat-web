@@ -250,9 +250,10 @@ export class AdbConnection {
   get productName(): string { return this.device?.productName ?? ""; }
 
   /** Must be called from a user gesture (click handler). */
-  async requestAndConnect(): Promise<void> {
+  async requestAndConnect(onStatus?: (msg: string) => void): Promise<void> {
     if (!navigator.usb) throw new Error("WebUSB not supported in this browser");
     const usbDev = await navigator.usb.requestDevice({ filters: [ADB_DEVICE_FILTER] });
+    onStatus?.("Authorize on device\u2026");
     this.device = await AdbDevice.connect(usbDev, this.keyMgr);
     // Try to get root — best-effort, ignore failures (device may not be rooted)
     // Android su variants: "su 0 id" (toybox), "su -c id" (Magisk/SuperSU)
