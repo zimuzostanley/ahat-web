@@ -66,6 +66,12 @@ export class AdbConnection {
     if (!navigator.usb) throw new Error("WebUSB not supported in this browser");
     const usbDev = await navigator.usb.requestDevice({ filters: [ADB_DEVICE_FILTER] });
     this.device = await AdbDevice.connect(usbDev, this.keyMgr);
+    // Try to get root — best-effort, ignore failures (device may not be rooted)
+    try {
+      await this.device.shell("su -c id");
+    } catch {
+      // Not rooted, that's fine
+    }
   }
 
   /** Reconnect to a previously paired device. */

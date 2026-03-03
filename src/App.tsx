@@ -1033,25 +1033,24 @@ function CaptureView({ onCaptured }: {
   const [captureStatus, setCaptureStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Auto-refresh process list every 2s
+  // Load process list once on connect
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshProcesses = useCallback(async () => {
+    if (!connRef.current.connected) return;
+    setRefreshing(true);
+    try {
+      const list = await connRef.current.getProcessList();
+      setProcesses(list);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to get process list");
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (!connected) return;
-    let cancelled = false;
-    const refresh = async () => {
-      try {
-        const list = await connRef.current.getProcessList();
-        if (!cancelled) setProcesses(list);
-      } catch (e) {
-        if (!cancelled) {
-          setConnected(false);
-          setError(e instanceof Error ? e.message : "Lost connection");
-        }
-      }
-    };
-    refresh(); // immediate first fetch
-    const id = setInterval(refresh, 2000);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [connected]);
+    if (connected) refreshProcesses();
+  }, [connected, refreshProcesses]);
 
   const handleConnect = useCallback(async () => {
     setConnecting(true);
@@ -1145,9 +1144,14 @@ function CaptureView({ onCaptured }: {
               <span className="text-stone-600">{connRef.current.productName}</span>
               <span className="text-stone-400 ml-2 font-mono text-xs">{connRef.current.serial}</span>
             </div>
-            <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={() => { connRef.current.disconnect(); setConnected(false); setProcesses(null); }}>
-              Disconnect
-            </button>
+            <div className="flex items-center gap-3">
+              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses} disabled={refreshing}>
+                {refreshing ? "Refreshing\u2026" : "Refresh"}
+              </button>
+              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={() => { connRef.current.disconnect(); setConnected(false); setProcesses(null); }}>
+                Disconnect
+              </button>
+            </div>
           </div>
 
           {/* Capture controls */}
@@ -1168,6 +1172,13 @@ function CaptureView({ onCaptured }: {
           {/* Process list */}
           {processes === null ? (
             <div className="text-stone-400 p-4">Loading processes&hellip;</div>
+          ) : processes.length === 0 ? (
+            <div className="text-stone-400 p-4 flex items-center gap-3">
+              No processes found.
+              <button className="text-sky-700 underline decoration-sky-300" onClick={refreshProcesses} disabled={refreshing}>
+                {refreshing ? "Refreshing\u2026" : "Refresh"}
+              </button>
+            </div>
           ) : (
             <div className="bg-white border border-stone-200">
               <table className="w-full text-sm">
