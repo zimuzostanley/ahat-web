@@ -10,6 +10,10 @@ export interface ProcessInfo {
   pid: number;
   name: string;
   pssKb: number;
+  rssKb: number;
+  javaHeapKb: number;
+  nativeHeapKb: number;
+  graphicsKb: number;
 }
 
 export type CapturePhase =
@@ -21,9 +25,72 @@ export type CapturePhase =
 
 // ─── Parse `dumpsys meminfo` output ──────────────────────────────────────────
 
-const MEMINFO_LINE = /^\s*([\d,]+)K:\s+(.+?)\s+\(pid\s+(\d+)\)/;
-
+/**
+ * Parse `dumpsys meminfo` output. Tries detailed per-process sections first
+ * (** MEMINFO in pid N [name] **), falling back to the summary "Total PSS by
+ * process:" section when detailed sections aren't present.
+ */
 export function parseMemInfo(output: string): ProcessInfo[] {
+  const detailed = parseDetailedSections(output);
+  if (detailed.length > 0) return detailed;
+  return parsePssSummary(output);
+}
+
+// ─── Detailed per-process section parser ─────────────────────────────────────
+
+function parseDetailedSections(output: string): ProcessInfo[] {
+  const results: ProcessInfo[] = [];
+  let cur: ProcessInfo | null = null;
+
+  for (const line of output.split("\n")) {
+    // New process section header
+    const hdr = line.match(/^\*\* MEMINFO in pid (\d+) \[(.+?)\]/);
+    if (hdr) {
+      if (cur && cur.pssKb > 0) results.push(cur);
+      cur = { pid: parseInt(hdr[1], 10), name: hdr[2], pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0 };
+      continue;
+    }
+
+    // End of per-process sections
+    if (line.includes("Total PSS by process:") || line.includes("Total PSS by OOM")) {
+      if (cur && cur.pssKb > 0) results.push(cur);
+      cur = null;
+      break;
+    }
+
+    if (!cur) continue;
+    const trimmed = line.trim();
+
+    // Category PSS values (first number is PSS Total)
+    if (trimmed.startsWith("Native Heap")) {
+      const m = trimmed.match(/^Native Heap\s+(\d+)/);
+      if (m) cur.nativeHeapKb = parseInt(m[1], 10);
+    } else if (trimmed.startsWith("Dalvik Heap")) {
+      const m = trimmed.match(/^Dalvik Heap\s+(\d+)/);
+      if (m) cur.javaHeapKb = parseInt(m[1], 10);
+    } else if (/^(Gfx dev|EGL mtrack|GL mtrack)\s/.test(trimmed)) {
+      const m = trimmed.match(/^(?:Gfx dev|EGL mtrack|GL mtrack)\s+(\d+)/);
+      if (m) cur.graphicsKb += parseInt(m[1], 10);
+    } else if (/^TOTAL\s+\d/.test(trimmed) && !trimmed.startsWith("TOTAL PSS") && !trimmed.startsWith("TOTAL SWAP")) {
+      // TOTAL row: columns are PSS, PrivDirty, PrivClean, SwapPss, RSS, ...
+      const nums = trimmed.replace(/^TOTAL\s+/, "").split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number);
+      if (nums.length >= 1) cur.pssKb = nums[0];
+      if (nums.length >= 5) cur.rssKb = nums[4];
+    }
+  }
+
+  // Handle trailing section (no summary after it)
+  if (cur && cur.pssKb > 0) results.push(cur);
+
+  results.sort((a, b) => b.pssKb - a.pssKb);
+  return results;
+}
+
+// ─── Fallback: summary-only parser ───────────────────────────────────────────
+
+const SUMMARY_LINE = /^\s*([\d,]+)K:\s+(.+?)\s+\(pid\s+(\d+)\)/;
+
+function parsePssSummary(output: string): ProcessInfo[] {
   const results: ProcessInfo[] = [];
   let inSection = false;
 
@@ -33,20 +100,22 @@ export function parseMemInfo(output: string): ProcessInfo[] {
       continue;
     }
     if (!inSection) continue;
-    // Empty line or new section header ends the block
     if (line.trim() === "" && results.length > 0) break;
 
-    const m = MEMINFO_LINE.exec(line);
+    const m = SUMMARY_LINE.exec(line);
     if (m) {
       results.push({
         pssKb: parseInt(m[1].replace(/,/g, ""), 10),
         name: m[2],
         pid: parseInt(m[3], 10),
+        rssKb: 0,
+        javaHeapKb: 0,
+        nativeHeapKb: 0,
+        graphicsKb: 0,
       });
     }
   }
 
-  // Already sorted by PSS desc from dumpsys, but ensure it
   results.sort((a, b) => b.pssKb - a.pssKb);
   return results;
 }
@@ -85,7 +154,7 @@ export class AdbConnection {
 
   async getProcessList(): Promise<ProcessInfo[]> {
     if (!this.device) throw new Error("Not connected");
-    const output = await this.device.shell("dumpsys -t 30 meminfo --sort-by-pss");
+    const output = await this.device.shell("dumpsys -t 60 meminfo");
     return parseMemInfo(output);
   }
 

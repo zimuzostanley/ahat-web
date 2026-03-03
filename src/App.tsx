@@ -828,6 +828,7 @@ function BitmapCard({ row, proxy, navigate, density }: {
   row: BitmapListRow; proxy: WorkerProxy; navigate: NavFn; density: number;
 }) {
   const [bitmap, setBitmap] = useState<InstanceDetail["bitmap"] | null | "loading" | "error">(null);
+  const [deviceScale, setDeviceScale] = useState(false);
 
   const load = useCallback(() => {
     if (bitmap !== null) return;
@@ -848,21 +849,21 @@ function BitmapCard({ row, proxy, navigate, density }: {
     return () => obs.disconnect();
   }, [load, row.hasPixelData]);
 
+  // dp = px / (dpi / 160). mDensity is the bitmap's target DPI.
   const dpi = density > 0 ? density : 420;
-  const dpW = Math.round(row.width / (dpi / 160));
-  const dpH = Math.round(row.height / (dpi / 160));
-  // Aspect ratio for proportional scaling
-  const aspect = row.height / row.width;
+  const scale = dpi / 160;
+  const dpW = Math.round(row.width / scale);
+  const dpH = Math.round(row.height / scale);
 
   return (
-    <div
-      ref={ref}
-      className="bg-white border border-stone-200"
-    >
-      {/* Image area — full width, proportional height */}
+    <div ref={ref} className="bg-white border border-stone-200">
+      {/* Image area */}
       <div
-        className="w-full bg-stone-50 flex items-center justify-center overflow-hidden"
-        style={{ aspectRatio: `${row.width} / ${row.height}`, maxHeight: Math.min(600, Math.round(aspect * 800)) }}
+        className="bg-stone-50 flex items-center justify-center overflow-hidden"
+        style={deviceScale
+          ? { width: dpW, height: dpH, margin: "0 auto" }
+          : { width: "100%", aspectRatio: `${row.width} / ${row.height}` }
+        }
       >
         {bitmap && typeof bitmap === "object" ? (
           <BitmapImage width={bitmap.width} height={bitmap.height} format={bitmap.format} data={bitmap.data} />
@@ -879,12 +880,19 @@ function BitmapCard({ row, proxy, navigate, density }: {
         <div>
           <span className="text-xs font-mono text-stone-600">{row.width}&times;{row.height} px</span>
           <span className="text-xs text-stone-400 ml-2">{dpW}&times;{dpH} dp</span>
+          <span className="text-xs text-stone-400 ml-2">@{dpi}dpi</span>
           <span className="text-xs text-stone-400 ml-2">{fmtSize(row.row.retainedTotal)}</span>
         </div>
-        <button
-          className="text-xs text-sky-700 underline decoration-sky-300 hover:decoration-sky-500"
-          onClick={() => navigate("object", { id: row.row.id })}
-        >Details</button>
+        <div className="flex items-center gap-3">
+          <button
+            className={`text-xs ${deviceScale ? "text-sky-700 font-medium" : "text-stone-400 hover:text-stone-600"}`}
+            onClick={() => setDeviceScale(!deviceScale)}
+          >{deviceScale ? "Full width" : "Device size"}</button>
+          <button
+            className="text-xs text-sky-700 underline decoration-sky-300 hover:decoration-sky-500"
+            onClick={() => navigate("object", { id: row.row.id })}
+          >Details</button>
+        </div>
       </div>
     </div>
   );
@@ -973,6 +981,8 @@ interface Session {
 
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
+type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb";
+
 function CaptureView({ onCaptured }: {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
 }) {
@@ -982,6 +992,8 @@ function CaptureView({ onCaptured }: {
   const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
   const [selectedPid, setSelectedPid] = useState<number | null>(null);
   const [withBitmaps, setWithBitmaps] = useState(false);
+  const [sortField, setSortField] = useState<SortField>("pssKb");
+  const [sortAsc, setSortAsc] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [captureStatus, setCaptureStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -1063,6 +1075,20 @@ function CaptureView({ onCaptured }: {
     return () => { connRef.current.disconnect(); };
   }, []);
 
+  const sorted = useMemo(() => {
+    if (!processes) return null;
+    const copy = [...processes];
+    copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
+    return copy;
+  }, [processes, sortField, sortAsc]);
+
+  const hasDetailed = processes ? processes.some(p => p.rssKb > 0 || p.javaHeapKb > 0 || p.nativeHeapKb > 0) : false;
+
+  const toggleSort = useCallback((field: SortField) => {
+    if (sortField === field) setSortAsc(!sortAsc);
+    else { setSortField(field); setSortAsc(false); }
+  }, [sortField, sortAsc]);
+
   const hasWebUsb = typeof navigator !== "undefined" && "usb" in navigator;
 
   if (!hasWebUsb) {
@@ -1123,9 +1149,9 @@ function CaptureView({ onCaptured }: {
           </div>
 
           {/* Process list */}
-          {processes === null ? (
+          {sorted === null ? (
             <div className="text-stone-400 p-4">Loading processes&hellip;</div>
-          ) : processes.length === 0 ? (
+          ) : sorted.length === 0 ? (
             <div className="text-stone-400 p-4 flex items-center gap-3">
               No processes found.
               <button className="text-sky-700 underline decoration-sky-300" onClick={refreshProcesses} disabled={refreshing}>
@@ -1133,17 +1159,33 @@ function CaptureView({ onCaptured }: {
               </button>
             </div>
           ) : (
-            <div className="bg-white border border-stone-200">
+            <div className="bg-white border border-stone-200 overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-stone-50 border-b border-stone-200">
-                    <th className="text-left py-1.5 px-3 text-stone-500 text-xs font-medium w-16">PID</th>
-                    <th className="text-left py-1.5 px-3 text-stone-500 text-xs font-medium">Process</th>
-                    <th className="text-right py-1.5 px-3 text-stone-500 text-xs font-medium w-24">PSS</th>
+                    <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14">PID</th>
+                    <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">Process</th>
+                    {([
+                      ["pssKb", "PSS"],
+                      ...(hasDetailed ? [
+                        ["javaHeapKb", "Java"],
+                        ["nativeHeapKb", "Native"],
+                        ["graphicsKb", "Graphics"],
+                        ["rssKb", "RSS"],
+                      ] : []),
+                    ] as [SortField, string][]).map(([field, label]) => (
+                      <th
+                        key={field}
+                        className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
+                        onClick={() => toggleSort(field)}
+                      >
+                        {label} {sortField === field ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {processes.map(p => (
+                  {sorted.map(p => (
                     <tr
                       key={p.pid}
                       className={`border-t border-stone-100 cursor-pointer transition-colors ${
@@ -1151,9 +1193,15 @@ function CaptureView({ onCaptured }: {
                       }`}
                       onClick={() => setSelectedPid(selectedPid === p.pid ? null : p.pid)}
                     >
-                      <td className="py-1 px-3 font-mono text-stone-400">{p.pid}</td>
-                      <td className="py-1 px-3 text-stone-800 truncate max-w-[400px]">{p.name}</td>
-                      <td className="py-1 px-3 text-right font-mono">{fmtSize(p.pssKb * 1024)}</td>
+                      <td className="py-1 px-2 font-mono text-stone-400">{p.pid}</td>
+                      <td className="py-1 px-2 text-stone-800 truncate max-w-[400px]">{p.name}</td>
+                      <td className="py-1 px-2 text-right font-mono">{fmtSize(p.pssKb * 1024)}</td>
+                      {hasDetailed && <>
+                        <td className="py-1 px-2 text-right font-mono">{p.javaHeapKb > 0 ? fmtSize(p.javaHeapKb * 1024) : "\u2014"}</td>
+                        <td className="py-1 px-2 text-right font-mono">{p.nativeHeapKb > 0 ? fmtSize(p.nativeHeapKb * 1024) : "\u2014"}</td>
+                        <td className="py-1 px-2 text-right font-mono">{p.graphicsKb > 0 ? fmtSize(p.graphicsKb * 1024) : "\u2014"}</td>
+                        <td className="py-1 px-2 text-right font-mono">{p.rssKb > 0 ? fmtSize(p.rssKb * 1024) : "\u2014"}</td>
+                      </>}
                     </tr>
                   ))}
                 </tbody>
