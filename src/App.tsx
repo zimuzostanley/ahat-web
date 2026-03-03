@@ -1103,7 +1103,7 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
   return (
     <div className="bg-stone-50 px-4 py-2 max-h-[400px] overflow-y-auto">
       <table className="w-full text-xs">
-        <thead>
+        <thead className="sticky top-0 bg-stone-50 z-10">
           <tr className="border-b border-stone-200">
             <th className="text-left py-1 px-2 text-stone-500 font-medium">Mapping</th>
             <th className="text-right py-1 px-1 text-stone-400 font-medium w-8">#</th>
@@ -1512,7 +1512,6 @@ function CaptureView({ onCaptured, conn }: {
                       </th>
                     ))}
                     <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-20"></th>
-                    {conn.isRoot && <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-8"></th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1521,16 +1520,34 @@ function CaptureView({ onCaptured, conn }: {
                     const isCapturingThis = capturing && selectedPid === p.pid;
                     const hasSmaps = smapsData.has(p.pid);
                     const isSmapsExpanded = expandedSmapsPid === p.pid && hasSmaps;
-                    const colCount = 2 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 3 : 0) + 1 + (conn.isRoot ? 1 : 0);
+                    const colCount = 2 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 3 : 0) + 1;
                     return (
                     <Fragment key={p.pid}>
                     <tr
-                      className={`border-t border-stone-100 cursor-pointer transition-colors ${
-                        selectedPid === p.pid ? "bg-sky-50" : "hover:bg-stone-50"
+                      className={`border-t border-stone-100 cursor-pointer ${
+                        isSmapsExpanded ? "bg-sky-50" : "hover:bg-stone-50"
                       } ${!canCapture ? "opacity-50" : ""}`}
-                      onClick={() => setSelectedPid(selectedPid === p.pid ? null : p.pid)}
+                      onClick={() => {
+                        if (hasSmaps) {
+                          if (expandedSmapsPid === p.pid) {
+                            setExpandedSmapsPid(null);
+                            setExpandedSmapsGroup(null);
+                          } else {
+                            setExpandedSmapsPid(p.pid);
+                            setExpandedSmapsGroup(null);
+                          }
+                        }
+                        setSelectedPid(p.pid);
+                      }}
                     >
-                      <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">{p.pid}</td>
+                      <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">
+                        {hasSmaps ? (
+                          <span className="text-stone-400 mr-1">{isSmapsExpanded ? "\u25BC" : "\u25B6"}</span>
+                        ) : enrichProgress ? (
+                          <span className="text-stone-300 mr-1 text-[10px]">{"\u2026"}</span>
+                        ) : null}
+                        {p.pid}
+                      </td>
                       <td className="py-1 px-2 text-stone-800 truncate max-w-[400px]" title={p.name}>{p.name}</td>
                       {hasOomLabel && <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">{p.oomLabel}</td>}
                       <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.pssKb * 1024)}</td>
@@ -1545,7 +1562,7 @@ function CaptureView({ onCaptured, conn }: {
                           <span className="text-xs text-stone-400" title="Only debuggable apps can be captured on non-rooted devices">locked</span>
                         ) : (
                           <button
-                            className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 transition-colors whitespace-nowrap"
+                            className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
                             disabled={capturing}
                             title={capturing ? "Capture in progress" : "Capture heap dump"}
                             onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
@@ -1554,30 +1571,6 @@ function CaptureView({ onCaptured, conn }: {
                           </button>
                         )}
                       </td>
-                      {conn.isRoot && (
-                        <td className="py-1 px-1 text-center">
-                          {hasSmaps ? (
-                            <button
-                              className="text-stone-400 hover:text-stone-600 text-xs leading-none"
-                              title="Memory maps"
-                              onClick={e => {
-                                e.stopPropagation();
-                                if (expandedSmapsPid === p.pid) {
-                                  setExpandedSmapsPid(null);
-                                  setExpandedSmapsGroup(null);
-                                } else {
-                                  setExpandedSmapsPid(p.pid);
-                                  setExpandedSmapsGroup(null);
-                                }
-                              }}
-                            >
-                              {isSmapsExpanded ? "\u25BC" : "\u25B6"}
-                            </button>
-                          ) : enrichProgress ? (
-                            <span className="text-stone-300 text-[10px]">{"\u2026"}</span>
-                          ) : null}
-                        </td>
-                      )}
                     </tr>
                     {isSmapsExpanded && (
                       <tr>
