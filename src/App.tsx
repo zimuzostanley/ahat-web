@@ -5,6 +5,7 @@ import type {
   SiteData, SiteChildRow, SiteObjectsRow,
   PrimOrRef, BitmapListRow,
 } from "./hprof.worker";
+import { AdbConnection, type ProcessInfo, type CapturePhase } from "./adb/capture";
 
 // ─── Worker proxy ─────────────────────────────────────────────────────────────
 
@@ -1007,19 +1008,238 @@ function BitmapGalleryView({ proxy, navigate, selectedId }: { proxy: WorkerProxy
   );
 }
 
+// ─── Session type ─────────────────────────────────────────────────────────────
+
+interface Session {
+  id: string;
+  name: string;
+  buffer: ArrayBuffer;
+  proxy: WorkerProxy;
+  overview: OverviewData;
+}
+
+// ─── Capture View ─────────────────────────────────────────────────────────────
+
+function CaptureView({ onCaptured }: {
+  onCaptured: (name: string, buffer: ArrayBuffer) => void;
+}) {
+  const connRef = useRef(new AdbConnection());
+  const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
+  const [selectedPid, setSelectedPid] = useState<number | null>(null);
+  const [withBitmaps, setWithBitmaps] = useState(false);
+  const [capturing, setCapturing] = useState(false);
+  const [captureStatus, setCaptureStatus] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  // Auto-refresh process list every 2s
+  useEffect(() => {
+    if (!connected) return;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const list = await connRef.current.getProcessList();
+        if (!cancelled) setProcesses(list);
+      } catch (e) {
+        if (!cancelled) {
+          setConnected(false);
+          setError(e instanceof Error ? e.message : "Lost connection");
+        }
+      }
+    };
+    refresh(); // immediate first fetch
+    const id = setInterval(refresh, 2000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [connected]);
+
+  const handleConnect = useCallback(async () => {
+    setConnecting(true);
+    setError(null);
+    try {
+      await connRef.current.requestAndConnect();
+      setConnected(true);
+    } catch (e) {
+      if (e instanceof Error && e.name === "NotFoundError") {
+        // User cancelled device picker
+      } else {
+        setError(e instanceof Error ? e.message : "Connection failed");
+      }
+    } finally {
+      setConnecting(false);
+    }
+  }, []);
+
+  const handleCapture = useCallback(async () => {
+    if (selectedPid === null) return;
+    setCapturing(true);
+    setCaptureStatus("Starting heap dump\u2026");
+    setError(null);
+    try {
+      const proc = processes?.find(p => p.pid === selectedPid);
+      const procName = proc?.name ?? `pid_${selectedPid}`;
+      const buffer = await connRef.current.captureHeapDump(
+        selectedPid,
+        withBitmaps,
+        (phase: CapturePhase) => {
+          switch (phase.step) {
+            case "dumping": setCaptureStatus("Dumping heap\u2026"); break;
+            case "waiting": setCaptureStatus(`Waiting for dump\u2026 (${Math.round(phase.elapsed / 1000)}s)`); break;
+            case "pulling": {
+              const pct = phase.total > 0 ? Math.round(phase.received / phase.total * 100) : 0;
+              const mb = (phase.received / 1048576).toFixed(1);
+              setCaptureStatus(phase.total > 0 ? `Pulling: ${mb} MB (${pct}%)` : `Pulling: ${mb} MB`);
+              break;
+            }
+            case "cleaning": setCaptureStatus("Cleaning up\u2026"); break;
+            case "done": break;
+          }
+        },
+      );
+      const ts = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "");
+      const name = `${procName}_${ts}`;
+      onCaptured(name, buffer);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Capture failed");
+    } finally {
+      setCapturing(false);
+    }
+  }, [selectedPid, withBitmaps, processes, onCaptured]);
+
+  // Clean up on unmount
+  useEffect(() => {
+    return () => { connRef.current.disconnect(); };
+  }, []);
+
+  const hasWebUsb = typeof navigator !== "undefined" && "usb" in navigator;
+
+  if (!hasWebUsb) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-stone-600 mb-2">WebUSB is not available.</p>
+        <p className="text-stone-400 text-sm">Use Chrome or Edge over HTTPS/localhost.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Connection */}
+      {!connected ? (
+        <div className="text-center py-8">
+          <button
+            className="px-6 py-3 bg-stone-800 text-white hover:bg-stone-700 transition-colors disabled:opacity-50"
+            onClick={handleConnect}
+            disabled={connecting}
+          >
+            {connecting ? "Connecting\u2026" : "Connect USB Device"}
+          </button>
+          <p className="text-stone-400 text-xs mt-3">
+            Enable USB debugging on device. If ADB is running, stop it first: <code className="bg-stone-100 px-1">adb kill-server</code>
+          </p>
+        </div>
+      ) : (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <span className="text-stone-600">{connRef.current.productName}</span>
+              <span className="text-stone-400 ml-2 font-mono text-xs">{connRef.current.serial}</span>
+            </div>
+            <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={() => { connRef.current.disconnect(); setConnected(false); setProcesses(null); }}>
+              Disconnect
+            </button>
+          </div>
+
+          {/* Capture controls */}
+          <div className="bg-white border border-stone-200 p-3 mb-4 flex items-center gap-4">
+            <label className="flex items-center gap-2 text-stone-600">
+              <input type="checkbox" checked={withBitmaps} onChange={e => setWithBitmaps(e.target.checked)} className="accent-sky-600" />
+              Include bitmaps (-b)
+            </label>
+            <button
+              className="px-4 py-1.5 bg-sky-600 text-white hover:bg-sky-700 transition-colors disabled:opacity-50 ml-auto"
+              onClick={handleCapture}
+              disabled={selectedPid === null || capturing}
+            >
+              {capturing ? captureStatus : "Capture Heap Dump"}
+            </button>
+          </div>
+
+          {/* Process list */}
+          {processes === null ? (
+            <div className="text-stone-400 p-4">Loading processes&hellip;</div>
+          ) : (
+            <div className="bg-white border border-stone-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-stone-50 border-b border-stone-200">
+                    <th className="text-left py-1.5 px-3 text-stone-500 text-xs font-medium w-16">PID</th>
+                    <th className="text-left py-1.5 px-3 text-stone-500 text-xs font-medium">Process</th>
+                    <th className="text-right py-1.5 px-3 text-stone-500 text-xs font-medium w-24">PSS</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {processes.map(p => (
+                    <tr
+                      key={p.pid}
+                      className={`border-t border-stone-100 cursor-pointer transition-colors ${
+                        selectedPid === p.pid ? "bg-sky-50" : "hover:bg-stone-50"
+                      }`}
+                      onClick={() => setSelectedPid(selectedPid === p.pid ? null : p.pid)}
+                    >
+                      <td className="py-1 px-3 font-mono text-stone-400">{p.pid}</td>
+                      <td className="py-1 px-3 text-stone-800 truncate max-w-[400px]">{p.name}</td>
+                      <td className="py-1 px-3 text-right font-mono">{fmtSize(p.pssKb * 1024)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm">{error}</div>
+      )}
+    </div>
+  );
+}
+
+// ─── Session helpers ──────────────────────────────────────────────────────────
+
+function downloadBuffer(name: string, buffer: ArrayBuffer): void {
+  const blob = new Blob([buffer], { type: "application/octet-stream" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name.endsWith(".hprof") ? name : name + ".hprof";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+let nextSessionId = 1;
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [proxy, setProxy] = useState<WorkerProxy | null>(null);
-  const [overview, setOverview] = useState<OverviewData | null>(null);
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [view, setView] = useState("overview");
   const [params, setParams] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState({ msg: "", pct: 0 });
-  const [fileName, setFileName] = useState<string>("");
+  const [loadingName, setLoadingName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [showCapture, setShowCapture] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const skipPushRef = useRef(false);
+
+  const activeSession = sessions.find(s => s.id === activeSessionId) ?? null;
+  const proxy = activeSession?.proxy ?? null;
+  const overview = activeSession?.overview ?? null;
 
   // Navigate: push new state to browser history
   const navigate: NavFn = useCallback((v, p = {}) => {
@@ -1043,34 +1263,32 @@ export default function App() {
     return () => window.removeEventListener("popstate", handler);
   }, []);
 
-  const loadFile = useCallback(async (file: File) => {
-    proxy?.terminate();
-    setProxy(null); setOverview(null); setLoading(true); setError(null);
-    setFileName(file.name);
-    setProgress({ msg: "Reading file\u2026", pct: 0 });
+  // Parse ArrayBuffer into a session
+  const loadBuffer = useCallback(async (name: string, buffer: ArrayBuffer) => {
+    setLoading(true);
+    setLoadingName(name);
+    setProgress({ msg: "Starting parser\u2026", pct: 2 });
+    setError(null);
+    setShowCapture(false);
     try {
-      const buffer = await file.arrayBuffer();
-      setProgress({ msg: "Starting parser\u2026", pct: 2 });
-
       const worker = new Worker(
         new URL("./hprof.worker.ts", import.meta.url),
         { type: "module" },
       );
-
       const { proxy: p, overview: ov } = await makeWorkerProxy(
         worker,
         buffer,
         (msg: string, pct: number) => setProgress({ msg, pct }),
       );
 
-      setProxy(p);
-      setOverview(ov);
+      const id = `session-${nextSessionId++}`;
+      const session: Session = { id, name, buffer, proxy: p, overview: ov };
+      setSessions(prev => [...prev, session]);
+      setActiveSessionId(id);
 
-      // Parse initial URL to determine starting view
       const initial = urlToState(new URL(window.location.href));
       setView(initial.view);
       setParams(initial.params);
-      // Replace current history entry with proper state
       window.history.replaceState(
         { view: initial.view, params: initial.params },
         "",
@@ -1082,7 +1300,23 @@ export default function App() {
     } finally {
       setLoading(false);
     }
-  }, [proxy]);
+  }, []);
+
+  const loadFile = useCallback(async (file: File) => {
+    setLoading(true);
+    setLoadingName(file.name);
+    setProgress({ msg: "Reading file\u2026", pct: 0 });
+    setError(null);
+    setShowCapture(false);
+    try {
+      const buffer = await file.arrayBuffer();
+      await loadBuffer(file.name.replace(/\.hprof$/i, ""), buffer);
+    } catch (err: unknown) {
+      console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to read file");
+      setLoading(false);
+    }
+  }, [loadBuffer]);
 
   const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1095,8 +1329,29 @@ export default function App() {
     if (file) loadFile(file);
   }, [loadFile]);
 
+  const switchSession = useCallback((id: string) => {
+    setActiveSessionId(id);
+    setView("overview");
+    setParams({});
+    setShowCapture(false);
+  }, []);
+
+  const discardSession = useCallback((id: string) => {
+    const session = sessions.find(s => s.id === id);
+    if (session) session.proxy.terminate();
+    setSessions(prev => prev.filter(s => s.id !== id));
+    if (activeSessionId === id) {
+      const remaining = sessions.filter(s => s.id !== id);
+      setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
+    }
+  }, [sessions, activeSessionId]);
+
+  const handleCaptured = useCallback((name: string, buffer: ArrayBuffer) => {
+    loadBuffer(name, buffer);
+  }, [loadBuffer]);
+
   // ── Landing page ──
-  if (!proxy && !loading) {
+  if (sessions.length === 0 && !loading && !showCapture) {
     return (
       <div
         className="min-h-screen bg-stone-50 flex items-center justify-center p-8"
@@ -1126,9 +1381,39 @@ export default function App() {
             <p className="text-stone-400 text-sm">Supports J2SE HPROF format with Android extensions</p>
             <input ref={fileRef} type="file" accept=".hprof" className="hidden" onChange={handleFile} />
           </div>
+          <div className="mt-4 text-center">
+            <button
+              className="px-5 py-2.5 border border-stone-300 text-stone-700 hover:border-stone-400 hover:bg-white transition-colors"
+              onClick={() => setShowCapture(true)}
+            >
+              <span className="inline-flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" />
+                </svg>
+                Capture from device
+              </span>
+            </button>
+          </div>
           {error && (
             <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm">{error}</div>
           )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Capture view (standalone) ──
+  if (showCapture && sessions.length === 0 && !loading) {
+    return (
+      <div className="min-h-screen bg-stone-50 p-8">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-center gap-4 mb-6">
+            <button className="text-stone-400 hover:text-stone-600" onClick={() => setShowCapture(false)}>
+              &larr; Back
+            </button>
+            <h1 className="text-lg font-semibold text-stone-800">Capture from Device</h1>
+          </div>
+          <CaptureView onCaptured={handleCaptured} />
         </div>
       </div>
     );
@@ -1139,7 +1424,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-stone-50 flex items-center justify-center p-8">
         <div className="max-w-md w-full bg-white border border-stone-200 p-8">
-          <h2 className="text-lg font-semibold text-stone-800 mb-4">Parsing {fileName || "Heap Dump"}&hellip;</h2>
+          <h2 className="text-lg font-semibold text-stone-800 mb-4">Parsing {loadingName || "Heap Dump"}&hellip;</h2>
           <div className="w-full h-2 bg-stone-100 overflow-hidden mb-3">
             <div className="h-full bg-sky-500 transition-all duration-300" style={{ width: progress.pct + "%" }} />
           </div>
@@ -1165,14 +1450,36 @@ export default function App() {
           <div className="w-6 h-6 bg-sky-600 flex items-center justify-center text-white font-bold text-xs">A</div>
           <span className="font-bold tracking-tight text-sm">ahat<span className="text-stone-400 font-normal">.web</span></span>
         </div>
+
+        {/* Session tabs */}
+        {sessions.length > 1 && (
+          <div className="flex gap-0.5 ml-2 border-l border-stone-600 pl-3">
+            {sessions.map(s => (
+              <button
+                key={s.id}
+                className={`group px-2 py-1 text-xs transition-colors flex items-center gap-1 ${
+                  s.id === activeSessionId ? "bg-stone-600 text-white" : "text-stone-400 hover:text-white hover:bg-stone-700"
+                }`}
+                onClick={() => switchSession(s.id)}
+              >
+                <span className="truncate max-w-[120px]">{s.name}</span>
+                <span
+                  className="opacity-0 group-hover:opacity-100 text-stone-500 hover:text-rose-400 ml-0.5"
+                  onClick={e => { e.stopPropagation(); discardSession(s.id); }}
+                >&times;</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         <nav className="flex gap-0.5 ml-4">
           {navItems.map(n => (
             <button
               key={n.view}
               className={`px-3 py-1 text-sm transition-colors ${
-                view === n.view ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
+                view === n.view && !showCapture ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
               }`}
-              onClick={() => navigate(n.view, n.params)}
+              onClick={() => { setShowCapture(false); navigate(n.view, n.params); }}
             >
               {n.label}
             </button>
@@ -1185,23 +1492,54 @@ export default function App() {
           >
             &larr; Back
           </button>
+          {activeSession && (
+            <button
+              className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
+              onClick={() => downloadBuffer(activeSession.name, activeSession.buffer)}
+            >
+              Download
+            </button>
+          )}
+          <button
+            className={`text-xs border px-2 py-0.5 transition-colors ${
+              showCapture ? "bg-stone-600 text-white border-stone-500" : "text-stone-400 hover:text-white border-stone-600"
+            }`}
+            onClick={() => setShowCapture(!showCapture)}
+          >
+            Capture
+          </button>
           <button
             className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
-            onClick={() => { proxy?.terminate(); setProxy(null); setOverview(null); setError(null); navigate("overview", {}); }}
+            onClick={() => fileRef.current?.click()}
           >
-            New File
+            Open File
           </button>
+          <input ref={fileRef} type="file" accept=".hprof" className="hidden" onChange={handleFile} />
+          {activeSession && sessions.length === 1 && (
+            <button
+              className="text-stone-400 hover:text-rose-400 text-xs"
+              onClick={() => discardSession(activeSession.id)}
+            >
+              Discard
+            </button>
+          )}
         </div>
       </header>
 
       <main className="flex-1 p-4 max-w-7xl mx-auto w-full text-sm">
-        {view === "overview" && overview && <OverviewView overview={overview} />}
-        {view === "rooted"   && proxy    && <RootedView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} />}
-        {view === "object"   && proxy    && <ObjectView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as ObjectParams} />}
-        {view === "objects"  && proxy    && <ObjectsView proxy={proxy} navigate={navigate} params={params as unknown as ObjectsParams} />}
-        {view === "site"     && proxy    && <SiteView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as SiteParams} />}
-        {view === "search"   && proxy    && <SearchView proxy={proxy} navigate={navigate} initialQuery={params.q as string | undefined} />}
-        {view === "bitmaps"  && proxy    && <BitmapGalleryView proxy={proxy} navigate={navigate} selectedId={params.id as number | undefined} />}
+        {showCapture ? (
+          <CaptureView onCaptured={handleCaptured} />
+        ) : (
+          <>
+            {view === "overview" && overview && <OverviewView overview={overview} />}
+            {view === "rooted"   && proxy    && <RootedView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} />}
+            {view === "object"   && proxy    && <ObjectView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as ObjectParams} />}
+            {view === "objects"  && proxy    && <ObjectsView proxy={proxy} navigate={navigate} params={params as unknown as ObjectsParams} />}
+            {view === "site"     && proxy    && <SiteView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as SiteParams} />}
+            {view === "search"   && proxy    && <SearchView proxy={proxy} navigate={navigate} initialQuery={params.q as string | undefined} />}
+            {view === "bitmaps"  && proxy    && <BitmapGalleryView proxy={proxy} navigate={navigate} selectedId={params.id as number | undefined} />}
+          </>
+        )}
       </main>
     </div>
   );

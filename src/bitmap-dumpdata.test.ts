@@ -7,7 +7,6 @@ import { readFileSync, existsSync } from 'fs';
 import {
   parseHprof,
   AhatSnapshot,
-  AhatClassInstance,
 } from './hprof';
 
 const HPROF_PATH = '/home/zimvm/projects/systemui_bitmap.hprof';
