@@ -998,17 +998,26 @@ function CaptureView({ onCaptured }: {
   const [captureStatus, setCaptureStatus] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  // Load process list once on connect
+  // Load process list once on connect, then enrich with per-process details
   const [refreshing, setRefreshing] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number; current: string } | null>(null);
   const refreshProcesses = useCallback(async () => {
     if (!connRef.current.connected) return;
     setRefreshing(true);
+    setEnrichProgress(null);
     try {
       const list = await connRef.current.getProcessList();
       setProcesses(list);
+      setRefreshing(false);
+      // Enrich with per-process details (Java/Native/Graphics breakdown)
+      await connRef.current.enrichProcessDetails(list, (done, total, current) => {
+        setEnrichProgress({ done, total, current });
+        // Trigger re-render with updated breakdown data
+        setProcesses([...list]);
+      });
+      setEnrichProgress(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to get process list");
-    } finally {
       setRefreshing(false);
     }
   }, []);
@@ -1082,7 +1091,10 @@ function CaptureView({ onCaptured }: {
     return copy;
   }, [processes, sortField, sortAsc]);
 
-  const hasDetailed = processes ? processes.some(p => p.rssKb > 0 || p.javaHeapKb > 0 || p.nativeHeapKb > 0) : false;
+  const hasRss = processes ? processes.some(p => p.rssKb > 0) : false;
+  // Show breakdown columns as soon as enrichment starts or any data arrives
+  const hasBreakdown = enrichProgress !== null || (processes ? processes.some(p => p.javaHeapKb > 0 || p.nativeHeapKb > 0 || p.graphicsKb > 0) : false);
+  const hasOomLabel = processes ? processes.some(p => p.oomLabel !== "") : false;
 
   const toggleSort = useCallback((field: SortField) => {
     if (sortField === field) setSortAsc(!sortAsc);
@@ -1165,13 +1177,14 @@ function CaptureView({ onCaptured }: {
                   <tr className="bg-stone-50 border-b border-stone-200">
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14">PID</th>
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">Process</th>
+                    {hasOomLabel && <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">State</th>}
                     {([
                       ["pssKb", "PSS"],
-                      ...(hasDetailed ? [
+                      ...(hasRss ? [["rssKb", "RSS"]] : []),
+                      ...(hasBreakdown ? [
                         ["javaHeapKb", "Java"],
                         ["nativeHeapKb", "Native"],
                         ["graphicsKb", "Graphics"],
-                        ["rssKb", "RSS"],
                       ] : []),
                     ] as [SortField, string][]).map(([field, label]) => (
                       <th
@@ -1193,19 +1206,33 @@ function CaptureView({ onCaptured }: {
                       }`}
                       onClick={() => setSelectedPid(selectedPid === p.pid ? null : p.pid)}
                     >
-                      <td className="py-1 px-2 font-mono text-stone-400">{p.pid}</td>
+                      <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">{p.pid}</td>
                       <td className="py-1 px-2 text-stone-800 truncate max-w-[400px]">{p.name}</td>
-                      <td className="py-1 px-2 text-right font-mono">{fmtSize(p.pssKb * 1024)}</td>
-                      {hasDetailed && <>
-                        <td className="py-1 px-2 text-right font-mono">{p.javaHeapKb > 0 ? fmtSize(p.javaHeapKb * 1024) : "\u2014"}</td>
-                        <td className="py-1 px-2 text-right font-mono">{p.nativeHeapKb > 0 ? fmtSize(p.nativeHeapKb * 1024) : "\u2014"}</td>
-                        <td className="py-1 px-2 text-right font-mono">{p.graphicsKb > 0 ? fmtSize(p.graphicsKb * 1024) : "\u2014"}</td>
-                        <td className="py-1 px-2 text-right font-mono">{p.rssKb > 0 ? fmtSize(p.rssKb * 1024) : "\u2014"}</td>
+                      {hasOomLabel && <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">{p.oomLabel}</td>}
+                      <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.pssKb * 1024)}</td>
+                      {hasRss && <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{fmtSize(p.rssKb * 1024)}</td>}
+                      {hasBreakdown && <>
+                        <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.javaHeapKb > 0 ? fmtSize(p.javaHeapKb * 1024) : "\u2014"}</td>
+                        <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.nativeHeapKb > 0 ? fmtSize(p.nativeHeapKb * 1024) : "\u2014"}</td>
+                        <td className="py-1 px-2 text-right font-mono whitespace-nowrap">{p.graphicsKb > 0 ? fmtSize(p.graphicsKb * 1024) : "\u2014"}</td>
                       </>}
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* Per-process detail fetch progress */}
+          {enrichProgress && enrichProgress.done < enrichProgress.total && (
+            <div className="mt-2 text-xs text-stone-500">
+              <div className="flex items-center gap-2 mb-1">
+                <span>Fetching details: {enrichProgress.done}/{enrichProgress.total}</span>
+                <span className="text-stone-400 truncate max-w-[300px]">{enrichProgress.current}</span>
+              </div>
+              <div className="h-1 bg-stone-100 rounded overflow-hidden">
+                <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
+              </div>
             </div>
           )}
         </div>
