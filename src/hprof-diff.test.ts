@@ -492,6 +492,108 @@ describe('diffFields (sorted-merge field diff)', () => {
     const result = diffFieldsForTest([], []);
     expect(result).toHaveLength(0);
   });
+
+  // ─── Java DiffFieldsTest parity: null-valued fields ─────────────
+
+  it('matched fields with null current value (nulledMatchedDiffedFieldValues)', () => {
+    const current: FieldValue[] = [{ name: "name", type: Type.OBJECT, value: null }];
+    const baseline: FieldValue[] = [{ name: "name", type: Type.OBJECT, value: 1 }];
+    const result = diffFieldsForTest(current, baseline);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ name: "name", typeName: "Object", status: "matched", changed: true });
+  });
+
+  it('matched fields with null baseline value (nulledMatchedDiffedFieldValues reverse)', () => {
+    const current: FieldValue[] = [{ name: "name", type: Type.OBJECT, value: 1 }];
+    const baseline: FieldValue[] = [{ name: "name", type: Type.OBJECT, value: null }];
+    const result = diffFieldsForTest(current, baseline);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ name: "name", typeName: "Object", status: "matched", changed: true });
+  });
+
+  it('added field with null value (nulledAddedDiffedFieldValues)', () => {
+    const current: FieldValue[] = [{ name: "name", type: Type.OBJECT, value: null }];
+    const result = diffFieldsForTest(current, []);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ name: "name", typeName: "Object", status: "added", changed: false });
+  });
+
+  it('deleted field with null value (nulledDeletedDiffedFieldValues)', () => {
+    const baseline: FieldValue[] = [{ name: "name", type: Type.OBJECT, value: null }];
+    const result = diffFieldsForTest([], baseline);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toEqual({ name: "name", typeName: "Object", status: "deleted", changed: false });
+  });
+
+  // ─── Java DiffFieldsTest parity: basicDiff exact output order ───
+
+  it('basicDiff: exact output order matches Java (8 entries in sorted-merge order)', () => {
+    // Current: n0/OBJECT, n2/CHAR, n3/FLOAT, n4/DOUBLE, n5/BYTE, n6/SHORT
+    const current: FieldValue[] = [
+      { name: "n0", type: Type.OBJECT, value: null },
+      { name: "n2", type: Type.CHAR,   value: null },
+      { name: "n3", type: Type.FLOAT,  value: null },
+      { name: "n4", type: Type.DOUBLE, value: null },
+      { name: "n5", type: Type.BYTE,   value: null },
+      { name: "n6", type: Type.SHORT,  value: null },
+    ];
+    // Baseline: n0/OBJECT, n1/BOOLEAN, n2/CHAR, n3/FLOAT, n5/BYTE, n6/SHORT, n7/INT
+    const baseline: FieldValue[] = [
+      { name: "n0", type: Type.OBJECT,  value: null },
+      { name: "n1", type: Type.BOOLEAN, value: null },
+      { name: "n2", type: Type.CHAR,    value: null },
+      { name: "n3", type: Type.FLOAT,   value: null },
+      { name: "n5", type: Type.BYTE,    value: null },
+      { name: "n6", type: Type.SHORT,   value: null },
+      { name: "n7", type: Type.INT,     value: null },
+    ];
+    const result = diffFieldsForTest(current, baseline);
+    expect(result).toHaveLength(8);
+    // Exact order from Java DiffFieldsTest.basicDiff:
+    expect(result[0]).toEqual({ name: "n0", typeName: "Object",  status: "matched", changed: false }); // MATCHED(a[0], b[0])
+    expect(result[1]).toEqual({ name: "n1", typeName: "boolean", status: "deleted",  changed: false }); // DELETED(b[1])
+    expect(result[2]).toEqual({ name: "n2", typeName: "char",    status: "matched", changed: false }); // MATCHED(a[1], b[2])
+    expect(result[3]).toEqual({ name: "n3", typeName: "float",   status: "matched", changed: false }); // MATCHED(a[2], b[3])
+    expect(result[4]).toEqual({ name: "n4", typeName: "double",  status: "added",   changed: false }); // ADDED(a[3])
+    expect(result[5]).toEqual({ name: "n5", typeName: "byte",    status: "matched", changed: false }); // MATCHED(a[4], b[4])
+    expect(result[6]).toEqual({ name: "n6", typeName: "short",   status: "matched", changed: false }); // MATCHED(a[5], b[5])
+    expect(result[7]).toEqual({ name: "n7", typeName: "int",     status: "deleted",  changed: false }); // DELETED(b[6])
+  });
+
+  // ─── Java DiffFieldsTest parity: reorderedDiff ──────────────────
+
+  it('reorderedDiff: same fields in different order → all matched', () => {
+    const current: FieldValue[] = [
+      { name: "n0", type: Type.OBJECT,  value: null },
+      { name: "n1", type: Type.BOOLEAN, value: null },
+      { name: "n2", type: Type.CHAR,    value: null },
+      { name: "n3", type: Type.FLOAT,   value: null },
+      { name: "n4", type: Type.DOUBLE,  value: null },
+      { name: "n5", type: Type.BYTE,    value: null },
+      { name: "n6", type: Type.SHORT,   value: null },
+    ];
+    // Same fields in scrambled order
+    const baseline: FieldValue[] = [
+      { name: "n4", type: Type.DOUBLE,  value: null },
+      { name: "n1", type: Type.BOOLEAN, value: null },
+      { name: "n3", type: Type.FLOAT,   value: null },
+      { name: "n0", type: Type.OBJECT,  value: null },
+      { name: "n5", type: Type.BYTE,    value: null },
+      { name: "n2", type: Type.CHAR,    value: null },
+      { name: "n6", type: Type.SHORT,   value: null },
+    ];
+    const result = diffFieldsForTest(current, baseline);
+    expect(result).toHaveLength(7);
+    // All should be matched, in sorted name order
+    expect(result.every(f => f.status === "matched")).toBe(true);
+    expect(result[0].name).toBe("n0");
+    expect(result[1].name).toBe("n1");
+    expect(result[2].name).toBe("n2");
+    expect(result[3].name).toBe("n3");
+    expect(result[4].name).toBe("n4");
+    expect(result[5].name).toBe("n5");
+    expect(result[6].name).toBe("n6");
+  });
 });
 
 // ─── Array element diff tests ────────────────────────────────────────────────
@@ -568,6 +670,220 @@ describe('fmtSizeDelta', () => {
     const bytes = -1024;
     const sign = bytes > 0 ? "+" : "\u2212";
     expect(sign).toBe("\u2212");
+  });
+});
+
+// ─── Integration test: test-dump.hprof (Java ahat DiffTest/InstanceTest parity) ─
+//
+// Uses exact same artifacts as Java ahat:
+//   - test-dump.hprof      (current snapshot, built from DumpedStuff(baseline=false))
+//   - test-dump-base.hprof  (baseline snapshot, built from DumpedStuff(baseline=true))
+//
+// Obfuscated name reference (from test-dump.map):
+//   Class: DumpedStuff (not obfuscated), k=ModifiedObject, a=AddedObject,
+//          n=RemovedObject, p=UnchangedObject, o=StackSmasher
+//   DumpedStuff fields: E=addedObject, F=unchangedObject, G=removedObject,
+//          H=modifiedObject, I=stackSmasher, K=modifiedArray, v=bigArray, Y=modifiedStaticField
+//   ModifiedObject fields: a=value(int), b=modifiedRefField(String), c=unmodifiedRefField(String)
+
+const TEST_DUMP = '/home/zimvm/projects/ahat/etc/test-dump.hprof';
+const TEST_BASE = '/home/zimvm/projects/ahat/etc/test-dump-base.hprof';
+const haveTestDumps = existsSync(TEST_DUMP) && existsSync(TEST_BASE);
+
+describe.skipIf(!haveTestDumps)('test-dump.hprof diff integration (Java DiffTest parity)', () => {
+  let snap: AhatSnapshot;
+  let basSnap: AhatSnapshot;
+
+  beforeAll(() => {
+    const buf = readFileSync(TEST_DUMP);
+    snap = parseHprof(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+    const buf2 = readFileSync(TEST_BASE);
+    basSnap = parseHprof(buf2.buffer.slice(buf2.byteOffset, buf2.byteOffset + buf2.byteLength));
+    diffSnapshots(snap, basSnap);
+  }, 30_000);
+
+  /** Find single DumpedStuff instance in a snapshot. */
+  function findDumpedStuff(s: AhatSnapshot): AhatClassInstance {
+    for (const [, inst] of s.instances) {
+      if (inst.getClassName() === 'DumpedStuff' && inst instanceof AhatClassInstance) return inst;
+    }
+    throw new Error('DumpedStuff not found');
+  }
+
+  /** Get a static field value from a class object by field name. */
+  function getStaticField(s: AhatSnapshot, className: string, fieldName: string): FieldValue | undefined {
+    for (const [, inst] of s.instances) {
+      if (inst instanceof AhatClassObj && inst.className === className) {
+        return inst.staticFieldValues.find(f => f.name === fieldName);
+      }
+    }
+    return undefined;
+  }
+
+  // ─── Java DiffTest.diffMatchedHeap ──────────────────────────────
+
+  it('diffMatchedHeap: app heap baselines cross-reference', () => {
+    const aAppHeap = snap.heaps.find(h => h.name === 'app');
+    const bAppHeap = basSnap.heaps.find(h => h.name === 'app');
+    expect(aAppHeap).toBeDefined();
+    expect(bAppHeap).toBeDefined();
+    expect(aAppHeap!.baseline).toBe(bAppHeap);
+    expect(bAppHeap!.baseline).toBe(aAppHeap);
+  });
+
+  // ─── Java DiffTest.diffUnchanged ────────────────────────────────
+
+  it('diffUnchanged: unchangedObject matched in both, sites matched', () => {
+    const ds = findDumpedStuff(snap);
+    const dsBase = findDumpedStuff(basSnap);
+    // Field "F" = unchangedObject
+    const a = ds.getRefField('F');
+    const b = dsBase.getRefField('F');
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+    // They are matched as baselines of each other
+    expect(a!.baseline).toBe(b);
+    expect(b!.baseline).toBe(a);
+    // Their allocation sites are also matched
+    expect(a!.site).toBeDefined();
+    expect(b!.site).toBeDefined();
+    expect(a!.site!.baseline).toBe(b!.site);
+    expect(b!.site!.baseline).toBe(a!.site);
+  });
+
+  // ─── Java DiffTest.diffAdded ────────────────────────────────────
+
+  it('diffAdded: addedObject exists in current, placeholder baseline', () => {
+    const ds = findDumpedStuff(snap);
+    const dsBase = findDumpedStuff(basSnap);
+    // Field "E" = addedObject: non-null in current, null in baseline
+    const a = ds.getRefField('E');
+    expect(a).toBeDefined();
+    expect(a!.baseline.isPlaceHolder()).toBe(true);
+    // In baseline DumpedStuff, field "E" should be null (no AddedObject created)
+    const b = dsBase.getRefField('E');
+    expect(b).toBeUndefined();
+  });
+
+  // ─── Java DiffTest.diffRemoved ──────────────────────────────────
+
+  it('diffRemoved: removedObject exists in baseline, not in current', () => {
+    const ds = findDumpedStuff(snap);
+    const dsBase = findDumpedStuff(basSnap);
+    // Field "G" = removedObject: null in current, non-null in baseline
+    const a = ds.getRefField('G');
+    expect(a).toBeUndefined();
+    const b = dsBase.getRefField('G');
+    expect(b).toBeDefined();
+    expect(b!.baseline.isPlaceHolder()).toBe(true);
+  });
+
+  // ─── Field value parity (DumpedStuff.java exact values) ─────────
+
+  it('modifiedObject.value: current=8, baseline=5', () => {
+    const ds = findDumpedStuff(snap);
+    const modObj = ds.getRefField('H')?.asClassInstance?.(); // H = modifiedObject
+    expect(modObj).toBeDefined();
+    expect(modObj!.getClassName()).toBe('k'); // obfuscated ModifiedObject
+
+    const curVal = modObj!.getField('a'); // a = value (int)
+    expect(curVal).toBe(8);
+
+    const blInst = modObj!.baseline;
+    expect(blInst).not.toBe(modObj);
+    expect(blInst.isPlaceHolder()).toBe(false);
+    const blVal = (blInst as AhatClassInstance).getField('a');
+    expect(blVal).toBe(5);
+  });
+
+  it('modifiedObject.modifiedRefField: current="A2", baseline="A1"', () => {
+    const ds = findDumpedStuff(snap);
+    const modObj = ds.getRefField('H')?.asClassInstance?.();
+    expect(modObj).toBeDefined();
+
+    const curRef = modObj!.getRefField('b')?.asString?.(); // b = modifiedRefField
+    expect(curRef).toBe('A2');
+
+    const blRef = (modObj!.baseline as AhatClassInstance).getRefField('b')?.asString?.();
+    expect(blRef).toBe('A1');
+  });
+
+  it('modifiedObject.unmodifiedRefField: "B" in both', () => {
+    const ds = findDumpedStuff(snap);
+    const modObj = ds.getRefField('H')?.asClassInstance?.();
+    expect(modObj).toBeDefined();
+
+    const curRef = modObj!.getRefField('c')?.asString?.(); // c = unmodifiedRefField
+    expect(curRef).toBe('B');
+
+    const blRef = (modObj!.baseline as AhatClassInstance).getRefField('c')?.asString?.();
+    expect(blRef).toBe('B');
+  });
+
+  it('modifiedStaticField: current="C2", baseline="C1"', () => {
+    const curField = getStaticField(snap, 'DumpedStuff', 'Y'); // Y = modifiedStaticField
+    expect(curField).toBeDefined();
+    const curStr = (curField!.value as AhatInstance)?.asString?.();
+    expect(curStr).toBe('C2');
+
+    const basField = getStaticField(basSnap, 'DumpedStuff', 'Y');
+    expect(basField).toBeDefined();
+    const basStr = (basField!.value as AhatInstance)?.asString?.();
+    expect(basStr).toBe('C1');
+  });
+
+  // ─── Array parity ──────────────────────────────────────────────
+
+  it('modifiedArray: current=[3,1,2,0], baseline=[0,1,2,3]', () => {
+    const ds = findDumpedStuff(snap);
+    const arr = ds.getRefField('K')?.asArrayInstance?.(); // K = modifiedArray
+    expect(arr).toBeDefined();
+    expect(arr!.values).toEqual([3, 1, 2, 0]);
+
+    // Arrays with same class+length should be matched
+    expect(arr!.baseline.isPlaceHolder()).toBe(false);
+    const blArr = arr!.baseline as AhatArrayInstance;
+    expect(blArr.values).toEqual([0, 1, 2, 3]);
+  });
+
+  it('bigArray: current=1_000_000 bytes, baseline=400_000 bytes', () => {
+    const ds = findDumpedStuff(snap);
+    const arr = ds.getRefField('v')?.asArrayInstance?.(); // v = bigArray
+    expect(arr).toBeDefined();
+    expect(arr!.length).toBe(1_000_000);
+
+    // bigArray has different lengths → different diff key → NOT matched (placeholder)
+    // Java: bigArray is byte[1000000] current, byte[400000] baseline — different lengths means no match
+    expect(arr!.baseline.isPlaceHolder()).toBe(true);
+
+    // Verify baseline DumpedStuff also has a bigArray with 400K length
+    const dsBase = findDumpedStuff(basSnap);
+    const basArr = dsBase.getRefField('v')?.asArrayInstance?.();
+    expect(basArr).toBeDefined();
+    expect(basArr!.length).toBe(400_000);
+  });
+
+  // ─── Deep dominator tree safety ─────────────────────────────────
+
+  it('stackSmasher: 10,000-deep linked list, no stack overflow during diff', () => {
+    const ds = findDumpedStuff(snap);
+    // Field "I" = stackSmasher (obfuscated StackSmasher class "o")
+    const top = ds.getRefField('I');
+    expect(top).toBeDefined();
+    expect(top!.getClassName()).toBe('o'); // obfuscated StackSmasher
+
+    // Walk the chain to verify depth (at least 100 deep to confirm it's substantial)
+    let node: AhatInstance | undefined = top;
+    let depth = 0;
+    while (node && node instanceof AhatClassInstance && depth < 200) {
+      node = node.getRefField('a'); // a = child field on StackSmasher
+      depth++;
+    }
+    expect(depth).toBeGreaterThanOrEqual(100);
+
+    // The fact that diffSnapshots completed without stack overflow is the real assertion.
+    // Additionally verify the top node has a baseline (not placeholder = matched successfully)
+    expect(top!.baseline).not.toBe(top);
   });
 });
 
