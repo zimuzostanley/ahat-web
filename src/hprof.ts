@@ -645,7 +645,7 @@ export class SiteNode {
     if (!info) {
       info = {
         heap, classObj, numInstances: 0, numBytes: ZERO_SIZE,
-        getClassName() { return this.classObj ? this.classObj.className : "???"; },
+        getClassName() { return this.classObj?.className ?? "???"; },
         baseline: null!,
       };
       info.baseline = info;
@@ -1424,20 +1424,18 @@ export function parseHprof(buffer: ArrayBuffer, onProgress?: ProgressCallback): 
   const instMap = new Map<number, AhatInstance>();
   for (const i of allInst) instMap.set(i.id, i);
 
-  // Sort & process roots
-  roots.sort((a, b) => (a?.id ?? Infinity) - (b?.id ?? Infinity));
-  roots.push(null!);
+  // Sort & process roots (merge-walk sorted roots against sorted instances)
+  roots.sort((a, b) => a.id - b.id);
 
   const superRoot = new SuperRoot();
   let ri = 0;
-  let root = roots[ri++];
   const sorted = [...allInst].sort((a, b) => a.id - b.id);
 
   for (const inst of sorted) {
-    while (root && root.id < inst.id) root = roots[ri++];
-    if (root && root.id === inst.id) {
+    while (ri < roots.length && roots[ri].id < inst.id) ri++;
+    if (ri < roots.length && roots[ri].id === inst.id) {
       superRoot.addRoot(inst);
-      while (root && root.id === inst.id) { inst.addRootType(root.type); root = roots[ri++]; }
+      while (ri < roots.length && roots[ri].id === inst.id) { inst.addRootType(roots[ri].type); ri++; }
     }
 
     if (inst instanceof AhatClassInstance && inst.tempData) {

@@ -1,231 +1,19 @@
-import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import type {
   OverviewData, HeapInfo,
   InstanceRow, InstanceDetail, DiffedField,
   SiteData, SiteChildRow, SiteObjectsRow,
   PrimOrRef, BitmapListRow,
 } from "./hprof.worker";
-import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries } from "./adb/capture";
+import { AdbConnection } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
+import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
+import { stateToUrl, urlToState } from "./routing";
+import { fmtSize, fmtHex, fmtSizeDelta, deltaBgClassBytes } from "./format";
+import CaptureView from "./views/CaptureView";
 
-// ─── Worker proxy ─────────────────────────────────────────────────────────────
-
-type QueryName = "getOverview" | "getRooted" | "getInstance" | "getSite" | "search" | "getObjects" | "getBitmapList" | "getByteArray";
-
-type WorkerInMessage =
-  | { type: "progress"; msg: string; pct: number }
-  | { type: "ready"; overview: OverviewData }
-  | { type: "error"; message: string }
-  | { type: "result"; id: number; data: unknown }
-  | { type: "queryError"; id: number; message: string }
-  | { type: "diffProgress"; msg: string; pct: number }
-  | { type: "diffReady"; overview: OverviewData }
-  | { type: "baselineCleared"; overview: OverviewData }
-  | { type: "proguardMapLoaded"; hasEntries: boolean };
-
-interface WorkerProxy {
-  query<T>(name: QueryName, params?: Record<string, unknown>): Promise<T>;
-  diffWithBaseline(buffer: ArrayBuffer, onProgress: (msg: string, pct: number) => void): Promise<OverviewData>;
-  clearBaseline(): Promise<OverviewData>;
-  loadProguardMap(text: string): Promise<boolean>;
-  terminate(): void;
-}
-
-function makeWorkerProxy(
-  worker: Worker,
-  buffer: ArrayBuffer,
-  onProgress: (msg: string, pct: number) => void,
-): Promise<{ proxy: WorkerProxy; overview: OverviewData }> {
-  return new Promise((resolve, reject) => {
-    let nextId = 1;
-    const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
-    let ready = false;
-
-    // Diff state
-    let diffProgressCb: ((msg: string, pct: number) => void) | null = null;
-    let diffResolve: ((ov: OverviewData) => void) | null = null;
-    let diffReject: ((e: Error) => void) | null = null;
-    let clearResolve: ((ov: OverviewData) => void) | null = null;
-    let mapResolve: ((ok: boolean) => void) | null = null;
-
-    worker.onmessage = (e: MessageEvent) => {
-      const msg = e.data as WorkerInMessage;
-      if (msg.type === "progress") {
-        onProgress(msg.msg, msg.pct);
-      } else if (msg.type === "ready") {
-        ready = true;
-        const proxy: WorkerProxy = {
-          query<T>(name: QueryName, params?: Record<string, unknown>): Promise<T> {
-            return new Promise<T>((res, rej) => {
-              const id = nextId++;
-              pending.set(id, { resolve: res as (v: unknown) => void, reject: rej });
-              worker.postMessage({ type: "query", id, name, params });
-            });
-          },
-          diffWithBaseline(buf: ArrayBuffer, onProg: (msg: string, pct: number) => void): Promise<OverviewData> {
-            return new Promise<OverviewData>((res, rej) => {
-              diffProgressCb = onProg;
-              diffResolve = res;
-              diffReject = rej;
-              const copy = buf.slice(0);
-              worker.postMessage({ type: "diffWithBaseline", buffer: copy }, [copy]);
-            });
-          },
-          clearBaseline(): Promise<OverviewData> {
-            return new Promise<OverviewData>((res) => {
-              clearResolve = res;
-              worker.postMessage({ type: "clearBaseline" });
-            });
-          },
-          loadProguardMap(text: string): Promise<boolean> {
-            return new Promise<boolean>((res) => {
-              mapResolve = res;
-              worker.postMessage({ type: "loadProguardMap", text });
-            });
-          },
-          terminate() { worker.terminate(); },
-        };
-        resolve({ proxy, overview: msg.overview });
-      } else if (msg.type === "error") {
-        if (!ready) reject(new Error(msg.message));
-        if (diffReject) { diffReject(new Error(msg.message)); diffReject = null; diffResolve = null; diffProgressCb = null; }
-      } else if (msg.type === "result") {
-        const p = pending.get(msg.id);
-        if (p) { pending.delete(msg.id); p.resolve(msg.data); }
-      } else if (msg.type === "queryError") {
-        const p = pending.get(msg.id);
-        if (p) { pending.delete(msg.id); p.reject(new Error(msg.message)); }
-      } else if (msg.type === "diffProgress") {
-        diffProgressCb?.(msg.msg, msg.pct);
-      } else if (msg.type === "diffReady") {
-        if (diffResolve) { diffResolve(msg.overview); diffResolve = null; diffReject = null; diffProgressCb = null; }
-      } else if (msg.type === "baselineCleared") {
-        if (clearResolve) { clearResolve(msg.overview); clearResolve = null; }
-      } else if (msg.type === "proguardMapLoaded") {
-        if (mapResolve) { mapResolve(msg.hasEntries); mapResolve = null; }
-      }
-    };
-    worker.onerror = (err) => {
-      if (!ready) reject(new Error(err.message ?? "Worker error"));
-    };
-
-    const forWorker = buffer.slice(0);
-    worker.postMessage({ type: "parse", buffer: forWorker }, [forWorker]);
-  });
-}
-
-// ─── URL routing helpers ─────────────────────────────────────────────────────
-
-interface NavState { view: string; params: Record<string, unknown> }
-
-function stateToUrl(view: string, params: Record<string, unknown>): string {
-  switch (view) {
-    case "overview": return "/";
-    case "rooted": return "/rooted";
-    case "object": return `/object?id=0x${Number(params.id ?? 0).toString(16)}`;
-    case "objects": {
-      const sp = new URLSearchParams();
-      sp.set("id", String(params.siteId ?? 0));
-      sp.set("class", String(params.className ?? ""));
-      if (params.heap) sp.set("heap", String(params.heap));
-      return `/objects?${sp.toString()}`;
-    }
-    case "site": return `/site?id=${params.id ?? 0}`;
-    case "search": {
-      const q = String(params.q ?? "");
-      return q ? `/search?q=${encodeURIComponent(q)}` : "/search";
-    }
-    case "bitmaps": {
-      const bid = params.id ? `0x${Number(params.id).toString(16)}` : null;
-      return bid ? `/bitmaps?id=${bid}` : "/bitmaps";
-    }
-    default: return "/";
-  }
-}
-
-function urlToState(url: URL): NavState {
-  const path = url.pathname.replace(/\/$/, "") || "/";
-  const sp = url.searchParams;
-
-  switch (path) {
-    case "/":
-      return { view: "overview", params: {} };
-    case "/rooted":
-      return { view: "rooted", params: {} };
-    case "/object": {
-      const raw = sp.get("id") ?? "0";
-      const id = raw.startsWith("0x") ? parseInt(raw.slice(2), 16) : parseInt(raw, 10);
-      return { view: "object", params: { id: id || 0 } };
-    }
-    case "/objects": {
-      const siteId = parseInt(sp.get("id") ?? "0", 10) || 0;
-      const className = sp.get("class") ?? "";
-      const heap = sp.get("heap") || null;
-      return { view: "objects", params: { siteId, className, heap } };
-    }
-    case "/site": {
-      const id = parseInt(sp.get("id") ?? "0", 10) || 0;
-      return { view: "site", params: { id } };
-    }
-    case "/search": {
-      const q = sp.get("q") ?? "";
-      return { view: "search", params: { q } };
-    }
-    case "/bitmaps": {
-      const raw = sp.get("id") ?? "";
-      const selectedId = raw.startsWith("0x") ? parseInt(raw.slice(2), 16) : (raw ? parseInt(raw, 10) : 0);
-      return { view: "bitmaps", params: selectedId ? { id: selectedId } : {} };
-    }
-    default:
-      return { view: "overview", params: {} };
-  }
-}
-
-// ─── Formatting helpers ──────────────────────────────────────────────────────
-
-function fmtSize(n: number): string {
-  if (n === 0) return "0";
-  if (n >= 1_073_741_824) return `${(n / 1_073_741_824).toFixed(1)} GiB`;
-  if (n >= 1_048_576) return `${(n / 1_048_576).toFixed(1)} MiB`;
-  if (n >= 1024) return `${(n / 1024).toFixed(1)} KiB`;
-  return n.toLocaleString();
-}
-
-function fmtHex(id: number): string {
-  return "0x" + id.toString(16).padStart(8, "0");
-}
-
-export function deltaBgClass(deltaKb: number): string {
-  if (deltaKb === 0) return "";
-  const abs = Math.abs(deltaKb);
-  if (deltaKb > 0) {
-    if (abs >= 50_000) return "bg-green-200";
-    if (abs >= 10_000) return "bg-green-100";
-    if (abs >= 1_000) return "bg-green-50";
-    return "";
-  }
-  if (abs >= 50_000) return "bg-red-200";
-  if (abs >= 10_000) return "bg-red-100";
-  if (abs >= 1_000) return "bg-red-50";
-  return "";
-}
-
-export function fmtDelta(deltaKb: number): string {
-  if (deltaKb === 0) return "";
-  const sign = deltaKb > 0 ? "+" : "\u2212";
-  return `${sign}${fmtSize(Math.abs(deltaKb) * 1024)}`;
-}
-
-/** Format a byte-level delta (like Java ahat's %+,d format). */
-export function fmtSizeDelta(bytes: number): string {
-  if (bytes === 0) return "";
-  const sign = bytes > 0 ? "+" : "\u2212";
-  return `${sign}${fmtSize(Math.abs(bytes))}`;
-}
-
-export function deltaBgClassBytes(bytes: number): string {
-  return deltaBgClass(bytes / 1024);
-}
+// Re-export format helpers for backward compatibility with tests
+export { deltaBgClass, fmtDelta, fmtSizeDelta, deltaBgClassBytes } from "./format";
 
 // ─── Navigation types ─────────────────────────────────────────────────────────
 
@@ -235,14 +23,18 @@ type NavFn = (view: string, params?: Record<string, unknown>) => void;
 
 const SHOW_LIMIT = 200;
 
-function InstanceLink({ row, navigate }: { row: InstanceRow | null; navigate: NavFn }) {
+/** Minimal shape for rendering a clickable object link. */
+type ObjLinkRef = { id: number; display: string; str?: string | null };
+
+function InstanceLink({ row, navigate }: { row: InstanceRow | ObjLinkRef | null; navigate: NavFn }) {
   if (!row || row.id === 0) return <span className="text-stone-500">ROOT</span>;
+  const full = "className" in row ? row as InstanceRow : null;
   return (
     <span>
-      {row.reachabilityName !== "unreachable" && row.reachabilityName !== "strong" && (
-        <span className="text-amber-600 text-xs mr-1">{row.reachabilityName}</span>
+      {full && full.reachabilityName !== "unreachable" && full.reachabilityName !== "strong" && (
+        <span className="text-amber-600 text-xs mr-1">{full.reachabilityName}</span>
       )}
-      {row.isRoot && <span className="text-rose-500 text-xs mr-1">root</span>}
+      {full?.isRoot && <span className="text-rose-500 text-xs mr-1">root</span>}
       <button
         className="text-sky-700 hover:text-sky-500 underline decoration-sky-300 hover:decoration-sky-500"
         onClick={() => navigate("object", { id: row.id })}
@@ -254,9 +46,9 @@ function InstanceLink({ row, navigate }: { row: InstanceRow | null; navigate: Na
           "{row.str.length > 80 ? row.str.slice(0, 80) + "\u2026" : row.str}"
         </span>
       )}
-      {row.referent && (
+      {full?.referent && (
         <span className="text-stone-500 ml-1">
-          {" "}for <InstanceLink row={row.referent} navigate={navigate} />
+          {" "}for <InstanceLink row={full.referent} navigate={navigate} />
         </span>
       )}
     </span>
@@ -293,7 +85,7 @@ function Section({ title, children, defaultOpen = true }: {
   );
 }
 
-function SortableTable<T>({ columns, data, limit = SHOW_LIMIT }: {
+function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: {
   columns: {
     label: string;
     align?: string;
@@ -302,6 +94,7 @@ function SortableTable<T>({ columns, data, limit = SHOW_LIMIT }: {
   }[];
   data: T[];
   limit?: number;
+  rowKey?: (row: T, idx: number) => string | number;
 }) {
   const [sortCol, setSortCol] = useState<number | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
@@ -313,7 +106,7 @@ function SortableTable<T>({ columns, data, limit = SHOW_LIMIT }: {
     const copy = [...data];
     copy.sort((a, b) => sortAsc ? key(a) - key(b) : key(b) - key(a));
     return copy;
-  }, [data, sortCol, sortAsc]);
+  }, [data, sortCol, sortAsc, columns]);
 
   const visible = sorted.slice(0, showCount);
 
@@ -335,9 +128,9 @@ function SortableTable<T>({ columns, data, limit = SHOW_LIMIT }: {
         </thead>
         <tbody>
           {visible.map((row, ri) => (
-            <tr key={ri} className="border-b border-stone-200 hover:bg-stone-50">
+            <tr key={rowKey ? rowKey(row, ri) : ri} className="border-b border-stone-200 hover:bg-stone-50">
               {columns.map((c, ci) => (
-                <td key={ci} className={`px-2 py-1 ${c.align === "right" ? "text-right font-mono" : ""}`}>
+                <td key={ci} className={`px-2 py-1 ${c.align === "right" ? "text-right font-mono whitespace-nowrap" : ""}`}>
                   {c.render(row, ri)}
                 </td>
               ))}
@@ -360,11 +153,7 @@ function SortableTable<T>({ columns, data, limit = SHOW_LIMIT }: {
 
 function PrimOrRefCell({ v, navigate }: { v: PrimOrRef; navigate: NavFn }) {
   if (v.kind === "ref") {
-    return <InstanceLink row={{
-      id: v.id, display: v.display, className: "", isRoot: false, rootTypeNames: null,
-      reachabilityName: "strong", heap: "", shallowJava: 0, shallowNative: 0,
-      retainedTotal: 0, retainedByHeap: [], str: v.str, referent: null,
-    }} navigate={navigate} />;
+    return <InstanceLink row={{ id: v.id, display: v.display, str: v.str }} navigate={navigate} />;
   }
   return <span className="font-mono">{v.v}</span>;
 }
@@ -379,15 +168,15 @@ function BitmapImage({ width, height, format, data }: {
   useEffect(() => {
     if (format === "rgba") {
       const canvas = canvasRef.current;
-      if (!canvas) return undefined;
+      if (!canvas) return;
       canvas.width = width;
       canvas.height = height;
       const ctx = canvas.getContext("2d");
-      if (!ctx) return undefined;
+      if (!ctx) return;
       const clamped = new Uint8ClampedArray(data.length);
       clamped.set(data);
       ctx.putImageData(new ImageData(clamped, width, height), 0, 0);
-      return undefined;
+      return;
     }
     const mimeMap: Record<string, string> = { png: "image/png", jpeg: "image/jpeg", webp: "image/webp" };
     const copy = new Uint8Array(data.length);
@@ -500,6 +289,15 @@ function OverviewView({ overview, sessions, activeSessionId, onSwitch, onDiscard
             </tr>
           </thead>
           <tbody>
+            <tr className="border-b-2 border-stone-300 font-semibold">
+              <td className="py-1 px-2">Total</td>
+              <td className="py-1 px-2 text-right font-mono">{fmtSize(totalJava)}</td>
+              {diffed && <DeltaCell current={totalJava} baseline={baseTotalJava} />}
+              <td className="py-1 px-2 text-right font-mono">{fmtSize(totalNative)}</td>
+              {diffed && <DeltaCell current={totalNative} baseline={baseTotalNative} />}
+              <td className="py-1 px-2 text-right font-mono">{fmtSize(totalJava + totalNative)}</td>
+              {diffed && <DeltaCell current={totalJava + totalNative} baseline={baseTotalJava + baseTotalNative} />}
+            </tr>
             {heapIndices.map(i => {
               const h = overview.heaps[i];
               const bh = baseHeaps?.[i];
@@ -515,15 +313,6 @@ function OverviewView({ overview, sessions, activeSessionId, onSwitch, onDiscard
                 </tr>
               );
             })}
-            <tr className="border-t-2 border-stone-300 font-semibold">
-              <td className="py-1 px-2">Total</td>
-              <td className="py-1 px-2 text-right font-mono">{fmtSize(totalJava)}</td>
-              {diffed && <DeltaCell current={totalJava} baseline={baseTotalJava} />}
-              <td className="py-1 px-2 text-right font-mono">{fmtSize(totalNative)}</td>
-              {diffed && <DeltaCell current={totalNative} baseline={baseTotalNative} />}
-              <td className="py-1 px-2 text-right font-mono">{fmtSize(totalJava + totalNative)}</td>
-              {diffed && <DeltaCell current={totalJava + totalNative} baseline={baseTotalJava + baseTotalNative} />}
-            </tr>
           </tbody>
         </table>
       </div>
@@ -633,7 +422,7 @@ function RootedView({ proxy, heaps, navigate, isDiffed }: { proxy: WorkerProxy; 
   return (
     <div>
       <h2 className="text-lg font-semibold mb-3 text-stone-800">Rooted</h2>
-      <SortableTable<InstanceRow> columns={cols} data={rows} />
+      <SortableTable<InstanceRow> columns={cols} data={rows} rowKey={r => r.id} />
     </div>
   );
 }
@@ -735,7 +524,7 @@ function ObjectView({ proxy, heaps, navigate, params }: {
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 mb-3">
               <span className="text-stone-500">Super Class:</span>
               <span>{detail.superClassObjId != null
-                ? <InstanceLink row={{ id: detail.superClassObjId, display: fmtHex(detail.superClassObjId), className: "", isRoot: false, rootTypeNames: null, reachabilityName: "strong", heap: "", shallowJava: 0, shallowNative: 0, retainedTotal: 0, retainedByHeap: [], str: null, referent: null }} navigate={navigate} />
+                ? <InstanceLink row={{ id: detail.superClassObjId, display: fmtHex(detail.superClassObjId) }} navigate={navigate} />
                 : "none"}</span>
               <span className="text-stone-500">Instance Size:</span>
               <span className="font-mono">{detail.instanceSize}</span>
@@ -760,11 +549,6 @@ function ObjectView({ proxy, heaps, navigate, params }: {
             elemTypeName={detail.elemTypeName ?? "Object"}
             total={detail.arrayLength}
             navigate={navigate}
-            onShowAll={detail.arrayLength > detail.arrayElems.length ? () => {
-              proxy.query<InstanceDetail | null>("getInstance", { id: params.id, arrayLimit: 0 })
-                .then(full => { if (full) setDetail(full); })
-                .catch(console.error);
-            } : undefined}
             onDownloadBytes={detail.elemTypeName === "byte" ? () => {
               proxy.query<ArrayBuffer | null>("getByteArray", { id: params.id })
                 .then(buf => { if (buf) downloadBlob(`array-${fmtHex(params.id)}.bin`, buf); })
@@ -781,6 +565,7 @@ function ObjectView({ proxy, heaps, navigate, params }: {
               { label: "Object", render: r => <InstanceLink row={r} navigate={navigate} /> },
             ]}
             data={detail.reverseRefs}
+            rowKey={r => r.id}
           />
         </Section>
       )}
@@ -804,6 +589,7 @@ function ObjectView({ proxy, heaps, navigate, params }: {
               { label: "Object", render: r => <InstanceLink row={r} navigate={navigate} /> },
             ]}
             data={detail.dominated}
+            rowKey={r => r.id}
           />
         </Section>
       )}
@@ -893,12 +679,11 @@ function FieldsTable({ fields, diffedFields, navigate }: {
   );
 }
 
-function ArrayView({ elems, elemTypeName, total, navigate, onShowAll, onDownloadBytes }: {
+function ArrayView({ elems, elemTypeName, total, navigate, onDownloadBytes }: {
   elems: { idx: number; value: PrimOrRef; baselineValue?: PrimOrRef }[];
   elemTypeName: string;
   total: number;
   navigate: NavFn;
-  onShowAll?: () => void;
   onDownloadBytes?: () => void;
 }) {
   const hasDiff = elems.some(e => e.baselineValue !== undefined);
@@ -934,12 +719,6 @@ function ArrayView({ elems, elemTypeName, total, navigate, onShowAll, onDownload
       {total > elems.length && (
         <div className="text-xs text-stone-500 pt-2">
           Showing first {elems.length.toLocaleString()} of {total.toLocaleString()} elements
-          {onShowAll && (
-            <>
-              {" \u2014 "}
-              <button className="text-sky-600 hover:underline" onClick={onShowAll}>show all</button>
-            </>
-          )}
         </div>
       )}
     </div>
@@ -979,6 +758,7 @@ function ObjectsView({ proxy, navigate, params }: { proxy: WorkerProxy; navigate
           { label: "Object", render: r => <InstanceLink row={r} navigate={navigate} /> },
         ]}
         data={rows}
+        rowKey={r => r.id}
       />
     </div>
   );
@@ -1061,7 +841,7 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
   objCols.push({ label: "Heap", render: r => <span>{r.heap}</span> });
   objCols.push({
     label: "Class", render: r => r.classObjId != null
-      ? <InstanceLink row={{ id: r.classObjId, display: r.className, className: r.className, isRoot: false, rootTypeNames: null, reachabilityName: "strong", heap: r.heap, shallowJava: 0, shallowNative: 0, retainedTotal: 0, retainedByHeap: [], str: null, referent: null }} navigate={navigate} />
+      ? <InstanceLink row={{ id: r.classObjId, display: r.className }} navigate={navigate} />
       : <span>{r.className}</span>,
   });
 
@@ -1139,6 +919,7 @@ function SearchView({ proxy, navigate, initialQuery }: { proxy: WorkerProxy; nav
             { label: "Object", render: r => <InstanceLink row={r} navigate={navigate} /> },
           ]}
           data={results}
+          rowKey={r => r.id}
         />
       )}
       {query.length >= 2 && results.length === 0 && (
@@ -1312,947 +1093,6 @@ interface Session {
   overview: OverviewData;
 }
 
-// ─── Smaps sub-table components ──────────────────────────────────────────────
-
-type SmapsSortFieldType = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
-type VmaSortFieldType = SmapsSortFieldType | "addrStart";
-
-const SMAPS_COLUMNS: [SmapsSortFieldType, string][] = [
-  ["rssKb", "RSS"], ["pssKb", "PSS"],
-  ["privateCleanKb", "Priv Clean"], ["privateDirtyKb", "Priv Dirty"],
-  ["sharedCleanKb", "Shared Clean"], ["sharedDirtyKb", "Shared Dirty"],
-  ["swapKb", "Swap"], ["sizeKb", "VSize"],
-];
-
-function VmaEntries({ entries, sortField, sortAsc, onToggleSort, entryDiffs }: {
-  entries: SmapsEntry[];
-  sortField: VmaSortFieldType;
-  sortAsc: boolean;
-  onToggleSort: (f: VmaSortFieldType) => void;
-  entryDiffs?: SmapsEntryDiff[] | null;
-}) {
-  const diffByAddr = useMemo(() => {
-    if (!entryDiffs) return null;
-    return new Map(entryDiffs.map(d => [d.current.addrStart, d]));
-  }, [entryDiffs]);
-
-  const sorted = useMemo(() => {
-    if (entryDiffs) {
-      const copy = [...entryDiffs];
-      copy.sort((a, b) => {
-        const aPin = a.status !== "matched" ? 1 : 0;
-        const bPin = b.status !== "matched" ? 1 : 0;
-        if (aPin !== bPin) return bPin - aPin;
-        if (sortField === "addrStart") {
-          return sortAsc ? a.current.addrStart.localeCompare(b.current.addrStart) : b.current.addrStart.localeCompare(a.current.addrStart);
-        }
-        return sortAsc ? a.current[sortField] - b.current[sortField] : b.current[sortField] - a.current[sortField];
-      });
-      return copy.map(d => d.current);
-    }
-    const copy = [...entries];
-    if (sortField === "addrStart") {
-      copy.sort((a, b) => sortAsc ? a.addrStart.localeCompare(b.addrStart) : b.addrStart.localeCompare(a.addrStart));
-    } else {
-      copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
-    }
-    return copy;
-  }, [entries, entryDiffs, sortField, sortAsc]);
-
-  return (
-    <>
-      <tr className="bg-stone-100">
-        <td className="py-0.5 px-2 pl-6">
-          <span className="text-stone-500 text-[10px] font-medium cursor-pointer hover:text-stone-700" onClick={() => onToggleSort("addrStart")}>
-            Address {sortField === "addrStart" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
-          </span>
-          <span className="ml-3 text-stone-400 text-[10px]">Perms</span>
-        </td>
-        <td />
-        {SMAPS_COLUMNS.map(([f, label]) => (
-          <td key={f} className="py-0.5 px-2 text-right text-stone-500 text-[10px] font-medium cursor-pointer hover:text-stone-700" onClick={() => onToggleSort(f)}>
-            {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
-          </td>
-        ))}
-      </tr>
-      {sorted.map((e, i) => {
-        const ed = diffByAddr?.get(e.addrStart);
-        return (
-        <tr key={i} className={`border-t border-stone-50 ${
-          ed?.status === "removed" ? "opacity-60" :
-          ed?.status === "added" ? "bg-green-50/50" : ""
-        }`}>
-          <td className={`py-0.5 px-2 pl-6 font-mono text-[10px] text-stone-500 whitespace-nowrap ${ed?.status === "removed" ? "line-through" : ""}`}>
-            {e.addrStart}-{e.addrEnd}
-            <span className="ml-2 text-stone-400">{e.perms}</span>
-            {ed && ed.status !== "matched" && (
-              <span className={`ml-2 font-medium ${ed.status === "added" ? "text-green-600" : "text-red-600"}`}>
-                {ed.status === "added" ? "NEW" : "GONE"}
-              </span>
-            )}
-          </td>
-          <td />
-          {SMAPS_COLUMNS.map(([f]) => {
-            const delta = ed ? ed[SMAPS_DELTA_KEY[f]] as number : 0;
-            return (
-            <td key={f} className={`py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap ${ed ? deltaBgClass(delta) : ""}`}>
-              {e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014"}
-              {ed && (
-                <span className={`ml-1 inline-block min-w-[4rem] text-right ${delta > 0 ? "text-green-700" : delta < 0 ? "text-red-700" : ""}`}>
-                  {delta !== 0 ? fmtDelta(delta) : ""}
-                </span>
-              )}
-            </td>
-            );
-          })}
-        </tr>
-        );
-      })}
-    </>
-  );
-}
-
-const SMAPS_DELTA_KEY: Record<SmapsSortFieldType, keyof SmapsDiff> = {
-  pssKb: "deltaPssKb", rssKb: "deltaRssKb", sizeKb: "deltaSizeKb",
-  sharedCleanKb: "deltaSharedCleanKb", sharedDirtyKb: "deltaSharedDirtyKb",
-  privateCleanKb: "deltaPrivateCleanKb", privateDirtyKb: "deltaPrivateDirtyKb",
-  swapKb: "deltaSwapKb",
-};
-
-function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, smapsDiffs, prevAggregated }: {
-  aggregated: SmapsAggregated[];
-  expandedGroup: string | null;
-  onToggleGroup: (name: string) => void;
-  sortField: SmapsSortFieldType;
-  sortAsc: boolean;
-  onToggleSort: (f: SmapsSortFieldType) => void;
-  vmaSortField: VmaSortFieldType;
-  vmaSortAsc: boolean;
-  onToggleVmaSort: (f: VmaSortFieldType) => void;
-  smapsDiffs?: SmapsDiff[] | null;
-  prevAggregated?: SmapsAggregated[] | null;
-}) {
-  const diffByName = useMemo(() => {
-    if (!smapsDiffs) return null;
-    return new Map(smapsDiffs.map(d => [d.current.name, d]));
-  }, [smapsDiffs]);
-
-  const prevByName = useMemo(() => {
-    if (!prevAggregated) return null;
-    return new Map(prevAggregated.map(a => [a.name, a]));
-  }, [prevAggregated]);
-
-  const sorted = useMemo(() => {
-    if (smapsDiffs) {
-      const copy = [...smapsDiffs];
-      copy.sort((a, b) => {
-        const aPin = a.status !== "matched" ? 1 : 0;
-        const bPin = b.status !== "matched" ? 1 : 0;
-        if (aPin !== bPin) return bPin - aPin;
-        return sortAsc ? a.current[sortField] - b.current[sortField] : b.current[sortField] - a.current[sortField];
-      });
-      return copy.map(d => d.current);
-    }
-    const copy = [...aggregated];
-    copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
-    return copy;
-  }, [aggregated, smapsDiffs, sortField, sortAsc]);
-
-  // Totals row
-  const totals = useMemo(() => {
-    const t = { rssKb: 0, pssKb: 0, sizeKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
-      deltaRssKb: 0, deltaPssKb: 0, deltaSizeKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0, deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0 };
-    if (smapsDiffs) {
-      for (const d of smapsDiffs) {
-        if (d.status !== "removed") {
-          for (const [f] of SMAPS_COLUMNS) t[f] += d.current[f];
-        }
-        for (const [f] of SMAPS_COLUMNS) {
-          const dk = SMAPS_DELTA_KEY[f];
-          (t as Record<string, number>)[dk] += d[dk] as number;
-        }
-      }
-    } else {
-      for (const g of aggregated) {
-        for (const [f] of SMAPS_COLUMNS) t[f] += g[f];
-      }
-    }
-    return t;
-  }, [aggregated, smapsDiffs]);
-
-  return (
-    <div className="bg-stone-50 px-4 pb-2 max-h-[400px] overflow-y-auto">
-      <table className="w-full text-xs">
-        <thead className="sticky top-0 bg-stone-50 z-10">
-          <tr className="border-b border-stone-200">
-            <th className="text-left py-1 px-2 text-stone-500 font-medium">Mapping</th>
-            <th className="text-right py-1 px-1 text-stone-400 font-medium w-8">#</th>
-            {SMAPS_COLUMNS.map(([f, label]) => (
-              <th
-                key={f}
-                className="text-right py-1 px-2 text-stone-500 font-medium cursor-pointer select-none hover:text-stone-700 whitespace-nowrap"
-                onClick={() => onToggleSort(f)}
-              >
-                {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map(g => {
-            const sd = diffByName?.get(g.name);
-            const prevEntries = sd && sd.status === "matched" && prevByName ? prevByName.get(g.name)?.entries ?? null : null;
-            return (
-            <Fragment key={g.name}>
-              <tr
-                className={`border-t border-stone-100 cursor-pointer hover:bg-stone-100 ${
-                  sd?.status === "removed" ? "opacity-60" :
-                  sd?.status === "added" ? "bg-green-50/50" : ""
-                }`}
-                onClick={() => sd?.status !== "removed" && onToggleGroup(g.name)}
-              >
-                <td className={`py-0.5 px-2 font-mono text-stone-700 truncate max-w-[300px] ${sd?.status === "removed" ? "line-through" : ""}`} title={g.name}>
-                  <span className="text-stone-400 mr-1">{expandedGroup === g.name ? "\u25BC" : "\u25B6"}</span>
-                  {g.name}
-                  {sd && sd.status !== "matched" && (
-                    <span className={`ml-2 text-[10px] font-medium ${sd.status === "added" ? "text-green-600" : "text-red-600"}`}>
-                      {sd.status === "added" ? "NEW" : "GONE"}
-                    </span>
-                  )}
-                </td>
-                <td className="py-0.5 px-1 text-right font-mono text-stone-400">{g.count}</td>
-                {SMAPS_COLUMNS.map(([f]) => {
-                  const delta = sd ? sd[SMAPS_DELTA_KEY[f]] as number : 0;
-                  return (
-                    <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
-                      {g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"}
-                      {sd && (
-                        <span className={`ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-green-700" : delta < 0 ? "text-red-700" : ""}`}>
-                          {delta !== 0 ? fmtDelta(delta) : ""}
-                        </span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-              {expandedGroup === g.name && sd?.status !== "removed" && (
-                <VmaEntries
-                  entries={g.entries}
-                  sortField={vmaSortField}
-                  sortAsc={vmaSortAsc}
-                  onToggleSort={onToggleVmaSort}
-                  entryDiffs={prevEntries ? diffSmapsEntries(prevEntries, g.entries) : null}
-                />
-              )}
-            </Fragment>
-            );
-          })}
-          {/* Totals row */}
-          <tr className="border-t-2 border-stone-300 font-semibold">
-            <td className="py-0.5 px-2 text-stone-600">Total</td>
-            <td />
-            {SMAPS_COLUMNS.map(([f]) => {
-              const dk = SMAPS_DELTA_KEY[f];
-              const delta = (totals as Record<string, number>)[dk];
-              return (
-                <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${smapsDiffs ? deltaBgClass(delta) : ""}`}>
-                  {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
-                  {smapsDiffs && (
-                    <span className={`ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-green-700" : delta < 0 ? "text-red-700" : ""}`}>
-                      {delta !== 0 ? fmtDelta(delta) : ""}
-                    </span>
-                  )}
-                </td>
-              );
-            })}
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ─── Capture View ─────────────────────────────────────────────────────────────
-
-type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb" | "codeKb";
-
-
-function CaptureView({ onCaptured, conn }: {
-  onCaptured: (name: string, buffer: ArrayBuffer) => void;
-  conn: AdbConnection;
-}) {
-  const [connected, setConnected] = useState(false);
-  const [connectStatus, setConnectStatus] = useState<string | null>(null);
-  const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
-  const [selectedPid, setSelectedPid] = useState<number | null>(null);
-  const [withBitmaps, setWithBitmaps] = useState(false);
-  const [sortField, setSortField] = useState<SortField>("pssKb");
-  const [sortAsc, setSortAsc] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Enrichment runs in the background — doesn't block capture
-  const enrichAbortRef = useRef<AbortController | null>(null);
-  const [enrichStatus, setEnrichStatus] = useState<string | null>(null);
-  const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
-
-  // Capture is a foreground operation — auto-cancels enrichment since ADB is serial
-  const captureAbortRef = useRef<AbortController | null>(null);
-  const [capturing, setCapturing] = useState(false);
-  const [captureStatus, setCaptureStatus] = useState("");
-  const [captureProgress, setCaptureProgress] = useState<{ done: number; total: number } | null>(null);
-
-  // Smaps — fetched alongside meminfo enrichment (root-only)
-  const [smapsData, setSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
-  const [globalMemInfo, setGlobalMemInfo] = useState<GlobalMemInfo | null>(null);
-  const [expandedSmapsPid, setExpandedSmapsPid] = useState<number | null>(null);
-  const [expandedSmapsGroup, setExpandedSmapsGroup] = useState<string | null>(null);
-  type SmapsSortField = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
-  const [smapsSortField, setSmapsSortField] = useState<SmapsSortField>("pssKb");
-  const [smapsSortAsc, setSmapsSortAsc] = useState(false);
-  type VmaSortField = SmapsSortField | "addrStart";
-  const [vmaSortField, setVmaSortField] = useState<VmaSortField>("pssKb");
-  const [vmaSortAsc, setVmaSortAsc] = useState(false);
-
-  // Diff state
-  const [diffMode, setDiffMode] = useState(false);
-  const [prevProcesses, setPrevProcesses] = useState<ProcessInfo[] | null>(null);
-  const [prevGlobalMemInfo, setPrevGlobalMemInfo] = useState<GlobalMemInfo | null>(null);
-  const [processDiffs, setProcessDiffs] = useState<ProcessDiff[] | null>(null);
-  const [globalMemInfoDiff, setGlobalMemInfoDiff] = useState<GlobalMemInfoDiff | null>(null);
-  const [prevSmapsData, setPrevSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
-  const diffTriggeredRef = useRef(false);
-
-  const clearDiff = useCallback(() => {
-    setDiffMode(false);
-    setPrevProcesses(null);
-    setPrevGlobalMemInfo(null);
-    setProcessDiffs(null);
-    setGlobalMemInfoDiff(null);
-    setPrevSmapsData(new Map());
-    diffTriggeredRef.current = false;
-  }, []);
-
-  // Progressive diff recomputation — fires on every enrichment update
-  useEffect(() => {
-    if (!diffMode || !prevProcesses || !processes) return;
-    setProcessDiffs(diffProcesses(prevProcesses, processes));
-  }, [diffMode, prevProcesses, processes]);
-
-  useEffect(() => {
-    if (!diffMode || !prevGlobalMemInfo || !globalMemInfo) return;
-    setGlobalMemInfoDiff(diffGlobalMemInfo(prevGlobalMemInfo, globalMemInfo));
-  }, [diffMode, prevGlobalMemInfo, globalMemInfo]);
-
-  const cancelEnrichment = useCallback(() => {
-    if (!enrichAbortRef.current) return;
-    enrichAbortRef.current.abort();
-    enrichAbortRef.current = null;
-    setEnrichStatus(null);
-    setEnrichProgress(null);
-  }, []);
-
-  const cancelCapture = useCallback(() => {
-    if (!captureAbortRef.current) return;
-    captureAbortRef.current.abort();
-    captureAbortRef.current = null;
-    setCapturing(false);
-    setCaptureStatus("");
-    setCaptureProgress(null);
-  }, []);
-
-  const refreshProcesses = useCallback(async () => {
-    if (!conn.connected) return;
-    cancelEnrichment();
-    // Normal refresh clears diff state; handleDiff sets the flag before calling us
-    if (!diffTriggeredRef.current) clearDiff();
-    diffTriggeredRef.current = false;
-    const ac = new AbortController();
-    enrichAbortRef.current = ac;
-    setEnrichStatus("Fetching process list\u2026");
-    setEnrichProgress(null);
-    setSmapsData(new Map());
-    setExpandedSmapsPid(null);
-    setExpandedSmapsGroup(null);
-    setGlobalMemInfo(null);
-    setError(null);
-    try {
-      const result = await conn.getProcessList(ac.signal);
-      const list = result.list;
-      if (ac.signal.aborted) return;
-      // Show process list immediately, then enrich in background
-      setProcesses(list);
-      if (result.globalMemInfo) setGlobalMemInfo(result.globalMemInfo);
-      // Fetch supplementary data in parallel (non-blocking for first render)
-      if (!ac.signal.aborted) {
-        const supplementary: Promise<void>[] = [];
-        if (result.globalMemInfo && conn.isRoot) {
-          supplementary.push(conn.getProcMeminfo(ac.signal).then(procInfo => {
-            if (ac.signal.aborted) return;
-            setGlobalMemInfo(gmi => gmi ? { ...gmi, memAvailableKb: procInfo.memAvailableKb ?? 0, buffersKb: procInfo.buffersKb ?? 0, cachedKb: procInfo.cachedKb ?? 0 } : gmi);
-          }).catch(() => {}));
-        }
-        if (!conn.isRoot) {
-          supplementary.push(conn.getDebuggablePackages(ac.signal).then(debuggable => {
-            if (ac.signal.aborted) return;
-            for (const p of list) p.debuggable = debuggable.has(p.name);
-            setProcesses([...list]);
-          }).catch(() => {}));
-        }
-        await Promise.all(supplementary);
-      }
-      // Single per-process pass: enrich meminfo (if needed) + smaps (if root).
-      // Each process is fully ready before moving to the next.
-      const needsMeminfo = !result.hasBreakdown;
-      const needsSmaps = conn.isRoot;
-      if (needsMeminfo || needsSmaps) {
-        await conn.enrichPerProcess(
-          list,
-          { meminfo: needsMeminfo, smaps: needsSmaps },
-          (done, total, current) => {
-            if (ac.signal.aborted) return;
-            setEnrichStatus(current);
-            setEnrichProgress({ done, total });
-          },
-          () => {
-            if (ac.signal.aborted) return;
-            setProcesses([...list]);
-          },
-          (pid, data) => {
-            if (ac.signal.aborted) return;
-            setSmapsData(prev => new Map(prev).set(pid, data));
-          },
-          ac.signal,
-        );
-      }
-    } catch (e) {
-      if (ac.signal.aborted) return;
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(e instanceof Error ? e.message : "Failed to get process list");
-    } finally {
-      if (enrichAbortRef.current === ac) {
-        enrichAbortRef.current = null;
-        setEnrichStatus(null);
-        setEnrichProgress(null);
-      }
-    }
-  }, [cancelEnrichment, clearDiff]);
-
-  const handleDiff = useCallback(() => {
-    if (!processes) return;
-    // Deep copy current state as baseline (enrichment mutates in place)
-    setPrevProcesses(processes.map(p => ({ ...p })));
-    if (globalMemInfo) setPrevGlobalMemInfo({ ...globalMemInfo });
-    setPrevSmapsData(new Map(smapsData));
-    setDiffMode(true);
-    diffTriggeredRef.current = true;
-    refreshProcesses();
-  }, [processes, globalMemInfo, smapsData, refreshProcesses]);
-
-  useEffect(() => {
-    if (connected) refreshProcesses();
-  }, [connected, refreshProcesses]);
-
-  const handleConnect = useCallback(async () => {
-    setConnectStatus("Connecting\u2026");
-    setError(null);
-    try {
-      await conn.requestAndConnect((msg) => setConnectStatus(msg));
-      setConnected(true);
-    } catch (e) {
-      if (e instanceof Error && e.name === "NotFoundError") {
-        // User cancelled device picker
-      } else {
-        setError(e instanceof Error ? e.message : "Connection failed");
-      }
-    } finally {
-      setConnectStatus(null);
-    }
-  }, []);
-
-  const handleCapture = useCallback(async (overridePid?: number) => {
-    const pid = overridePid ?? selectedPid;
-    if (pid === null || capturing) return;
-    // Cancel enrichment (includes smaps) — ADB device handles one command at a time
-    cancelEnrichment();
-    if (overridePid !== undefined) setSelectedPid(overridePid);
-    const ac = new AbortController();
-    captureAbortRef.current = ac;
-    setCapturing(true);
-    setCaptureStatus("Starting heap dump\u2026");
-    setCaptureProgress(null);
-    setError(null);
-    try {
-      const proc = processes?.find(p => p.pid === pid);
-      const procName = proc?.name ?? `pid_${pid}`;
-      const buffer = await conn.captureHeapDump(
-        pid,
-        withBitmaps,
-        (phase: CapturePhase) => {
-          switch (phase.step) {
-            case "dumping": setCaptureStatus("Dumping heap\u2026"); break;
-            case "waiting": setCaptureStatus(`Waiting for dump\u2026 (${Math.round(phase.elapsed / 1000)}s)`); break;
-            case "pulling": {
-              const pct = phase.total > 0 ? Math.round(phase.received / phase.total * 100) : 0;
-              const mb = (phase.received / 1048576).toFixed(1);
-              setCaptureStatus(phase.total > 0 ? `Pulling: ${mb} MiB (${pct}%)` : `Pulling: ${mb} MiB`);
-              if (phase.total > 0) setCaptureProgress({ done: phase.received, total: phase.total });
-              break;
-            }
-            case "cleaning": setCaptureStatus("Cleaning up\u2026"); break;
-            case "done": break;
-          }
-        },
-        ac.signal,
-      );
-      const ts = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "");
-      const name = `${procName}_${ts}`;
-      onCaptured(name, buffer);
-    } catch (e) {
-      if (ac.signal.aborted) return;
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(e instanceof Error ? e.message : "Capture failed");
-    } finally {
-      // Only clear state if we're still the active capture
-      if (captureAbortRef.current === ac) {
-        captureAbortRef.current = null;
-        setCapturing(false);
-        setCaptureStatus("");
-        setCaptureProgress(null);
-      }
-    }
-  }, [selectedPid, withBitmaps, processes, onCaptured, capturing, cancelEnrichment]);
-
-  const handleDisconnect = useCallback(() => {
-    cancelEnrichment();
-    cancelCapture();
-    conn.disconnect();
-    setConnected(false);
-    setProcesses(null);
-    setSelectedPid(null);
-    setError(null);
-    setEnrichStatus(null);
-    setEnrichProgress(null);
-    setCapturing(false);
-    setCaptureStatus("");
-    setCaptureProgress(null);
-    setSmapsData(new Map());
-    setExpandedSmapsPid(null);
-    setExpandedSmapsGroup(null);
-    clearDiff();
-  }, [cancelEnrichment, cancelCapture, clearDiff]);
-
-  // Clean up on unmount
-  useEffect(() => {
-    return () => { cancelEnrichment(); cancelCapture(); conn.disconnect(); };
-  }, [cancelEnrichment, cancelCapture]);
-
-  const sorted = useMemo(() => {
-    if (!processes) return null;
-    const copy = [...processes];
-    copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
-    return copy;
-  }, [processes, sortField, sortAsc]);
-
-  const sortedDiffs = useMemo(() => {
-    if (!processDiffs) return null;
-    const copy = [...processDiffs];
-    copy.sort((a, b) => {
-      // Pin added/removed to top
-      const aPin = a.status !== "matched" ? 1 : 0;
-      const bPin = b.status !== "matched" ? 1 : 0;
-      if (aPin !== bPin) return bPin - aPin;
-      // Sort by current value (same field as normal mode)
-      const aVal = a.current[sortField];
-      const bVal = b.current[sortField];
-      return sortAsc ? aVal - bVal : bVal - aVal;
-    });
-    return copy;
-  }, [processDiffs, sortField, sortAsc]);
-
-  const hasRss = processes ? processes.some(p => p.rssKb > 0) : false;
-  // Show breakdown columns as soon as enrichment starts or any data arrives
-  const hasBreakdown = enrichStatus !== null || (processes ? processes.some(p => p.javaHeapKb > 0 || p.nativeHeapKb > 0 || p.graphicsKb > 0 || p.codeKb > 0) : false);
-  const hasOomLabel = processes ? processes.some(p => p.oomLabel !== "") : false;
-
-  const toggleSort = useCallback((field: SortField) => {
-    if (sortField === field) setSortAsc(!sortAsc);
-    else { setSortField(field); setSortAsc(false); }
-  }, [sortField, sortAsc]);
-
-  const toggleSmapsSort = useCallback((field: SmapsSortField) => {
-    if (smapsSortField === field) setSmapsSortAsc(!smapsSortAsc);
-    else { setSmapsSortField(field); setSmapsSortAsc(false); }
-  }, [smapsSortField, smapsSortAsc]);
-
-  const toggleVmaSort = useCallback((field: VmaSortField) => {
-    if (vmaSortField === field) setVmaSortAsc(!vmaSortAsc);
-    else { setVmaSortField(field); setVmaSortAsc(false); }
-  }, [vmaSortField, vmaSortAsc]);
-
-  const hasWebUsb = typeof navigator !== "undefined" && "usb" in navigator;
-
-  if (!hasWebUsb) {
-    return (
-      <div className="text-center py-8">
-        <p className="text-stone-600 mb-2">WebUSB is not available.</p>
-        <p className="text-stone-400 text-sm">Use Chrome or Edge over HTTPS/localhost.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      {/* Connection */}
-      {!connected ? (
-        <div className="text-center py-8">
-          <button
-            className="px-6 py-3 bg-stone-800 text-white hover:bg-stone-700 transition-colors disabled:opacity-50"
-            onClick={handleConnect}
-            disabled={connectStatus !== null}
-          >
-            {connectStatus ?? "Connect USB Device"}
-          </button>
-          <p className="text-stone-400 text-xs mt-3">
-            Enable USB debugging on device. If ADB is running, stop it first: <code className="bg-stone-100 px-1">adb kill-server</code>
-          </p>
-        </div>
-      ) : (
-        <div>
-          <div className="flex items-center gap-3 mb-4 flex-wrap">
-            <span className="text-stone-600">{conn.productName}</span>
-            <span className="text-stone-400 font-mono text-xs">{conn.serial}</span>
-            <label className="flex items-center gap-1.5 text-stone-500 text-xs ml-auto">
-              <input type="checkbox" checked={withBitmaps} onChange={e => setWithBitmaps(e.target.checked)} className="accent-sky-600" />
-              Bitmaps (-b)
-            </label>
-            <button
-              className={`px-3 py-0.5 text-xs text-white transition-colors disabled:opacity-50 ${
-                capturing ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
-              }`}
-              onClick={() => handleCapture()}
-              disabled={selectedPid === null || capturing}
-              title={selectedPid === null ? "Select a process first" : capturing ? "Dump in progress" : "Dump Java heap"}
-            >
-              {capturing ? (captureStatus || "Dumping\u2026") : "Java dump"}
-            </button>
-            <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses}>
-              {enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Diffing\u2026" : "Refresh"}
-            </button>
-            {processes && !enrichStatus && (
-              <button
-                className="text-sky-600 hover:text-sky-800 text-xs border border-sky-300 px-2 py-0.5"
-                onClick={handleDiff}
-              >
-                Diff
-              </button>
-            )}
-            {diffMode && !enrichStatus && (
-              <button
-                className="text-amber-600 hover:text-amber-800 text-xs border border-amber-300 px-2 py-0.5"
-                onClick={clearDiff}
-              >
-                Clear Diff
-              </button>
-            )}
-            <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={handleDisconnect}>
-              Disconnect
-            </button>
-          </div>
-
-          {/* Non-root banner */}
-          {connected && !conn.isRoot && processes && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2 mb-3">
-              Non-rooted device — only debuggable apps can be captured
-            </div>
-          )}
-
-          {/* Enrichment / smaps progress */}
-          {enrichStatus && (
-            <div className="mb-2 text-xs text-stone-500">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="truncate">{diffMode ? `Diffing: ${enrichStatus}` : enrichStatus}</span>
-                {enrichProgress && <span className="text-stone-400 whitespace-nowrap">{enrichProgress.done}/{enrichProgress.total}</span>}
-                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelEnrichment}>Cancel</button>
-              </div>
-              {enrichProgress && enrichProgress.total > 0 && (
-                <div className="h-1 bg-stone-100 rounded overflow-hidden">
-                  <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Global memory summary */}
-          {globalMemInfo && (
-            <div className="mb-3 bg-white border border-stone-200 px-3 py-2 overflow-x-auto">
-              <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
-                {([
-                  ["Total", globalMemInfo.totalRamKb, globalMemInfoDiff?.deltaTotalRamKb, false],
-                  ["Free", globalMemInfo.freeRamKb, globalMemInfoDiff?.deltaFreeRamKb, true],
-                  ["Used", globalMemInfo.usedPssKb, globalMemInfoDiff?.deltaUsedPssKb, false],
-                  ...(globalMemInfo.memAvailableKb > 0 ? [["Available", globalMemInfo.memAvailableKb, globalMemInfoDiff?.deltaMemAvailableKb, true] as const] : []),
-                  ...(globalMemInfo.lostRamKb > 0 ? [["Lost", globalMemInfo.lostRamKb, globalMemInfoDiff?.deltaLostRamKb, false] as const] : []),
-                ] as const).map(([label, value, delta, inverted]) => (
-                  <span key={label} className="text-stone-500 whitespace-nowrap">
-                    {label}{" "}
-                    <span className="font-mono text-stone-800">{fmtSize(value * 1024)}</span>
-                    {delta != null && delta !== 0 && (
-                      <span className={`font-mono ml-1 ${(inverted ? -delta : delta) > 0 ? "text-green-700" : "text-red-700"}`}>
-                        {fmtDelta(delta)}
-                      </span>
-                    )}
-                  </span>
-                ))}
-                {globalMemInfo.swapTotalKb > 0 && (
-                  <span className="text-stone-500 whitespace-nowrap">
-                    ZRAM{" "}
-                    <span className="font-mono text-stone-800">
-                      {fmtSize(globalMemInfo.zramPhysicalKb * 1024)}{" / "}{fmtSize(globalMemInfo.swapTotalKb * 1024)}
-                    </span>
-                    {globalMemInfoDiff && globalMemInfoDiff.deltaZramPhysicalKb !== 0 && (
-                      <span className={`font-mono ml-1 ${globalMemInfoDiff.deltaZramPhysicalKb > 0 ? "text-green-700" : "text-red-700"}`}>
-                        {fmtDelta(globalMemInfoDiff.deltaZramPhysicalKb)}
-                      </span>
-                    )}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Process list */}
-          {sorted === null ? (
-            <div className="text-stone-400 p-4">Loading processes&hellip;</div>
-          ) : sorted.length === 0 ? (
-            <div className="text-stone-400 p-4 flex items-center gap-3">
-              No processes found.
-              <button className="text-sky-700 underline decoration-sky-300" onClick={refreshProcesses}>
-                Refresh
-              </button>
-            </div>
-          ) : (
-            <div className="bg-white border border-stone-200 overflow-x-auto">
-              <table className="w-full min-w-[700px] text-sm">
-                <thead>
-                  <tr className="bg-stone-50 border-b border-stone-200">
-                    <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-16"></th>
-                    <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14">PID</th>
-                    <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">Process</th>
-                    {hasOomLabel && <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">State</th>}
-                    {([
-                      ...(hasRss ? [["rssKb", "RSS"]] : []),
-                      ["pssKb", "PSS"],
-                      ...(hasBreakdown ? [
-                        ["javaHeapKb", "Java"],
-                        ["nativeHeapKb", "Native"],
-                        ["graphicsKb", "Graphics"],
-                        ["codeKb", "Code"],
-                      ] : []),
-                    ] as [SortField, string][]).map(([field, label]) => (
-                      <th
-                        key={field}
-                        className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
-                        onClick={() => toggleSort(field)}
-                      >
-                        {label} {sortField === field ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {(diffMode && sortedDiffs ? sortedDiffs : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }))).map(d => {
-                    const p = d.current;
-                    const canCapture = p.javaHeapKb > 0 && (conn.isRoot || p.debuggable !== false);
-                    const isCapturingThis = capturing && selectedPid === p.pid;
-                    const hasSmaps = smapsData.has(p.pid);
-                    const isSmapsExpanded = expandedSmapsPid === p.pid && hasSmaps;
-                    const colCount = 3 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 4 : 0);
-                    const isDiff = diffMode && sortedDiffs !== null;
-                    const rowKey = `${d.status}-${p.pid}`;
-                    return (
-                    <Fragment key={rowKey}>
-                    <tr
-                      className={`border-t border-stone-100 cursor-pointer ${
-                        d.status === "removed" ? "opacity-60" :
-                        d.status === "added" ? "bg-green-50/50" :
-                        isSmapsExpanded ? "bg-sky-50" : "hover:bg-stone-50"
-                      }`}
-                      onClick={() => {
-                        if (d.status === "removed") return;
-                        if (hasSmaps) {
-                          if (expandedSmapsPid === p.pid) {
-                            setExpandedSmapsPid(null);
-                            setExpandedSmapsGroup(null);
-                          } else {
-                            setExpandedSmapsPid(p.pid);
-                            setExpandedSmapsGroup(null);
-                          }
-                        }
-                        setSelectedPid(p.pid);
-                      }}
-                    >
-                      <td className="py-1 px-2 text-center whitespace-nowrap">
-                        {p.javaHeapKb > 0 && d.status !== "removed" && (
-                          canCapture ? (
-                            <button
-                              className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
-                              disabled={capturing}
-                              title={capturing ? "Dump in progress" : "Dump Java heap"}
-                              onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
-                            >
-                              {isCapturingThis ? "\u2026" : "Java dump"}
-                            </button>
-                          ) : (
-                            <span className="text-xs text-stone-400" title="Only debuggable apps can be dumped on non-rooted devices">locked</span>
-                          )
-                        )}
-                      </td>
-                      <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">
-                        {hasSmaps && d.status !== "removed" ? (
-                          <span className="text-stone-400 mr-1">{isSmapsExpanded ? "\u25BC" : "\u25B6"}</span>
-                        ) : enrichProgress && d.status !== "removed" ? (
-                          <span className="text-stone-300 mr-1 text-[10px]">{"\u2026"}</span>
-                        ) : null}
-                        {p.pid}
-                      </td>
-                      <td className={`py-1 px-2 text-stone-800 truncate max-w-[400px] ${d.status === "removed" ? "line-through" : ""}`} title={p.name}>
-                        {p.name}
-                        {isDiff && d.status !== "matched" && (
-                          <span className={`ml-2 text-[10px] font-medium ${d.status === "added" ? "text-green-600" : "text-red-600"}`}>
-                            {d.status === "added" ? "NEW" : "GONE"}
-                          </span>
-                        )}
-                      </td>
-                      {hasOomLabel && <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">{p.oomLabel}</td>}
-                      {(() => {
-                        // Build the list of numeric columns with their current value and delta
-                        // Suppress breakdown deltas if prev wasn't enriched (all breakdown fields zero)
-                        const prevUnenriched = isDiff && d.prev != null &&
-                          d.prev.javaHeapKb === 0 && d.prev.nativeHeapKb === 0 && d.prev.graphicsKb === 0 && d.prev.codeKb === 0;
-                        const cols: { value: number; delta: number; key: string }[] = [];
-                        if (hasRss) cols.push({ value: p.rssKb, delta: d.deltaRssKb, key: "rss" });
-                        cols.push({ value: p.pssKb, delta: d.deltaPssKb, key: "pss" });
-                        if (hasBreakdown) {
-                          cols.push({ value: p.javaHeapKb, delta: d.deltaJavaHeapKb, key: "java" });
-                          cols.push({ value: p.nativeHeapKb, delta: d.deltaNativeHeapKb, key: "native" });
-                          cols.push({ value: p.graphicsKb, delta: d.deltaGraphicsKb, key: "graphics" });
-                          cols.push({ value: p.codeKb, delta: d.deltaCodeKb, key: "code" });
-                        }
-                        return cols.map(({ value, delta, key }) => {
-                          const isBreakdownCol = key !== "rss" && key !== "pss";
-                          const skipDelta = isBreakdownCol && prevUnenriched;
-                          const effectiveDelta = skipDelta ? 0 : delta;
-                          const showDash = isBreakdownCol && value === 0 && (!isDiff || effectiveDelta === 0);
-                          return (
-                            <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(effectiveDelta) : ""}`}>
-                              {showDash ? "\u2014" : fmtSize(value * 1024)}
-                              {isDiff && (
-                                <span className={`ml-1 text-xs inline-block min-w-[4.5rem] text-right ${effectiveDelta > 0 ? "text-green-700" : effectiveDelta < 0 ? "text-red-700" : ""}`}>
-                                  {effectiveDelta !== 0 ? fmtDelta(effectiveDelta) : ""}
-                                </span>
-                              )}
-                            </td>
-                          );
-                        });
-                      })()}
-                    </tr>
-                    {isSmapsExpanded && d.status !== "removed" && (
-                      <tr>
-                        <td colSpan={colCount} className="p-0 border-t border-stone-200">
-                          <SmapsSubTable
-                            aggregated={smapsData.get(p.pid)!}
-                            expandedGroup={expandedSmapsGroup}
-                            onToggleGroup={name => setExpandedSmapsGroup(expandedSmapsGroup === name ? null : name)}
-                            sortField={smapsSortField}
-                            sortAsc={smapsSortAsc}
-                            onToggleSort={toggleSmapsSort}
-                            vmaSortField={vmaSortField}
-                            vmaSortAsc={vmaSortAsc}
-                            onToggleVmaSort={toggleVmaSort}
-                            smapsDiffs={isDiff && prevSmapsData.has(p.pid) ? diffSmaps(prevSmapsData.get(p.pid)!, smapsData.get(p.pid)!) : null}
-                            prevAggregated={isDiff && prevSmapsData.has(p.pid) ? prevSmapsData.get(p.pid)! : null}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                    </Fragment>
-                    );
-                  })}
-                  {/* Totals row */}
-                  {(() => {
-                    const isDiff = diffMode && sortedDiffs !== null;
-                    const rows = isDiff ? sortedDiffs! : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }));
-                    const tot = { pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
-                      deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 };
-                    for (const d of rows) {
-                      if (d.status !== "removed") {
-                        tot.pssKb += d.current.pssKb; tot.rssKb += d.current.rssKb;
-                        tot.javaHeapKb += d.current.javaHeapKb; tot.nativeHeapKb += d.current.nativeHeapKb;
-                        tot.graphicsKb += d.current.graphicsKb; tot.codeKb += d.current.codeKb;
-                      }
-                      tot.deltaPssKb += d.deltaPssKb; tot.deltaRssKb += d.deltaRssKb;
-                      // Skip breakdown deltas from unenriched baseline processes
-                      const pu = d.prev != null && d.prev.javaHeapKb === 0 && d.prev.nativeHeapKb === 0 && d.prev.graphicsKb === 0 && d.prev.codeKb === 0;
-                      if (!pu) {
-                        tot.deltaJavaHeapKb += d.deltaJavaHeapKb; tot.deltaNativeHeapKb += d.deltaNativeHeapKb;
-                        tot.deltaGraphicsKb += d.deltaGraphicsKb; tot.deltaCodeKb += d.deltaCodeKb;
-                      }
-                    }
-                    const cols: { value: number; delta: number; key: string }[] = [];
-                    if (hasRss) cols.push({ value: tot.rssKb, delta: tot.deltaRssKb, key: "rss" });
-                    cols.push({ value: tot.pssKb, delta: tot.deltaPssKb, key: "pss" });
-                    if (hasBreakdown) {
-                      cols.push({ value: tot.javaHeapKb, delta: tot.deltaJavaHeapKb, key: "java" });
-                      cols.push({ value: tot.nativeHeapKb, delta: tot.deltaNativeHeapKb, key: "native" });
-                      cols.push({ value: tot.graphicsKb, delta: tot.deltaGraphicsKb, key: "graphics" });
-                      cols.push({ value: tot.codeKb, delta: tot.deltaCodeKb, key: "code" });
-                    }
-                    return (
-                      <tr className="border-t-2 border-stone-300 font-semibold bg-stone-50">
-                        <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 4 : 3}>Total ({rows.filter(d => d.status !== "removed").length})</td>
-                        {cols.map(({ value, delta, key }) => (
-                          <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(delta) : ""}`}>
-                            {fmtSize(value * 1024)}
-                            {isDiff && (
-                              <span className={`ml-1 text-xs font-normal inline-block min-w-[4.5rem] text-right ${delta > 0 ? "text-green-700" : delta < 0 ? "text-red-700" : ""}`}>
-                                {delta !== 0 ? fmtDelta(delta) : ""}
-                              </span>
-                            )}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })()}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Capture status */}
-          {capturing && (
-            <div className="mt-2 text-xs text-stone-600">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="truncate font-medium">{captureStatus}</span>
-                {captureProgress && <span className="text-stone-400 whitespace-nowrap">{(captureProgress.done / 1048576).toFixed(1)}/{(captureProgress.total / 1048576).toFixed(1)} MiB</span>}
-                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelCapture}>Cancel</button>
-              </div>
-              {captureProgress && captureProgress.total > 0 && (
-                <div className="h-1 bg-stone-100 rounded overflow-hidden">
-                  <div className="h-full bg-sky-600 transition-all" style={{ width: `${(captureProgress.done / captureProgress.total) * 100}%` }} />
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm">{error}</div>
-      )}
-    </div>
-  );
-}
-
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
 const PERFETTO_UI = "https://ui.perfetto.dev";
@@ -2276,9 +1116,7 @@ function downloadBlob(name: string, buffer: ArrayBuffer): void {
   const a = document.createElement("a");
   a.href = url;
   a.download = name;
-  document.body.appendChild(a);
   a.click();
-  document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
@@ -2528,7 +1366,7 @@ export default function App() {
             <div className="flex items-center gap-1.5 ml-3 border-l border-stone-600 pl-3">
               <span className="text-stone-500 text-xs">Diff:</span>
               <select
-                className="text-xs bg-stone-700 text-stone-300 border border-stone-600 px-1.5 py-0.5 cursor-pointer"
+                className="text-xs bg-stone-700 text-stone-300 border border-stone-600 px-1.5 py-0.5 cursor-pointer max-w-[120px] truncate"
                 value={baselineSessionId ?? ""}
                 disabled={diffing}
                 onChange={e => handleBaselineChange(e.target.value || null)}

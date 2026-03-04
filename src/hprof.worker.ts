@@ -167,7 +167,8 @@ let originalHeapCount = 0;
 let proguardMap = new ProguardMap();
 
 /** Deobfuscate a class name through the ProGuard map. */
-function deobClass(name: string): string {
+function deobClass(name: string | undefined): string {
+  if (!name) return "???";
   return proguardMap.getClassName(name);
 }
 
@@ -412,10 +413,10 @@ function handleGetRooted(): InstanceRow[] {
   if (!snap) throw new Error("no snapshot");
   const items = [...snap.superRoot.dominated];
   items.sort(defaultInstanceCompare(snap));
-  return items.slice(0, 5000).map(i => rowOf(i, snap!));
+  return items.map(i => rowOf(i, snap!));
 }
 
-function handleGetInstance(id: number, arrayLimit = 200): InstanceDetail | null {
+function handleGetInstance(id: number): InstanceDetail | null {
   if (!snap) throw new Error("no snapshot");
   const inst = snap.findInstance(id);
   if (!inst) return null;
@@ -470,7 +471,7 @@ function handleGetInstance(id: number, arrayLimit = 200): InstanceDetail | null 
   } else if (inst instanceof AhatArrayInstance) {
     elemTypeName = TypeName[inst.elemType] ?? "Object";
     arrayLength = inst.length;
-    const limit = arrayLimit <= 0 ? inst.values.length : Math.min(arrayLimit, inst.values.length);
+    const limit = inst.values.length;
     const blArr = (baselineSnap && inst.baseline !== inst && !inst.baseline.isPlaceHolder())
       ? inst.baseline as AhatArrayInstance : null;
     for (let i = 0; i < limit; i++) {
@@ -526,8 +527,8 @@ function handleGetInstance(id: number, arrayLimit = 200): InstanceDetail | null 
     arrayLength,
     arrayElems,
     bitmap,
-    reverseRefs: inst.reverseRefs.slice(0, 500).map(r => rowOf(r, snap!)),
-    dominated: dominated.slice(0, 500).map(r => rowOf(r, snap!)),
+    reverseRefs: inst.reverseRefs.map(r => rowOf(r, snap!)),
+    dominated: dominated.map(r => rowOf(r, snap!)),
     pathFromRoot,
     isUnreachablePath: pathFromRoot ? inst.reachability === Reachability.UNREACHABLE : undefined,
     siteId: inst.site?.id ?? 0,
@@ -604,7 +605,6 @@ function handleSearch(query: string): InstanceRow[] {
   }
   const matches: AhatInstance[] = [];
   for (const [, inst] of snap.instances) {
-    if (matches.length >= 500) break;
     const cn = inst.getClassName?.() ?? inst.toString();
     if (cn.toLowerCase().includes(q) || deobClass(cn).toLowerCase().includes(q)) matches.push(inst);
   }
@@ -621,7 +621,7 @@ function handleGetObjects(params: { siteId: number; className: string; heap: str
     x => insts.push(x),
   );
   insts.sort(defaultInstanceCompare(snap!));
-  return insts.slice(0, 2000).map(i => rowOf(i, snap!));
+  return insts.map(i => rowOf(i, snap!));
 }
 
 function handleGetBitmapList(): BitmapListRow[] {
@@ -655,7 +655,7 @@ function handleGetBitmapList(): BitmapListRow[] {
 
   results.sort((a, b) => b.inst.getTotalRetainedSize().total - a.inst.getTotalRetainedSize().total);
 
-  return results.slice(0, 500).map(r => ({
+  return results.map(r => ({
     row: rowOf(r.inst, snap!),
     width: r.w,
     height: r.h,
@@ -756,7 +756,7 @@ addEventListener("message", (e: MessageEvent) => {
       switch (name) {
         case "getOverview":   data = handleGetOverview(); break;
         case "getRooted":     data = handleGetRooted(); break;
-        case "getInstance":   data = handleGetInstance(params.id as number, params.arrayLimit as number | undefined); break;
+        case "getInstance":   data = handleGetInstance(params.id as number); break;
         case "getSite":       data = handleGetSite(params.id as number); break;
         case "search":        data = handleSearch(params.query as string); break;
         case "getObjects":    data = handleGetObjects(params as unknown as { siteId: number; className: string; heap: string | null }); break;
