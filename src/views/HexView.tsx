@@ -560,7 +560,7 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
                   className="absolute left-0 right-0 border-t border-dashed border-stone-300 pointer-events-none"
                   style={{ top: sep.row * ROW_HEIGHT - 1 }}
                 >
-                  <span className="absolute -top-3 left-2 text-[9px] text-stone-400 bg-white px-1 font-mono">
+                  <span className="absolute -top-3 left-2 text-[10px] text-stone-400 bg-white px-1 font-mono">
                     {sep.vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}
                   </span>
                 </div>

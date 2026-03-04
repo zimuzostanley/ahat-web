@@ -82,7 +82,7 @@ function OverviewView({ overview, name, navigate }: {
               const h = overview.heaps[i];
               const bh = baseHeaps?.[i];
               return (
-                <tr key={h.name} className="border-t border-stone-100">
+                <tr key={h.name} className="border-t border-stone-100 hover:bg-stone-50">
                   <td className="py-1 px-2">{h.name}</td>
                   <td className="py-1 px-2 text-right font-mono">{fmtSize(h.java)}</td>
                   {diffed && bh && <DeltaCell current={h.java} baseline={bh.java} />}
@@ -115,7 +115,7 @@ function OverviewView({ overview, name, navigate }: {
             </thead>
             <tbody>
               {overview.duplicateBitmaps.map((g, i) => (
-                <tr key={i} className="border-t border-stone-100">
+                <tr key={i} className="border-t border-stone-100 hover:bg-stone-50">
                   <td className="py-1 px-2 font-mono">{g.width} {"\u00d7"} {g.height}</td>
                   <td className="py-1 px-2 text-right font-mono">{g.count}</td>
                   <td className="py-1 px-2 text-right font-mono">{fmtSize(g.totalBytes)}</td>

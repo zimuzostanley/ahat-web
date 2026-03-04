@@ -355,6 +355,7 @@ export default function App() {
                       }`}
                       onClick={e => { e.stopPropagation(); closeTab(s.id); }}
                       title="Close tab"
+                      aria-label={`Close ${s.name}`}
                     >{"\u00d7"}</button>
                   </div>
                 ))}
@@ -362,6 +363,7 @@ export default function App() {
                   className="text-stone-500 hover:text-stone-300 text-xs px-2 py-1.5 transition-colors"
                   onClick={() => fileRef.current?.click()}
                   title="Open file"
+                  aria-label="Open file"
                 >+</button>
               </>
             ) : (
@@ -390,7 +392,7 @@ export default function App() {
             {/* Right side: back + menu */}
             <div className="ml-auto flex items-center gap-3">
               {activeSession?.status === "ready" && (
-                <button className="text-stone-400 hover:text-white text-sm" onClick={() => window.history.back()}>
+                <button className="text-stone-400 hover:text-white text-sm" onClick={() => window.history.back()} aria-label="Go back">
                   &larr; Back
                 </button>
               )}
@@ -398,6 +400,7 @@ export default function App() {
                 <button
                   className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
                   onClick={() => setMenuOpen(!menuOpen)}
+                  aria-label="Menu"
                 >{"\u22EF"}</button>
                 {menuOpen && (
                   <div className="absolute right-0 top-full mt-1 bg-stone-800 border border-stone-600 shadow-lg z-50 min-w-[140px]">
@@ -462,6 +465,7 @@ export default function App() {
               <button
                 className="text-stone-400 hover:text-white text-sm ml-auto"
                 onClick={() => window.history.back()}
+                aria-label="Go back"
               >&larr; Back</button>
             </div>
           )}

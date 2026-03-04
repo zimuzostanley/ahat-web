@@ -154,6 +154,7 @@ function parseCompactFormat(output: string): ProcessInfo[] {
     if (parts[0] === "proc") {
       if (cur && cur.pssKb > 0) byPid.set(cur.pid, cur);
       const pid = parseInt(parts[3], 10);
+      if (!isFinite(pid)) { cur = null; continue; }
       const name = parts[2] ?? "";
       const oomLabel = mapOomLabel(parts[1] ?? "");
       const pssKb = parseInt(parts[4], 10) || 0;
@@ -209,7 +210,10 @@ function parseDetailedSections(output: string): ProcessInfo[] {
     const hdr = line.match(/^\*\* MEMINFO in pid (\d+) \[(.+?)\]/);
     if (hdr) {
       if (cur && cur.pssKb > 0) results.push(cur);
-      cur = { pid: parseInt(hdr[1], 10), name: hdr[2], oomLabel: "", pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0 };
+      const pid = parseInt(hdr[1], 10);
+      cur = isFinite(pid)
+        ? { pid, name: hdr[2], oomLabel: "", pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0 }
+        : null;
       continue;
     }
 
@@ -285,7 +289,8 @@ function parseSummarySections(output: string): ProcessInfo[] {
     const m = SUMMARY_LINE.exec(line);
     if (m) {
       const pid = parseInt(m[3], 10);
-      const val = parseInt(m[1].replace(/,/g, ""), 10);
+      if (!isFinite(pid)) continue;
+      const val = parseInt(m[1].replace(/,/g, ""), 10) || 0;
       let info = byPid.get(pid);
       if (!info) {
         info = { pid, name: m[2], oomLabel: "", pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0 };
@@ -487,7 +492,7 @@ export class AdbConnection {
       let size: number;
       try {
         const out = await this.device.shell(`stat -c %s '${remotePath}' 2>/dev/null || echo -1`, signal);
-        size = parseInt(out.trim(), 10);
+        size = parseInt(out.trim(), 10) || -1;
       } catch (e) {
         if (e instanceof DOMException && e.name === "AbortError") { await cleanup(); throw e; }
         size = -1;

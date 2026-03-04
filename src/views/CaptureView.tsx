@@ -1031,7 +1031,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                           if (sc.removed) parts.push(`-${sc.removed}`);
                           if (sc.changed) parts.push(`${"\u0394"}${sc.changed}`);
                           return (
-                            <span className="ml-1.5 text-[9px] text-stone-400" title={`VMA: ${parts.join(" ")} mappings${sc.deltaPssKb ? `, PSS ${fmtDelta(sc.deltaPssKb)}` : ""}`}>
+                            <span className="ml-1.5 text-[10px] text-stone-400" title={`VMA: ${parts.join(" ")} mappings${sc.deltaPssKb ? `, PSS ${fmtDelta(sc.deltaPssKb)}` : ""}`}>
                               [{parts.join(" ")}]
                             </span>
                           );

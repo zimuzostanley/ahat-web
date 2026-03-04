@@ -125,6 +125,35 @@ describe('URL routing', () => {
     it('parses unknown paths as overview', () => {
       expect(urlToState(u("/unknown"))).toEqual({ view: "overview", params: {} });
     });
+
+    it('handles invalid hex chars in object id (falls back to 0)', () => {
+      const state = urlToState(u("/object?id=0xZZZZ"));
+      expect(state.view).toBe("object");
+      expect(state.params.id).toBe(0);
+    });
+
+    it('handles missing id param on /object', () => {
+      const state = urlToState(u("/object"));
+      expect(state.view).toBe("object");
+      expect(state.params.id).toBe(0);
+    });
+
+    it('handles trailing slash', () => {
+      expect(urlToState(u("/rooted/"))).toEqual({ view: "rooted", params: {} });
+    });
+
+    it('handles non-ASCII search query', () => {
+      const url = stateToUrl("search", { q: "日本語" });
+      const state = urlToState(new URL(url, "http://localhost"));
+      expect(state.view).toBe("search");
+      expect(state.params.q).toBe("日本語");
+    });
+
+    it('handles empty id on /bitmaps', () => {
+      const state = urlToState(u("/bitmaps?id="));
+      expect(state.view).toBe("bitmaps");
+      expect(state.params).toEqual({});
+    });
   });
 
   describe('roundtrip', () => {

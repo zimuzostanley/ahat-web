@@ -28,7 +28,7 @@ export function InstanceLink({ row, navigate }: { row: InstanceRow | ObjLinkRef 
         {row.display}
       </button>
       {row.str != null && (
-        <span className="text-emerald-700 ml-1">
+        <span className="text-emerald-700 ml-1" title={row.str.length > 80 ? row.str : undefined}>
           "{row.str.length > 80 ? row.str.slice(0, 80) + "\u2026" : row.str}"
         </span>
       )}
