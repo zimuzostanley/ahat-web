@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatRow, formatHexDump, buildRegionMap, offsetToVmaAddr, extractStrings, formatRowSegments } from "./views/HexView";
+import { formatRow, formatHexDump, buildRegionMap, offsetToVmaAddr, extractStrings, formatRowSegments, buildDiffRows, findDiffIndex, regionSeparatorRows } from "./views/HexView";
 
 describe("HexView formatRow", () => {
   it("formats a full 16-byte row", () => {
@@ -323,5 +323,149 @@ describe("formatRowSegments", () => {
     const diffSegs = segments.filter(s => s.diff);
     // 16 hex segments (separated by spaces) + 1 merged ASCII block = 17
     expect(diffSegs).toHaveLength(17);
+  });
+});
+
+describe("buildDiffRows", () => {
+  it("identical data returns empty", () => {
+    const data = new Uint8Array(32);
+    expect(buildDiffRows(data, new Uint8Array(data))).toEqual([]);
+  });
+
+  it("single diff in first row", () => {
+    const data = new Uint8Array(32);
+    const base = new Uint8Array(32);
+    data[3] = 0xFF;
+    expect(buildDiffRows(data, base)).toEqual([0]);
+  });
+
+  it("single diff in second row", () => {
+    const data = new Uint8Array(32);
+    const base = new Uint8Array(32);
+    data[17] = 0xFF;
+    expect(buildDiffRows(data, base)).toEqual([1]);
+  });
+
+  it("multiple rows with diffs", () => {
+    const data = new Uint8Array(48);
+    const base = new Uint8Array(48);
+    data[0] = 1; data[20] = 1; data[32] = 1;
+    expect(buildDiffRows(data, base)).toEqual([0, 1, 2]);
+  });
+
+  it("all bytes different returns all rows", () => {
+    const data = new Uint8Array(32);
+    const base = new Uint8Array(32);
+    for (let i = 0; i < 32; i++) data[i] = i + 1;
+    expect(buildDiffRows(data, base)).toEqual([0, 1]);
+  });
+
+  it("data longer than baseline: extra bytes not counted", () => {
+    const data = new Uint8Array(48);
+    const base = new Uint8Array(32);
+    // Diff in first 32 bytes
+    data[5] = 1;
+    // Byte 40 differs from base but base is only 32 long → not counted
+    data[40] = 0xFF;
+    expect(buildDiffRows(data, base)).toEqual([0]);
+  });
+
+  it("empty data returns empty", () => {
+    expect(buildDiffRows(new Uint8Array(0), new Uint8Array(0))).toEqual([]);
+  });
+
+  it("diff at last byte of row", () => {
+    const data = new Uint8Array(16);
+    const base = new Uint8Array(16);
+    data[15] = 0xFF;
+    expect(buildDiffRows(data, base)).toEqual([0]);
+  });
+
+  it("partial last row", () => {
+    const data = new Uint8Array(20);
+    const base = new Uint8Array(20);
+    data[18] = 0xFF;
+    expect(buildDiffRows(data, base)).toEqual([1]);
+  });
+});
+
+describe("findDiffIndex", () => {
+  it("next: finds first diff row after target", () => {
+    expect(findDiffIndex([5, 10, 20], 7, "next")).toBe(1);
+  });
+
+  it("next: target before all diffs", () => {
+    expect(findDiffIndex([5, 10], 2, "next")).toBe(0);
+  });
+
+  it("next: target at a diff row returns next one (strictly after)", () => {
+    expect(findDiffIndex([5, 10], 5, "next")).toBe(1);
+  });
+
+  it("next: target after all diffs returns -1", () => {
+    expect(findDiffIndex([5, 10], 15, "next")).toBe(-1);
+  });
+
+  it("prev: finds last diff row before target", () => {
+    expect(findDiffIndex([5, 10, 20], 15, "prev")).toBe(1);
+  });
+
+  it("prev: target after all diffs", () => {
+    expect(findDiffIndex([5, 10], 20, "prev")).toBe(1);
+  });
+
+  it("prev: target at a diff row returns previous one (strictly before)", () => {
+    expect(findDiffIndex([5, 10], 10, "prev")).toBe(0);
+  });
+
+  it("prev: target before all diffs returns -1", () => {
+    expect(findDiffIndex([5, 10], 3, "prev")).toBe(-1);
+  });
+
+  it("empty diffRows returns -1 for both", () => {
+    expect(findDiffIndex([], 5, "next")).toBe(-1);
+    expect(findDiffIndex([], 5, "prev")).toBe(-1);
+  });
+
+  it("single-element: next from before, prev from after", () => {
+    expect(findDiffIndex([10], 5, "next")).toBe(0);
+    expect(findDiffIndex([10], 15, "prev")).toBe(0);
+    expect(findDiffIndex([10], 10, "next")).toBe(-1);
+    expect(findDiffIndex([10], 10, "prev")).toBe(-1);
+  });
+});
+
+describe("regionSeparatorRows", () => {
+  it("single region returns empty", () => {
+    expect(regionSeparatorRows([
+      { offsetStart: 0, offsetEnd: 0x1000, vmaBase: 0x10000000 },
+    ])).toEqual([]);
+  });
+
+  it("two regions: separator at boundary", () => {
+    const map = buildRegionMap([
+      { addrStart: "10000000", addrEnd: "10001000" },
+      { addrStart: "20000000", addrEnd: "20002000" },
+    ]);
+    const seps = regionSeparatorRows(map);
+    expect(seps).toHaveLength(1);
+    expect(seps[0].row).toBe(0x1000 / 16); // 256
+    expect(seps[0].vmaBase).toBe(0x20000000);
+  });
+
+  it("three regions: two separators", () => {
+    const map = buildRegionMap([
+      { addrStart: "10000000", addrEnd: "10001000" },
+      { addrStart: "20000000", addrEnd: "20001000" },
+      { addrStart: "30000000", addrEnd: "30001000" },
+    ]);
+    const seps = regionSeparatorRows(map);
+    expect(seps).toHaveLength(2);
+    expect(seps[0].row).toBe(0x1000 / 16);
+    expect(seps[1].row).toBe(0x2000 / 16);
+  });
+
+  it("empty returns empty", () => {
+    expect(regionSeparatorRows([])).toEqual([]);
   });
 });

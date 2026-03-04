@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import { fmtSize } from "../format";
 import { downloadBlob } from "../utils";
 
@@ -179,6 +179,72 @@ export function formatRowSegments(
   return merged;
 }
 
+// ─── Diff navigation ────────────────────────────────────────────────────────
+
+/** Return sorted row indices that contain at least one differing byte. */
+export function buildDiffRows(data: Uint8Array, baseData: Uint8Array): number[] {
+  const rows: number[] = [];
+  const cmpLen = Math.min(data.byteLength, baseData.byteLength);
+  const totalRows = Math.ceil(cmpLen / BYTES_PER_ROW);
+  for (let r = 0; r < totalRows; r++) {
+    const start = r * BYTES_PER_ROW;
+    const end = Math.min(start + BYTES_PER_ROW, cmpLen);
+    for (let i = start; i < end; i++) {
+      if (data[i] !== baseData[i]) { rows.push(r); break; }
+    }
+  }
+  return rows;
+}
+
+/**
+ * Binary search for the next or previous diff row relative to targetRow.
+ * "next": first index where diffRows[i] > targetRow.
+ * "prev": last index where diffRows[i] < targetRow.
+ * Returns -1 if none found.
+ */
+export function findDiffIndex(
+  diffRows: number[], targetRow: number, direction: "next" | "prev",
+): number {
+  if (diffRows.length === 0) return -1;
+  if (direction === "next") {
+    let lo = 0, hi = diffRows.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (diffRows[mid] <= targetRow) lo = mid + 1; else hi = mid;
+    }
+    return lo < diffRows.length ? lo : -1;
+  } else {
+    let lo = 0, hi = diffRows.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (diffRows[mid] < targetRow) lo = mid + 1; else hi = mid;
+    }
+    return lo > 0 ? lo - 1 : -1;
+  }
+}
+
+/** Compute row positions of VMA region boundaries (for separators). */
+export interface RegionSeparator {
+  row: number;
+  vmaBase: number;
+  offsetStart: number;
+  offsetEnd: number;
+}
+
+export function regionSeparatorRows(regionMap: RegionSpan[]): RegionSeparator[] {
+  const result: RegionSeparator[] = [];
+  for (let i = 1; i < regionMap.length; i++) {
+    const r = regionMap[i];
+    result.push({
+      row: Math.floor(r.offsetStart / BYTES_PER_ROW),
+      vmaBase: r.vmaBase,
+      offsetStart: r.offsetStart,
+      offsetEnd: r.offsetEnd,
+    });
+  }
+  return result;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export interface DiffTarget {
@@ -204,8 +270,11 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
   const [stringFilter, setStringFilter] = useState("");
   const [highlightRow, setHighlightRow] = useState<number | null>(null);
   const [diffBaselineId, setDiffBaselineId] = useState<string | null>(null);
+  const [currentDiffIdx, setCurrentDiffIdx] = useState(-1);
   const scrollNodeRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const diffMinimapRef = useRef<HTMLCanvasElement | null>(null);
+  const programmaticScrollRef = useRef(false);
 
   const regionMap = useMemo(
     () => regions && regions.length > 0 ? buildRegionMap(regions) : undefined,
@@ -236,6 +305,19 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
     return { changed, total: data.byteLength, baseTotal: diffBaseline.byteLength };
   }, [data, diffBaseline]);
 
+  const diffRows = useMemo(
+    () => diffBaseline ? buildDiffRows(data, diffBaseline) : [],
+    [data, diffBaseline],
+  );
+
+  const separators = useMemo(
+    () => regionMap && regionMap.length > 1 ? regionSeparatorRows(regionMap) : [],
+    [regionMap],
+  );
+
+  // Reset diff navigation when baseline changes
+  useEffect(() => { setCurrentDiffIdx(-1); }, [diffBaselineId]);
+
   const strings = useMemo(
     () => showStrings ? extractStrings(data) : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -258,10 +340,10 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
     setContainerHeight(Math.max(200, h));
   }, [totalRows]);
 
-  const scrollToOffset = useCallback((byteOffset: number) => {
-    const row = Math.floor(byteOffset / BYTES_PER_ROW);
+  const scrollToRow = useCallback((row: number) => {
     const target = Math.max(0, row * ROW_HEIGHT - containerHeight / 3);
     if (scrollNodeRef.current) {
+      programmaticScrollRef.current = true;
       scrollNodeRef.current.scrollTop = target;
       setScrollTop(target);
     }
@@ -269,6 +351,48 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
     if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
     highlightTimerRef.current = setTimeout(() => setHighlightRow(null), 2000);
   }, [containerHeight]);
+
+  const scrollToOffset = useCallback((byteOffset: number) => {
+    scrollToRow(Math.floor(byteOffset / BYTES_PER_ROW));
+  }, [scrollToRow]);
+
+  // N/P keyboard navigation through diff rows
+  useEffect(() => {
+    if (!diffBaseline || diffRows.length === 0) return;
+    const handler = (e: KeyboardEvent) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        let idx: number;
+        if (currentDiffIdx >= 0 && currentDiffIdx < diffRows.length - 1) {
+          idx = currentDiffIdx + 1;
+        } else {
+          const centerRow = Math.floor((scrollTop + containerHeight / 2) / ROW_HEIGHT);
+          idx = findDiffIndex(diffRows, centerRow, "next");
+        }
+        if (idx >= 0 && idx < diffRows.length) {
+          setCurrentDiffIdx(idx);
+          scrollToRow(diffRows[idx]);
+        }
+      } else if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        let idx: number;
+        if (currentDiffIdx >= 0 && currentDiffIdx > 0) {
+          idx = currentDiffIdx - 1;
+        } else {
+          const centerRow = Math.floor((scrollTop + containerHeight / 2) / ROW_HEIGHT);
+          idx = findDiffIndex(diffRows, centerRow, "prev");
+        }
+        if (idx >= 0) {
+          setCurrentDiffIdx(idx);
+          scrollToRow(diffRows[idx]);
+        }
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [diffBaseline, diffRows, currentDiffIdx, scrollTop, containerHeight, scrollToRow]);
 
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN);
@@ -291,6 +415,54 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
       setTimeout(() => setCopied(false), 1500);
     });
   };
+
+  // Minimap canvas rendering
+  useEffect(() => {
+    const canvas = diffMinimapRef.current;
+    if (!canvas || !diffBaseline || diffRows.length === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = 6;
+    const h = containerHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = "#d97706"; // amber-600
+    const markH = Math.max(1, h / totalRows);
+    for (const row of diffRows) {
+      ctx.fillRect(0, (row / totalRows) * h, w, markH);
+    }
+    // Viewport indicator
+    const vpTop = (scrollTop / (totalRows * ROW_HEIGHT)) * h;
+    const vpH = (containerHeight / (totalRows * ROW_HEIGHT)) * h;
+    ctx.strokeStyle = "rgba(0,0,0,0.2)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, vpTop + 0.5, w - 1, vpH);
+  }, [diffBaseline, diffRows, totalRows, containerHeight, scrollTop]);
+
+  const handleMinimapClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const targetRow = Math.floor((y / containerHeight) * totalRows);
+    // Find nearest diff row via binary search
+    if (diffRows.length === 0) return;
+    let lo = 0, hi = diffRows.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (diffRows[mid] < targetRow) lo = mid + 1; else hi = mid;
+    }
+    let idx = lo;
+    if (lo > 0 && Math.abs(diffRows[lo - 1] - targetRow) < Math.abs(diffRows[lo] - targetRow)) {
+      idx = lo - 1;
+    }
+    setCurrentDiffIdx(idx);
+    scrollToRow(diffRows[idx]);
+  }, [diffRows, totalRows, containerHeight, scrollToRow]);
+
+  // Visible region separators
+  const visibleSeparators = separators.filter(s => s.row >= startRow && s.row < endRow);
 
   return (
     <div>
@@ -337,24 +509,37 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
         </div>
       )}
       {diffStats && (
-        <div className="text-xs text-stone-400 mb-2">
-          <span className="font-mono text-amber-700">{diffStats.changed.toLocaleString()}</span> bytes differ
-          {" "}of {fmtSize(diffStats.total)}
-          {diffStats.total !== diffStats.baseTotal && (
-            <span className="ml-2 text-stone-400">
-              (baseline: {fmtSize(diffStats.baseTotal)})
+        <div className="text-xs text-stone-400 mb-2 flex items-center gap-3">
+          <span>
+            <span className="font-mono text-amber-700">{diffStats.changed.toLocaleString()}</span> bytes differ
+            {" "}of {fmtSize(diffStats.total)}
+            {diffStats.total !== diffStats.baseTotal && (
+              <span className="ml-2">(baseline: {fmtSize(diffStats.baseTotal)})</span>
+            )}
+          </span>
+          {diffRows.length > 0 && (<>
+            <span className="text-stone-300">|</span>
+            <span className="font-mono">
+              {currentDiffIdx >= 0
+                ? <><span className="text-amber-700">{currentDiffIdx + 1}</span>{" of "}{diffRows.length.toLocaleString()} diff rows</>
+                : <>{diffRows.length.toLocaleString()} diff rows</>}
             </span>
-          )}
+            <span className="text-stone-300 text-[10px]">n/p to navigate</span>
+          </>)}
         </div>
       )}
       <div className="flex">
         {/* Hex dump */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 relative">
           <div
             ref={measuredRef}
             className="overflow-auto border border-stone-200 bg-white"
             style={{ height: containerHeight }}
-            onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
+            onScroll={e => {
+              setScrollTop(e.currentTarget.scrollTop);
+              if (programmaticScrollRef.current) programmaticScrollRef.current = false;
+              else setCurrentDiffIdx(-1);
+            }}
           >
             <div style={{ height: totalRows * ROW_HEIGHT, position: "relative" }}>
               {highlightRow !== null && highlightRow >= startRow && highlightRow < endRow && (
@@ -363,6 +548,18 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
                   style={{ top: highlightRow * ROW_HEIGHT, height: ROW_HEIGHT }}
                 />
               )}
+              {/* VMA region separators */}
+              {visibleSeparators.map(sep => (
+                <div
+                  key={`sep-${sep.row}`}
+                  className="absolute left-0 right-0 border-t border-dashed border-stone-300 pointer-events-none"
+                  style={{ top: sep.row * ROW_HEIGHT - 1 }}
+                >
+                  <span className="absolute -top-3 left-2 text-[9px] text-stone-400 bg-white px-1 font-mono">
+                    {sep.vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}
+                  </span>
+                </div>
+              ))}
               {diffBaseline ? (
                 // Diff mode: per-row divs with per-byte highlighting
                 Array.from({ length: endRow - startRow }, (_, idx) => {
@@ -395,6 +592,15 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
               )}
             </div>
           </div>
+          {/* Diff minimap gutter */}
+          {diffBaseline && diffRows.length > 0 && (
+            <canvas
+              ref={diffMinimapRef}
+              className="absolute top-0 right-0 cursor-pointer z-10"
+              style={{ width: 6, height: containerHeight }}
+              onClick={handleMinimapClick}
+            />
+          )}
         </div>
 
         {/* Strings panel */}
