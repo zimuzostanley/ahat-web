@@ -394,6 +394,9 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
     return () => document.removeEventListener("keydown", handler);
   }, [diffBaseline, diffRows, currentDiffIdx, scrollTop, containerHeight, scrollToRow]);
 
+  // Cleanup highlight timer on unmount
+  useEffect(() => () => { if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current); }, []);
+
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN);
 
@@ -454,11 +457,13 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
       if (diffRows[mid] < targetRow) lo = mid + 1; else hi = mid;
     }
     let idx = lo;
-    if (lo > 0 && Math.abs(diffRows[lo - 1] - targetRow) < Math.abs(diffRows[lo] - targetRow)) {
+    if (lo > 0 && lo < diffRows.length && Math.abs(diffRows[lo - 1] - targetRow) < Math.abs(diffRows[lo] - targetRow)) {
       idx = lo - 1;
     }
-    setCurrentDiffIdx(idx);
-    scrollToRow(diffRows[idx]);
+    if (idx >= 0 && idx < diffRows.length) {
+      setCurrentDiffIdx(idx);
+      scrollToRow(diffRows[idx]);
+    }
   }, [diffRows, totalRows, containerHeight, scrollToRow]);
 
   // Visible region separators

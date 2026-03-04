@@ -326,25 +326,31 @@ export default function App() {
               <>
                 {showDeviceTab && (
                   <button
-                    className={`px-3 py-1 text-sm transition-colors ${
-                      activeTab === "device" ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
+                    className={`px-3 py-1.5 text-xs transition-colors border-b-2 ${
+                      activeTab === "device"
+                        ? "border-sky-400 text-white bg-stone-700/50"
+                        : "border-transparent text-stone-400 hover:text-stone-200 hover:bg-stone-700/30"
                     }`}
                     onClick={() => switchToTab("device")}
+                    title="ADB device capture"
                   >Device</button>
                 )}
                 {sessions.map(s => (
                   <div
                     key={s.id}
-                    className={`group flex items-center gap-1.5 px-3 py-1 text-sm rounded-t cursor-pointer transition-colors ${
-                      activeTab === s.id ? "bg-stone-600 text-white" : "text-stone-400 hover:bg-stone-700 hover:text-white"
+                    className={`group flex items-center gap-1.5 px-3 py-1.5 text-xs cursor-pointer transition-colors border-b-2 ${
+                      activeTab === s.id
+                        ? "border-sky-400 text-white bg-stone-700/50"
+                        : "border-transparent text-stone-400 hover:text-stone-200 hover:bg-stone-700/30"
                     }`}
                     onClick={() => switchToTab(s.id)}
+                    title={s.name + (s.kind === "vmadump" ? " (VMA dump)" : " (heap dump)")}
                   >
-                    {s.status === "loading" && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />}
-                    {s.status === "error" && <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />}
-                    <span className="truncate max-w-[120px]">{s.name}</span>
+                    {s.status === "loading" && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse shrink-0" />}
+                    {s.status === "error" && <span className="w-1.5 h-1.5 rounded-full bg-rose-400 shrink-0" />}
+                    <span className="truncate max-w-[140px]">{s.name}</span>
                     <button
-                      className={`text-xs leading-none hover:text-rose-400 ${
+                      className={`text-xs leading-none hover:text-rose-400 shrink-0 ${
                         activeTab === s.id ? "text-stone-400" : "opacity-0 group-hover:opacity-100 text-stone-500"
                       }`}
                       onClick={e => { e.stopPropagation(); closeTab(s.id); }}
@@ -353,7 +359,7 @@ export default function App() {
                   </div>
                 ))}
                 <button
-                  className="text-stone-500 hover:text-white text-sm px-2 py-1"
+                  className="text-stone-500 hover:text-stone-300 text-xs px-2 py-1.5 transition-colors"
                   onClick={() => fileRef.current?.click()}
                   title="Open file"
                 >+</button>
