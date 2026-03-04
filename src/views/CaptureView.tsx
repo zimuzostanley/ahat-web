@@ -556,10 +556,6 @@ function CaptureView({ onCaptured, conn }: {
     const copy = [...processDiffs];
     const deltaKey = DELTA_FIELDS[sortField];
     copy.sort((a, b) => {
-      // Pin added/removed to top
-      const aPin = a.status !== "matched" ? 1 : 0;
-      const bPin = b.status !== "matched" ? 1 : 0;
-      if (aPin !== bPin) return bPin - aPin;
       if (deltaKey) {
         // Sort by delta field
         const aVal = a[deltaKey] as number;
