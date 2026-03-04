@@ -565,7 +565,15 @@ export default function App() {
           {/* Ready — vmadump hex view */}
           {activeSession.status === "ready" && activeSession.kind === "vmadump" && activeSession.buffer && (
             <main className="flex-1 p-4 max-w-[95%] mx-auto w-full">
-              <HexView buffer={activeSession.buffer} name={activeSession.name} regions={activeSession.vmaRegions} />
+              <HexView
+                buffer={activeSession.buffer}
+                name={activeSession.name}
+                regions={activeSession.vmaRegions}
+                availableDiffs={sessions
+                  .filter(s => s.kind === "vmadump" && s.id !== activeSession.id && s.status === "ready" && s.buffer)
+                  .map(s => ({ id: s.id, name: s.name, buffer: s.buffer! }))
+                }
+              />
             </main>
           )}
 

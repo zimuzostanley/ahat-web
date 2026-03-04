@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatRow, formatHexDump, buildRegionMap, offsetToVmaAddr, extractStrings } from "./views/HexView";
+import { formatRow, formatHexDump, buildRegionMap, offsetToVmaAddr, extractStrings, formatRowSegments } from "./views/HexView";
 
 describe("HexView formatRow", () => {
   it("formats a full 16-byte row", () => {
@@ -214,5 +214,114 @@ describe("extractStrings", () => {
   it("returns empty array when all strings are too short", () => {
     const data = new Uint8Array([0x41, 0x00, 0x42, 0x00, 0x43, 0x00]);
     expect(extractStrings(data, 4)).toEqual([]);
+  });
+});
+
+describe("formatRowSegments", () => {
+  it("identical data produces no diff segments", () => {
+    const data = new Uint8Array([0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
+      0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50]);
+    const base = new Uint8Array(data);
+    const segments = formatRowSegments(data, 0, data.length, base, base.length);
+    expect(segments.every(s => !s.diff)).toBe(true);
+  });
+
+  it("text content matches formatRow for identical data", () => {
+    const data = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) data[i] = i + 0x30;
+    const base = new Uint8Array(data);
+    const segments = formatRowSegments(data, 0, data.length, base, base.length);
+    const segmentText = segments.map(s => s.text).join("");
+    const rowText = formatRow(data, 0, data.length);
+    expect(segmentText).toBe(rowText);
+  });
+
+  it("single byte difference marks only that byte in hex and ASCII", () => {
+    const data = new Uint8Array([0x41, 0x42, 0x43, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    const base = new Uint8Array(data);
+    base[1] = 0xFF; // byte at index 1 differs
+    const segments = formatRowSegments(data, 0, data.length, base, base.length);
+    const diffSegments = segments.filter(s => s.diff);
+    // Should have exactly 2 diff segments: one for hex "42", one for ASCII "B"
+    expect(diffSegments).toHaveLength(2);
+    expect(diffSegments[0].text).toBe("42");
+    expect(diffSegments[1].text).toBe("B");
+  });
+
+  it("multiple adjacent differing bytes merge into one segment", () => {
+    const data = new Uint8Array(16);
+    const base = new Uint8Array(16);
+    data[0] = 0xAA; data[1] = 0xBB; data[2] = 0xCC;
+    // base bytes 0-2 differ
+    const segments = formatRowSegments(data, 0, data.length, base, base.length);
+    // In hex section, adjacent diff bytes separated by spaces (non-diff) won't merge.
+    // But in ASCII section, adjacent diff chars merge.
+    const diffSegs = segments.filter(s => s.diff);
+    // hex: "aa", "bb", "cc" = 3 separate (separated by " " non-diff)
+    // ascii: "..." = 3 merged into 1
+    expect(diffSegs.length).toBe(4); // 3 hex + 1 ascii block
+    // ASCII segment contains 3 chars
+    const asciiDiff = diffSegs[3];
+    expect(asciiDiff.text).toHaveLength(3);
+  });
+
+  it("includes VMA address column when provided", () => {
+    const data = new Uint8Array(16);
+    const base = new Uint8Array(16);
+    const segments = formatRowSegments(data, 0, data.length, base, base.length, 0x7f000000, 8);
+    const text = segments.map(s => s.text).join("");
+    expect(text).toMatch(/^7f000000\s+00000000/);
+  });
+
+  it("text matches formatRow when VMA address is provided", () => {
+    const data = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) data[i] = i;
+    const base = new Uint8Array(data);
+    const segs = formatRowSegments(data, 0, data.length, base, base.length, 0x40000000, 8);
+    const segText = segs.map(s => s.text).join("");
+    const rowText = formatRow(data, 0, data.length, 0x40000000, 8);
+    expect(segText).toBe(rowText);
+  });
+
+  it("handles partial last row", () => {
+    const data = new Uint8Array([0x41, 0x42, 0x43]);
+    const base = new Uint8Array([0x41, 0x00, 0x43]);
+    const segments = formatRowSegments(data, 0, data.length, base, base.length);
+    const diffSegs = segments.filter(s => s.diff);
+    // byte 1 differs: hex "42" and ascii "B"
+    expect(diffSegs).toHaveLength(2);
+    expect(diffSegs[0].text).toBe("42");
+    expect(diffSegs[1].text).toBe("B");
+  });
+
+  it("baseline shorter than current does not mark extra bytes as diff", () => {
+    const data = new Uint8Array([0x41, 0x42, 0x43, 0x44]);
+    const base = new Uint8Array([0x41, 0x42]); // shorter
+    const segments = formatRowSegments(data, 0, data.length, base, base.length);
+    // Bytes 0-1 match, bytes 2-3 are beyond baseline → isDiff = false (pos < baseTotalLen check)
+    expect(segments.every(s => !s.diff)).toBe(true);
+  });
+
+  it("non-zero offset works correctly", () => {
+    const data = new Uint8Array(32);
+    data[16] = 0xDE; data[17] = 0xAD;
+    const base = new Uint8Array(32);
+    base[16] = 0x00; base[17] = 0x00;
+    const segments = formatRowSegments(data, 16, data.length, base, base.length);
+    const text = segments.map(s => s.text).join("");
+    expect(text).toMatch(/^00000010/);
+    const diffSegs = segments.filter(s => s.diff);
+    expect(diffSegs).toHaveLength(3); // hex "de", hex "ad", ascii ".." merged
+  });
+
+  it("all bytes different marks all hex and ascii as diff", () => {
+    const data = new Uint8Array(16);
+    const base = new Uint8Array(16);
+    for (let i = 0; i < 16; i++) { data[i] = i + 0x41; base[i] = i + 0x61; }
+    const segments = formatRowSegments(data, 0, data.length, base, base.length);
+    const diffSegs = segments.filter(s => s.diff);
+    // 16 hex segments (separated by spaces) + 1 merged ASCII block = 17
+    expect(diffSegs).toHaveLength(17);
   });
 });

@@ -111,15 +111,90 @@ export function formatHexDump(
   return lines.join("\n");
 }
 
+// ─── Diff row formatting ─────────────────────────────────────────────────────
+
+export interface RowSegment {
+  text: string;
+  diff: boolean;
+}
+
+/**
+ * Format a row as segments with per-byte diff markers.
+ * Adjacent segments with the same diff status are merged for efficient rendering.
+ */
+export function formatRowSegments(
+  data: Uint8Array, offset: number, totalLen: number,
+  baseData: Uint8Array, baseTotalLen: number,
+  vmaAddr?: number, addrWidth?: number,
+): RowSegment[] {
+  const raw: RowSegment[] = [];
+
+  // Address prefix (never diff)
+  if (vmaAddr !== undefined) {
+    const w = addrWidth ?? 12;
+    raw.push({ text: vmaAddr.toString(16).padStart(w, "0") + "  ", diff: false });
+  }
+  raw.push({ text: offset.toString(16).padStart(8, "0") + "  ", diff: false });
+
+  // Hex bytes: two groups of 8 separated by double space
+  for (let j = 0; j < BYTES_PER_ROW; j++) {
+    if (j === 8) raw.push({ text: " ", diff: false });
+    const pos = offset + j;
+    if (pos < totalLen) {
+      const b = data[pos];
+      const isDiff = pos < baseTotalLen ? b !== baseData[pos] : false;
+      raw.push({ text: b.toString(16).padStart(2, "0"), diff: isDiff });
+    } else {
+      raw.push({ text: "  ", diff: false });
+    }
+    if (j < BYTES_PER_ROW - 1) raw.push({ text: " ", diff: false });
+  }
+
+  raw.push({ text: "  |", diff: false });
+
+  // ASCII column
+  for (let j = 0; j < BYTES_PER_ROW; j++) {
+    const pos = offset + j;
+    if (pos < totalLen) {
+      const b = data[pos];
+      const ch = b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : ".";
+      const isDiff = pos < baseTotalLen ? b !== baseData[pos] : false;
+      raw.push({ text: ch, diff: isDiff });
+    } else {
+      raw.push({ text: " ", diff: false });
+    }
+  }
+
+  raw.push({ text: "|", diff: false });
+
+  // Merge adjacent segments with same diff status
+  const merged: RowSegment[] = [];
+  for (const s of raw) {
+    if (merged.length > 0 && merged[merged.length - 1].diff === s.diff) {
+      merged[merged.length - 1].text += s.text;
+    } else {
+      merged.push({ text: s.text, diff: s.diff });
+    }
+  }
+  return merged;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
+
+export interface DiffTarget {
+  id: string;
+  name: string;
+  buffer: ArrayBuffer;
+}
 
 interface HexViewProps {
   buffer: ArrayBuffer;
   name: string;
   regions?: { addrStart: string; addrEnd: string }[];
+  availableDiffs?: DiffTarget[];
 }
 
-export default function HexView({ buffer, name, regions }: HexViewProps) {
+export default function HexView({ buffer, name, regions, availableDiffs }: HexViewProps) {
   const data = useMemo(() => new Uint8Array(buffer), [buffer]);
   const totalRows = Math.ceil(data.byteLength / BYTES_PER_ROW);
   const [scrollTop, setScrollTop] = useState(0);
@@ -128,6 +203,7 @@ export default function HexView({ buffer, name, regions }: HexViewProps) {
   const [showStrings, setShowStrings] = useState(false);
   const [stringFilter, setStringFilter] = useState("");
   const [highlightRow, setHighlightRow] = useState<number | null>(null);
+  const [diffBaselineId, setDiffBaselineId] = useState<string | null>(null);
   const scrollNodeRef = useRef<HTMLDivElement | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -142,6 +218,23 @@ export default function HexView({ buffer, name, regions }: HexViewProps) {
     const maxAddr = last.vmaBase + (last.offsetEnd - last.offsetStart);
     return maxAddr > 0xFFFFFFFF ? 12 : 8;
   }, [regionMap]);
+
+  // Diff baseline
+  const diffBaseline = useMemo(() => {
+    if (!diffBaselineId || !availableDiffs) return null;
+    const found = availableDiffs.find(d => d.id === diffBaselineId);
+    return found ? new Uint8Array(found.buffer) : null;
+  }, [diffBaselineId, availableDiffs]);
+
+  const diffStats = useMemo(() => {
+    if (!diffBaseline) return null;
+    let changed = 0;
+    const len = Math.min(data.byteLength, diffBaseline.byteLength);
+    for (let i = 0; i < len; i++) {
+      if (data[i] !== diffBaseline[i]) changed++;
+    }
+    return { changed, total: data.byteLength, baseTotal: diffBaseline.byteLength };
+  }, [data, diffBaseline]);
 
   const strings = useMemo(
     () => showStrings ? extractStrings(data) : [],
@@ -180,12 +273,16 @@ export default function HexView({ buffer, name, regions }: HexViewProps) {
   const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
   const endRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN);
 
-  const lines: string[] = [];
-  for (let i = startRow; i < endRow; i++) {
-    const offset = i * BYTES_PER_ROW;
-    const vmaAddr = regionMap ? offsetToVmaAddr(offset, regionMap) : undefined;
-    lines.push(formatRow(data, offset, data.byteLength, vmaAddr, addrWidth));
-  }
+  // Build visible rows — plain strings for normal mode, segments for diff mode
+  const lines: string[] | null = diffBaseline ? null : (() => {
+    const result: string[] = [];
+    for (let i = startRow; i < endRow; i++) {
+      const offset = i * BYTES_PER_ROW;
+      const vmaAddr = regionMap ? offsetToVmaAddr(offset, regionMap) : undefined;
+      result.push(formatRow(data, offset, data.byteLength, vmaAddr, addrWidth));
+    }
+    return result;
+  })();
 
   const handleCopy = () => {
     const text = formatHexDump(data, undefined, regionMap, addrWidth);
@@ -202,6 +299,18 @@ export default function HexView({ buffer, name, regions }: HexViewProps) {
         <span className="text-sm text-stone-500">{fmtSize(data.byteLength)}</span>
         <span className="text-xs text-stone-400">{totalRows.toLocaleString()} rows</span>
         <div className="ml-auto flex items-center gap-2">
+          {availableDiffs && availableDiffs.length > 0 && (
+            <select
+              className="text-xs border border-stone-200 px-1.5 py-0.5 text-stone-500 bg-white cursor-pointer max-w-[160px] truncate"
+              value={diffBaselineId ?? ""}
+              onChange={e => setDiffBaselineId(e.target.value || null)}
+            >
+              <option value="">Compare{"\u2026"}</option>
+              {availableDiffs.map(d => (
+                <option key={d.id} value={d.id}>{d.name}</option>
+              ))}
+            </select>
+          )}
           <button
             className={`text-xs px-2 py-0.5 border transition-colors ${
               showStrings
@@ -227,6 +336,17 @@ export default function HexView({ buffer, name, regions }: HexViewProps) {
             : <>{regionMap.length} VMA regions</>}
         </div>
       )}
+      {diffStats && (
+        <div className="text-xs text-stone-400 mb-2">
+          <span className="font-mono text-amber-700">{diffStats.changed.toLocaleString()}</span> bytes differ
+          {" "}of {fmtSize(diffStats.total)}
+          {diffStats.total !== diffStats.baseTotal && (
+            <span className="ml-2 text-stone-400">
+              (baseline: {fmtSize(diffStats.baseTotal)})
+            </span>
+          )}
+        </div>
+      )}
       <div className="flex">
         {/* Hex dump */}
         <div className="flex-1 min-w-0">
@@ -243,12 +363,36 @@ export default function HexView({ buffer, name, regions }: HexViewProps) {
                   style={{ top: highlightRow * ROW_HEIGHT, height: ROW_HEIGHT }}
                 />
               )}
-              <pre
-                className="font-mono text-xs text-stone-800 leading-5 select-text whitespace-pre relative"
-                style={{ position: "absolute", top: startRow * ROW_HEIGHT, left: 0, padding: "0 8px" }}
-              >
-                {lines.join("\n")}
-              </pre>
+              {diffBaseline ? (
+                // Diff mode: per-row divs with per-byte highlighting
+                Array.from({ length: endRow - startRow }, (_, idx) => {
+                  const i = startRow + idx;
+                  const offset = i * BYTES_PER_ROW;
+                  const vmaAddr = regionMap ? offsetToVmaAddr(offset, regionMap) : undefined;
+                  const segments = formatRowSegments(data, offset, data.byteLength, diffBaseline, diffBaseline.byteLength, vmaAddr, addrWidth);
+                  return (
+                    <div
+                      key={i}
+                      className="font-mono text-xs text-stone-800 leading-5 select-text whitespace-pre"
+                      style={{ position: "absolute", top: i * ROW_HEIGHT, height: ROW_HEIGHT, padding: "0 8px" }}
+                    >
+                      {segments.map((s, si) =>
+                        s.diff
+                          ? <span key={si} className="bg-amber-200 text-amber-900 rounded-sm">{s.text}</span>
+                          : <span key={si}>{s.text}</span>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                // Normal mode: single pre block
+                <pre
+                  className="font-mono text-xs text-stone-800 leading-5 select-text whitespace-pre relative"
+                  style={{ position: "absolute", top: startRow * ROW_HEIGHT, left: 0, padding: "0 8px" }}
+                >
+                  {lines!.join("\n")}
+                </pre>
+              )}
             </div>
           </div>
         </div>
