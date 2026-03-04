@@ -780,7 +780,7 @@ function CaptureView({ onCaptured, conn }: {
                       <tr className="border-b-2 border-stone-300 font-semibold bg-stone-50">
                         <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 4 : 3}>Total ({rows.filter(d => d.status !== "removed").length})</td>
                         {cols.map(({ value, delta, key }) => (
-                          <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(delta) : ""}`}>
+                          <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] ${isDiff ? deltaBgClass(delta) : ""}`}>
                             {fmtSize(value * 1024)}
                             {isDiff && (
                               <span className={`ml-1 text-xs font-normal inline-block min-w-[4.5rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
@@ -876,7 +876,7 @@ function CaptureView({ onCaptured, conn }: {
                           const effectiveDelta = skipDelta ? 0 : delta;
                           const showDash = isBreakdownCol && value === 0 && (!isDiff || effectiveDelta === 0);
                           return (
-                            <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap ${isDiff ? deltaBgClass(effectiveDelta) : ""}`}>
+                            <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] ${isDiff ? deltaBgClass(effectiveDelta) : ""}`}>
                               {showDash ? "\u2014" : fmtSize(value * 1024)}
                               {isDiff && (
                                 <span className={`ml-1 text-xs inline-block min-w-[4.5rem] text-right ${effectiveDelta > 0 ? "text-red-700" : effectiveDelta < 0 ? "text-green-700" : ""}`}>
