@@ -245,6 +245,7 @@ export class AhatInstance {
   asClassObj(): AhatClassObj | null { return null; }
   asArrayInstance(): AhatArrayInstance | null { return null; }
   asClassInstance(): AhatClassInstance | null { return null; }
+  isPlaceHolder(): boolean { return false; }
   getReferences(): Reference[] { return []; }
   getField(_name: string): FieldVal | undefined { return undefined; }
   getRefField(_name: string): AhatInstance | undefined { return undefined; }
@@ -252,7 +253,8 @@ export class AhatInstance {
   getReferent(): AhatInstance | null { return null; }
 
   getPathFromGcRoot(): { instance: AhatInstance; field: string; isDominator: boolean }[] | null {
-    if (this.reachability === Reachability.UNREACHABLE) return null;
+    // Unreachable instances may still have sample paths (via id-ordered refs)
+    if (this.reachability === Reachability.UNREACHABLE && !this.nextToGcRoot) return null;
     const path: { instance: AhatInstance; field: string; isDominator: boolean }[] = [];
     let inst: AhatInstance | null = this;
     while (inst) {
@@ -530,6 +532,25 @@ export class SuperRoot extends AhatInstance {
   }
 }
 
+export class AhatPlaceHolderInstance extends AhatInstance {
+  constructor(baseline: AhatInstance) {
+    super(-1);
+    this.baseline = baseline;
+    baseline.baseline = this;
+    this.heap = baseline.heap?.baseline ?? baseline.heap;
+    this.classObj = baseline.classObj;
+  }
+  isPlaceHolder() { return true; }
+  getSize() { return ZERO_SIZE; }
+  getExtraJavaSize() { return 0; }
+  getRetainedSize(_heap: AhatHeap) { return ZERO_SIZE; }
+  getTotalRetainedSize() { return ZERO_SIZE; }
+  getClassName() { return this.baseline.getClassName(); }
+  asString(mc?: number) { return this.baseline.asString?.(mc) ?? null; }
+  toString() { return this.baseline.toString(); }
+  getReferences(): Reference[] { return []; }
+}
+
 // ─── Site ────────────────────────────────────────────────────────────────────
 
 export interface ObjectsInfo {
@@ -546,6 +567,7 @@ interface StackFrame {
   signature: string;
   filename: string;
   line: number;
+  className: string;
 }
 
 export class SiteNode {
@@ -563,6 +585,7 @@ export class SiteNode {
     public signature: string,
     public filename: string,
     public line: number,
+    public className: string = "",
   ) {}
 
   getSite(frames: StackFrame[]): SiteNode {
@@ -572,12 +595,12 @@ export class SiteNode {
       const f = frames[s];
       let child: SiteNode | null = null;
       for (const c of site.children) {
-        if (c.line === f.line && c.method === f.method && c.signature === f.signature && c.filename === f.filename) {
+        if (c.line === f.line && c.method === f.method && c.signature === f.signature && c.filename === f.filename && c.className === f.className) {
           child = c; break;
         }
       }
       if (!child) {
-        child = new SiteNode(site, f.method, f.signature, f.filename, f.line);
+        child = new SiteNode(site, f.method, f.signature, f.filename, f.line, f.className);
         site.children.push(child);
       }
       site = child;
@@ -694,6 +717,254 @@ export class AhatSnapshot {
   getRooted(): AhatInstance[] { return this.superRoot.dominated; }
   getSite(id: number): SiteNode { return this.rootSite.findSite(id) ?? this.rootSite; }
   getHeap(name: string): AhatHeap | null { return this.heaps.find(h => h.name === name) ?? null; }
+}
+
+// ─── Diff Algorithm ──────────────────────────────────────────────────────────
+// Port of Android ahat Diff.java — key-based equivalence matching.
+
+function instanceDiffKey(inst: AhatInstance): string {
+  // Exact port of Diff.Key from Java ahat
+  const cls = inst.getClassName();
+  const heap = inst.heap?.name ?? "";
+  const str = inst.asString?.() ?? "";
+  const classObjName = inst.isClassObj() ? (inst as AhatClassObj).className : "";
+  const arrLen = inst.isArrayInstance() ? inst.asArrayInstance()!.length : 0;
+  return `${cls}\0${heap}\0${str}\0${classObjName}\0${arrLen}`;
+}
+
+function diffHeaps(aHeaps: AhatHeap[], bHeaps: AhatHeap[]): void {
+  // Exact port of Diff.heaps from Java ahat
+  const asize = aHeaps.length;
+  const bsize = bHeaps.length;
+
+  // Mark b heaps as unmatched (use a Set since we can't set baseline to null)
+  const bUnmatched = new Set<AhatHeap>(bHeaps);
+
+  for (let i = 0; i < asize; i++) {
+    const ah = aHeaps[i];
+    let matched = false;
+    for (let j = 0; j < bsize; j++) {
+      const bh = bHeaps[j];
+      if (bUnmatched.has(bh) && ah.name === bh.name) {
+        ah.baseline = bh;
+        bh.baseline = ah;
+        bUnmatched.delete(bh);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      // No match for ah in B — create placeholder in B
+      const ph = new AhatHeap(ah.name, bHeaps.length);
+      bHeaps.push(ph);
+      ph.baseline = ah;
+      ah.baseline = ph;
+    }
+  }
+  // Create placeholder in A for unmatched B heaps
+  for (const bh of bUnmatched) {
+    const ph = new AhatHeap(bh.name, aHeaps.length);
+    aHeaps.push(ph);
+    ph.baseline = bh;
+    bh.baseline = ph;
+  }
+}
+
+function createPlaceHolders(
+  inst: AhatInstance,
+  placeholders: AhatPlaceHolderInstance[],
+): AhatPlaceHolderInstance {
+  // Exact port of Diff.createPlaceHolders — iterative, not recursive
+  const result = new AhatPlaceHolderInstance(inst);
+  placeholders.push(result);
+  const deque: AhatInstance[] = [inst];
+  while (deque.length > 0) {
+    const cur = deque.pop()!;
+    for (const child of cur.dominated) {
+      const childPh = new AhatPlaceHolderInstance(child);
+      placeholders.push(childPh);
+      deque.push(child);
+    }
+  }
+  return result;
+}
+
+const RETAINED_SIZE_DESC = (a: AhatInstance, b: AhatInstance) =>
+  b.getTotalRetainedSize().total - a.getTotalRetainedSize().total;
+
+function diffInstances(
+  aDom: AhatInstance[],
+  bDom: AhatInstance[],
+  placeholders: AhatPlaceHolderInstance[],
+): void {
+  // Exact port of Diff.instances from Java ahat — iterative stack
+  const deque: { a: AhatInstance[]; b: AhatInstance[] }[] = [{ a: aDom, b: bDom }];
+
+  while (deque.length > 0) {
+    const p = deque.pop()!;
+
+    // Group instances of the same equivalence class together
+    const byKey = new Map<string, { a: AhatInstance[]; b: AhatInstance[] }>();
+    for (const inst of p.a) {
+      const key = instanceDiffKey(inst);
+      let pair = byKey.get(key);
+      if (!pair) { pair = { a: [], b: [] }; byKey.set(key, pair); }
+      pair.a.push(inst);
+    }
+    for (const inst of p.b) {
+      const key = instanceDiffKey(inst);
+      let pair = byKey.get(key);
+      if (!pair) { pair = { a: [], b: [] }; byKey.set(key, pair); }
+      pair.b.push(inst);
+    }
+
+    // Diff objects from the same key class
+    for (const pair of byKey.values()) {
+      // Sort by total retained size desc, match positionally
+      pair.a.sort(RETAINED_SIZE_DESC);
+      pair.b.sort(RETAINED_SIZE_DESC);
+
+      const common = Math.min(pair.a.length, pair.b.length);
+      for (let i = 0; i < common; i++) {
+        const ainst = pair.a[i];
+        const binst = pair.b[i];
+        ainst.baseline = binst;
+        binst.baseline = ainst;
+        deque.push({ a: ainst.dominated, b: binst.dominated });
+      }
+
+      // Create placeholders for leftovers
+      for (let i = common; i < pair.a.length; i++) {
+        p.b.push(createPlaceHolders(pair.a[i], placeholders));
+      }
+      for (let i = common; i < pair.b.length; i++) {
+        p.a.push(createPlaceHolders(pair.b[i], placeholders));
+      }
+    }
+  }
+}
+
+function setSitesBaseline(site: SiteNode, baseline: SiteNode): void {
+  site.baseline = baseline;
+  for (const child of site.children) setSitesBaseline(child, baseline);
+}
+
+function diffSites(aSite: SiteNode, bSite: SiteNode): void {
+  // Exact port of Diff.sites from Java ahat
+  aSite.baseline = bSite;
+  bSite.baseline = aSite;
+
+  // Match ObjectsInfos: a → b (uses classObj.baseline to find corresponding class in other snap)
+  for (const aInfo of aSite.objectsInfos) {
+    const baseClassObj = aInfo.classObj ? aInfo.classObj.baseline as AhatClassObj : null;
+    const bInfo = bSite.getObjectsInfo(aInfo.heap.baseline, baseClassObj);
+    aInfo.baseline = bInfo;
+    bInfo.baseline = aInfo;
+  }
+  // Match ObjectsInfos: b → a
+  for (const bInfo of bSite.objectsInfos) {
+    const baseClassObj = bInfo.classObj ? bInfo.classObj.baseline as AhatClassObj : null;
+    const aInfo = aSite.getObjectsInfo(bInfo.heap.baseline, baseClassObj);
+    bInfo.baseline = aInfo;
+    aInfo.baseline = bInfo;
+  }
+
+  // Mark b children as unmatched
+  const bUnmatched = new Set<SiteNode>(bSite.children);
+
+  for (const achild of aSite.children) {
+    let matched = false;
+    for (const bchild of bSite.children) {
+      if (bUnmatched.has(bchild)
+          && achild.line === bchild.line
+          && achild.method === bchild.method
+          && achild.signature === bchild.signature
+          && achild.filename === bchild.filename) {
+        bUnmatched.delete(bchild);
+        diffSites(achild, bchild);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      setSitesBaseline(achild, bSite);
+    }
+  }
+
+  for (const bchild of bUnmatched) {
+    setSitesBaseline(bchild, aSite);
+  }
+}
+
+/**
+ * Diff two snapshots. Exact port of Diff.snapshots() from Java ahat.
+ * After calling, every instance/heap/site in `a` has its `.baseline` pointing
+ * to the corresponding object in `b`, and vice versa. Unmatched objects get
+ * `AhatPlaceHolderInstance` placeholders.
+ */
+export function diffSnapshots(a: AhatSnapshot, b: AhatSnapshot): void {
+  // Diff heaps
+  diffHeaps(a.heaps, b.heaps);
+
+  // Diff instances
+  const placeholders: AhatPlaceHolderInstance[] = [];
+  diffInstances(a.superRoot.dominated, b.superRoot.dominated, placeholders);
+
+  // Diff sites (requires instances already diffed)
+  diffSites(a.rootSite, b.rootSite);
+
+  // Add placeholders to their corresponding sites (requires sites already diffed)
+  for (const ph of placeholders) {
+    if (ph.baseline.site) {
+      const targetSite = ph.baseline.site.baseline;
+      if (targetSite) {
+        ph.site = targetSite;
+        targetSite.addInstance(ph);
+      }
+    }
+  }
+
+  // Register placeholders in snap instance maps for lookup
+  let phId = -1;
+  for (const ph of placeholders) {
+    // Determine which snapshot this placeholder belongs to
+    // Placeholders created for unmatched A instances go into B (and vice versa)
+    // We add to both for simplicity — each ph already has baseline set
+    const targetSnap = a.instances.has(ph.baseline.id) ? b : a;
+    targetSnap.instances.set(phId--, ph);
+  }
+}
+
+/**
+ * Reset all baselines in a snapshot back to `this` (self-referencing).
+ * Also removes any placeholder instances and heaps added during diffing.
+ */
+export function resetBaselines(snap: AhatSnapshot, originalHeapCount: number): void {
+  // Reset heaps, remove placeholders
+  for (const h of snap.heaps) h.baseline = h;
+  snap.heaps.length = originalHeapCount;
+
+  // Reset instances, remove placeholders
+  const toRemove: number[] = [];
+  for (const [id, inst] of snap.instances) {
+    if (inst instanceof AhatPlaceHolderInstance) {
+      toRemove.push(id);
+    } else {
+      inst.baseline = inst;
+    }
+  }
+  for (const id of toRemove) snap.instances.delete(id);
+
+  // Reset sites
+  resetSiteBaselines(snap.rootSite);
+}
+
+function resetSiteBaselines(site: SiteNode): void {
+  site.baseline = site;
+  for (const info of site.objectsInfos) info.baseline = info;
+  // Remove placeholder objects from site
+  site.objects = site.objects.filter(o => !(o instanceof AhatPlaceHolderInstance));
+  for (const child of site.children) resetSiteBaselines(child);
 }
 
 // ─── normalizeClassName ──────────────────────────────────────────────────────
@@ -1060,8 +1331,8 @@ export function parseHprof(buffer: ArrayBuffer, onProgress?: ProgressCallback): 
       case 0x04: { // STACK FRAME
         const fid = hprof.getId();
         const mn = hprof.getId(); const ms = hprof.getId(); const fn = hprof.getId();
-        hprof.getU4(); const ln = hprof.getU4();
-        frames.set(fid, { method: strings.get(mn)||"???", signature: strings.get(ms)||"", filename: strings.get(fn)||"???", line: ln });
+        const cs = hprof.getU4(); const ln = hprof.getU4();
+        frames.set(fid, { method: strings.get(mn)||"???", signature: strings.get(ms)||"", filename: strings.get(fn)||"???", line: ln, className: classNamesBySerial.get(cs) || "" });
         break;
       }
       case 0x05: { // STACK TRACE
@@ -1269,6 +1540,21 @@ export function parseHprof(buffer: ArrayBuffer, onProgress?: ProgressCallback): 
     }
   }
 
+  // Post-process unreachable instances: compute reverse refs and sample paths
+  // (ported from Java AhatSnapshot.java — "Compute references for unreachable instances too")
+  for (const inst of allInst) {
+    if (inst.reachability !== Reachability.UNREACHABLE) continue;
+    for (const ref of inst.getReferences()) {
+      if (!ref.ref.reverseRefs) ref.ref.reverseRefs = [];
+      ref.ref.reverseRefs.push(ref.src);
+      // Build sample paths with id-ordering to prevent cycles
+      if (!ref.ref.nextToGcRoot && ref.src.id < ref.ref.id) {
+        ref.ref.nextToGcRoot = ref.src;
+        ref.ref.nextToGcRootField = ref.field;
+      }
+    }
+  }
+
   onProgress?.("Computing dominators...", 70);
 
   const retained = Reachability.SOFT;
@@ -1328,7 +1614,7 @@ export type SerializedValue =
   | { kind: "null" };
 
 export interface SerializedSite {
-  method: string; signature: string; filename: string; line: number;
+  method: string; signature: string; filename: string; line: number; className: string;
   children: SerializedSite[];
   // objectsInfos / sizesByHeap are recomputed on deserialize; objects are
   // identified by instance index not stored here (they will be re-attached).
@@ -1407,7 +1693,7 @@ export function serializeSnapshot(snap: AhatSnapshot): SerializedSnapshot {
 
   function serSite(s: SiteNode): SerializedSite {
     return {
-      method: s.method, signature: s.signature, filename: s.filename, line: s.line,
+      method: s.method, signature: s.signature, filename: s.filename, line: s.line, className: s.className,
       children: s.children.map(serSite),
     };
   }
@@ -1478,7 +1764,7 @@ export function deserializeSnapshot(data: SerializedSnapshot): AhatSnapshot {
 
   // Rebuild site tree (flat id map built after)
   function buildSite(s: SerializedSite, parent: SiteNode | null): SiteNode {
-    const node = new SiteNode(parent, s.method, s.signature, s.filename, s.line);
+    const node = new SiteNode(parent, s.method, s.signature, s.filename, s.line, s.className);
     for (const c of s.children) node.children.push(buildSite(c, node));
     return node;
   }

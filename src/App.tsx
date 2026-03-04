@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "react";
 import type {
   OverviewData, HeapInfo,
-  InstanceRow, InstanceDetail,
+  InstanceRow, InstanceDetail, DiffedField,
   SiteData, SiteChildRow, SiteObjectsRow,
   PrimOrRef, BitmapListRow,
 } from "./hprof.worker";
@@ -10,17 +10,24 @@ import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 
 // ─── Worker proxy ─────────────────────────────────────────────────────────────
 
-type QueryName = "getOverview" | "getRooted" | "getInstance" | "getSite" | "search" | "getObjects" | "getBitmapList";
+type QueryName = "getOverview" | "getRooted" | "getInstance" | "getSite" | "search" | "getObjects" | "getBitmapList" | "getByteArray";
 
 type WorkerInMessage =
   | { type: "progress"; msg: string; pct: number }
   | { type: "ready"; overview: OverviewData }
   | { type: "error"; message: string }
   | { type: "result"; id: number; data: unknown }
-  | { type: "queryError"; id: number; message: string };
+  | { type: "queryError"; id: number; message: string }
+  | { type: "diffProgress"; msg: string; pct: number }
+  | { type: "diffReady"; overview: OverviewData }
+  | { type: "baselineCleared"; overview: OverviewData }
+  | { type: "proguardMapLoaded"; hasEntries: boolean };
 
 interface WorkerProxy {
   query<T>(name: QueryName, params?: Record<string, unknown>): Promise<T>;
+  diffWithBaseline(buffer: ArrayBuffer, onProgress: (msg: string, pct: number) => void): Promise<OverviewData>;
+  clearBaseline(): Promise<OverviewData>;
+  loadProguardMap(text: string): Promise<boolean>;
   terminate(): void;
 }
 
@@ -33,6 +40,13 @@ function makeWorkerProxy(
     let nextId = 1;
     const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
     let ready = false;
+
+    // Diff state
+    let diffProgressCb: ((msg: string, pct: number) => void) | null = null;
+    let diffResolve: ((ov: OverviewData) => void) | null = null;
+    let diffReject: ((e: Error) => void) | null = null;
+    let clearResolve: ((ov: OverviewData) => void) | null = null;
+    let mapResolve: ((ok: boolean) => void) | null = null;
 
     worker.onmessage = (e: MessageEvent) => {
       const msg = e.data as WorkerInMessage;
@@ -48,17 +62,47 @@ function makeWorkerProxy(
               worker.postMessage({ type: "query", id, name, params });
             });
           },
+          diffWithBaseline(buf: ArrayBuffer, onProg: (msg: string, pct: number) => void): Promise<OverviewData> {
+            return new Promise<OverviewData>((res, rej) => {
+              diffProgressCb = onProg;
+              diffResolve = res;
+              diffReject = rej;
+              const copy = buf.slice(0);
+              worker.postMessage({ type: "diffWithBaseline", buffer: copy }, [copy]);
+            });
+          },
+          clearBaseline(): Promise<OverviewData> {
+            return new Promise<OverviewData>((res) => {
+              clearResolve = res;
+              worker.postMessage({ type: "clearBaseline" });
+            });
+          },
+          loadProguardMap(text: string): Promise<boolean> {
+            return new Promise<boolean>((res) => {
+              mapResolve = res;
+              worker.postMessage({ type: "loadProguardMap", text });
+            });
+          },
           terminate() { worker.terminate(); },
         };
         resolve({ proxy, overview: msg.overview });
       } else if (msg.type === "error") {
         if (!ready) reject(new Error(msg.message));
+        if (diffReject) { diffReject(new Error(msg.message)); diffReject = null; diffResolve = null; diffProgressCb = null; }
       } else if (msg.type === "result") {
         const p = pending.get(msg.id);
         if (p) { pending.delete(msg.id); p.resolve(msg.data); }
       } else if (msg.type === "queryError") {
         const p = pending.get(msg.id);
         if (p) { pending.delete(msg.id); p.reject(new Error(msg.message)); }
+      } else if (msg.type === "diffProgress") {
+        diffProgressCb?.(msg.msg, msg.pct);
+      } else if (msg.type === "diffReady") {
+        if (diffResolve) { diffResolve(msg.overview); diffResolve = null; diffReject = null; diffProgressCb = null; }
+      } else if (msg.type === "baselineCleared") {
+        if (clearResolve) { clearResolve(msg.overview); clearResolve = null; }
+      } else if (msg.type === "proguardMapLoaded") {
+        if (mapResolve) { mapResolve(msg.hasEntries); mapResolve = null; }
       }
     };
     worker.onerror = (err) => {
@@ -170,6 +214,17 @@ export function fmtDelta(deltaKb: number): string {
   if (deltaKb === 0) return "";
   const sign = deltaKb > 0 ? "+" : "\u2212";
   return `${sign}${fmtSize(Math.abs(deltaKb) * 1024)}`;
+}
+
+/** Format a byte-level delta (like Java ahat's %+,d format). */
+export function fmtSizeDelta(bytes: number): string {
+  if (bytes === 0) return "";
+  const sign = bytes > 0 ? "+" : "\u2212";
+  return `${sign}${fmtSize(Math.abs(bytes))}`;
+}
+
+export function deltaBgClassBytes(bytes: number): string {
+  return deltaBgClass(bytes / 1024);
 }
 
 // ─── Navigation types ─────────────────────────────────────────────────────────
@@ -352,16 +407,39 @@ function BitmapImage({ width, height, format, data }: {
 
 // ─── Views ────────────────────────────────────────────────────────────────────
 
-function OverviewView({ overview, sessions, activeSessionId, onSwitch, onDiscard }: {
+function DeltaCell({ current, baseline }: { current: number; baseline: number }) {
+  const d = current - baseline;
+  if (d === 0) return <td className="py-1 px-2 text-right font-mono" />;
+  return (
+    <td className={`py-1 px-2 text-right font-mono whitespace-nowrap ${d > 0 ? "text-green-700" : "text-red-700"} ${deltaBgClassBytes(d)}`}>
+      {fmtSizeDelta(d)}
+    </td>
+  );
+}
+
+function OverviewView({ overview, sessions, activeSessionId, onSwitch, onDiscard, navigate }: {
   overview: OverviewData;
   sessions: Session[];
   activeSessionId: string | null;
   onSwitch: (id: string) => void;
   onDiscard: (id: string) => void;
+  navigate: NavFn;
 }) {
-  const heaps = overview.heaps.filter(h => h.java + h.native_ > 0);
+  const diffed = overview.isDiffed ?? false;
+  const baseHeaps = overview.baselineHeaps;
+  // Filter to heaps with non-zero current or baseline sizes
+  const heapIndices: number[] = [];
+  for (let i = 0; i < overview.heaps.length; i++) {
+    const h = overview.heaps[i];
+    const bh = baseHeaps?.[i];
+    if (h.java + h.native_ > 0 || (bh && bh.java + bh.native_ > 0)) heapIndices.push(i);
+  }
+  const heaps = heapIndices.map(i => overview.heaps[i]);
   const totalJava = heaps.reduce((a, h) => a + h.java, 0);
   const totalNative = heaps.reduce((a, h) => a + h.native_, 0);
+  const baseTotalJava = diffed ? heapIndices.reduce((a, i) => a + (baseHeaps![i]?.java ?? 0), 0) : 0;
+  const baseTotalNative = diffed ? heapIndices.reduce((a, i) => a + (baseHeaps![i]?.native_ ?? 0), 0) : 0;
+
   return (
     <div>
       <h2 className="text-lg font-semibold mb-3 text-stone-800">Overview</h2>
@@ -395,7 +473,14 @@ function OverviewView({ overview, sessions, activeSessionId, onSwitch, onDiscard
             )}
           </span>
           <span className="text-stone-500">Total Instances:</span>
-          <span className="font-mono">{overview.instanceCount.toLocaleString()}</span>
+          <span className="font-mono">
+            {overview.instanceCount.toLocaleString()}
+            {diffed && overview.baselineInstanceCount != null && overview.instanceCount !== overview.baselineInstanceCount && (
+              <span className={`ml-2 whitespace-nowrap ${overview.instanceCount - overview.baselineInstanceCount > 0 ? "text-green-700" : "text-red-700"}`}>
+                {(overview.instanceCount - overview.baselineInstanceCount > 0 ? "+" : "\u2212") + Math.abs(overview.instanceCount - overview.baselineInstanceCount).toLocaleString()}
+              </span>
+            )}
+          </span>
           <span className="text-stone-500">Heaps:</span>
           <span>{heaps.map(h => h.name).join(", ")}</span>
         </div>
@@ -407,33 +492,76 @@ function OverviewView({ overview, sessions, activeSessionId, onSwitch, onDiscard
             <tr>
               <th className="text-left py-1 px-2 text-stone-600 text-xs font-medium">Heap</th>
               <th className="text-right py-1 px-2 text-stone-600 text-xs font-medium">Java Size</th>
+              {diffed && <th className="text-right py-1 px-2 text-stone-600 text-xs font-medium">{"\u0394"}</th>}
               <th className="text-right py-1 px-2 text-stone-600 text-xs font-medium">Native Size</th>
+              {diffed && <th className="text-right py-1 px-2 text-stone-600 text-xs font-medium">{"\u0394"}</th>}
               <th className="text-right py-1 px-2 text-stone-600 text-xs font-medium">Total Size</th>
+              {diffed && <th className="text-right py-1 px-2 text-stone-600 text-xs font-medium">{"\u0394"}</th>}
             </tr>
           </thead>
           <tbody>
-            {heaps.map(h => (
-              <tr key={h.name} className="border-t border-stone-100">
-                <td className="py-1 px-2">{h.name}</td>
-                <td className="py-1 px-2 text-right font-mono">{fmtSize(h.java)}</td>
-                <td className="py-1 px-2 text-right font-mono">{fmtSize(h.native_)}</td>
-                <td className="py-1 px-2 text-right font-mono font-semibold">{fmtSize(h.java + h.native_)}</td>
-              </tr>
-            ))}
+            {heapIndices.map(i => {
+              const h = overview.heaps[i];
+              const bh = baseHeaps?.[i];
+              return (
+                <tr key={h.name} className="border-t border-stone-100">
+                  <td className="py-1 px-2">{h.name}</td>
+                  <td className="py-1 px-2 text-right font-mono">{fmtSize(h.java)}</td>
+                  {diffed && bh && <DeltaCell current={h.java} baseline={bh.java} />}
+                  <td className="py-1 px-2 text-right font-mono">{fmtSize(h.native_)}</td>
+                  {diffed && bh && <DeltaCell current={h.native_} baseline={bh.native_} />}
+                  <td className="py-1 px-2 text-right font-mono font-semibold">{fmtSize(h.java + h.native_)}</td>
+                  {diffed && bh && <DeltaCell current={h.java + h.native_} baseline={bh.java + bh.native_} />}
+                </tr>
+              );
+            })}
             <tr className="border-t-2 border-stone-300 font-semibold">
               <td className="py-1 px-2">Total</td>
               <td className="py-1 px-2 text-right font-mono">{fmtSize(totalJava)}</td>
+              {diffed && <DeltaCell current={totalJava} baseline={baseTotalJava} />}
               <td className="py-1 px-2 text-right font-mono">{fmtSize(totalNative)}</td>
+              {diffed && <DeltaCell current={totalNative} baseline={baseTotalNative} />}
               <td className="py-1 px-2 text-right font-mono">{fmtSize(totalJava + totalNative)}</td>
+              {diffed && <DeltaCell current={totalJava + totalNative} baseline={baseTotalJava + baseTotalNative} />}
             </tr>
           </tbody>
         </table>
       </div>
+      {overview.duplicateBitmaps && overview.duplicateBitmaps.length > 0 && (
+        <div className="bg-white border border-stone-200 p-4 mt-4">
+          <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">Heap Analysis Results</h3>
+          <p className="text-sm text-stone-700 mb-2">
+            {overview.duplicateBitmaps.length} group{overview.duplicateBitmaps.length > 1 ? "s" : ""} of duplicate bitmaps detected, wasting{" "}
+            <span className="font-mono font-semibold">{fmtSize(overview.duplicateBitmaps.reduce((a, g) => a + g.wastedBytes, 0))}</span>.{" "}
+            <button className="text-sky-600 hover:underline" onClick={() => navigate("/bitmaps")}>View Bitmaps</button>
+          </p>
+          <table className="w-full text-sm">
+            <thead>
+              <tr>
+                <th className="text-left py-1 px-2 text-stone-600 text-xs font-medium">Dimensions</th>
+                <th className="text-right py-1 px-2 text-stone-600 text-xs font-medium">Copies</th>
+                <th className="text-right py-1 px-2 text-stone-600 text-xs font-medium">Total</th>
+                <th className="text-right py-1 px-2 text-stone-600 text-xs font-medium">Wasted</th>
+              </tr>
+            </thead>
+            <tbody>
+              {overview.duplicateBitmaps.map((g, i) => (
+                <tr key={i} className="border-t border-stone-100">
+                  <td className="py-1 px-2 font-mono">{g.width} {"\u00d7"} {g.height}</td>
+                  <td className="py-1 px-2 text-right font-mono">{g.count}</td>
+                  <td className="py-1 px-2 text-right font-mono">{fmtSize(g.totalBytes)}</td>
+                  <td className="py-1 px-2 text-right font-mono text-rose-600">{fmtSize(g.wastedBytes)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
 
-function RootedView({ proxy, heaps, navigate }: { proxy: WorkerProxy; heaps: HeapInfo[]; navigate: NavFn }) {
+function RootedView({ proxy, heaps, navigate, isDiffed }: { proxy: WorkerProxy; heaps: HeapInfo[]; navigate: NavFn; isDiffed: boolean }) {
   const [rows, setRows] = useState<InstanceRow[] | null>(null);
   useEffect(() => {
     proxy.query<InstanceRow[]>("getRooted").then(setRows).catch(console.error);
@@ -442,32 +570,70 @@ function RootedView({ proxy, heaps, navigate }: { proxy: WorkerProxy; heaps: Hea
   if (!rows) return <div className="text-stone-400 p-4">Loading&hellip;</div>;
 
   const heapCols = heaps.filter(h => h.java + h.native_ > 0);
+  const diffed = isDiffed && rows.some(r => r.baselineRetainedTotal !== undefined);
+
+  type Col = { label: string; align?: string; sortKey?: (r: InstanceRow) => number; render: (r: InstanceRow, idx: number) => React.ReactNode };
+  const cols: Col[] = [
+    {
+      label: "Retained", align: "right",
+      sortKey: r => r.retainedTotal,
+      render: r => <span className={`font-mono ${r.isPlaceHolder ? "opacity-60" : ""}`}>{fmtSize(r.retainedTotal)}</span>,
+    },
+  ];
+  if (diffed) {
+    cols.push({
+      label: "\u0394", align: "right",
+      sortKey: r => r.retainedTotal - (r.baselineRetainedTotal ?? r.retainedTotal),
+      render: r => {
+        const d = r.retainedTotal - (r.baselineRetainedTotal ?? r.retainedTotal);
+        if (r.baselineRetainedTotal === undefined || d === 0) return null;
+        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-green-700" : "text-red-700"}`}>{fmtSizeDelta(d)}</span>;
+      },
+    });
+  }
+  for (const h of heapCols) {
+    cols.push({
+      label: h.name, align: "right",
+      sortKey: (r: InstanceRow) => {
+        const s = r.retainedByHeap.find(x => x.heap === h.name);
+        return (s?.java ?? 0) + (s?.native_ ?? 0);
+      },
+      render: (r: InstanceRow) => {
+        const s = r.retainedByHeap.find(x => x.heap === h.name);
+        return <span className={`font-mono ${r.isPlaceHolder ? "opacity-60" : ""}`}>{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>;
+      },
+    });
+    if (diffed) {
+      cols.push({
+        label: "\u0394", align: "right",
+        sortKey: (r: InstanceRow) => {
+          const s = r.retainedByHeap.find(x => x.heap === h.name);
+          const bs = r.baselineRetainedByHeap?.find(x => x.heap === h.name);
+          return ((s?.java ?? 0) + (s?.native_ ?? 0)) - ((bs?.java ?? 0) + (bs?.native_ ?? 0));
+        },
+        render: (r: InstanceRow) => {
+          const s = r.retainedByHeap.find(x => x.heap === h.name);
+          const bs = r.baselineRetainedByHeap?.find(x => x.heap === h.name);
+          const d = ((s?.java ?? 0) + (s?.native_ ?? 0)) - ((bs?.java ?? 0) + (bs?.native_ ?? 0));
+          if (d === 0 || !bs) return null;
+          return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-green-700" : "text-red-700"}`}>{fmtSizeDelta(d)}</span>;
+        },
+      });
+    }
+  }
+  cols.push({
+    label: "Object",
+    render: r => (
+      <span className={r.isPlaceHolder ? "opacity-60" : ""}>
+        <InstanceLink row={r} navigate={navigate} />
+      </span>
+    ),
+  });
 
   return (
     <div>
       <h2 className="text-lg font-semibold mb-3 text-stone-800">Rooted</h2>
-      <SortableTable<InstanceRow>
-        columns={[
-          {
-            label: "Retained", align: "right",
-            sortKey: r => r.retainedTotal,
-            render: r => <span className="font-mono">{fmtSize(r.retainedTotal)}</span>,
-          },
-          ...heapCols.map(h => ({
-            label: h.name, align: "right",
-            sortKey: (r: InstanceRow) => {
-              const s = r.retainedByHeap.find(x => x.heap === h.name);
-              return (s?.java ?? 0) + (s?.native_ ?? 0);
-            },
-            render: (r: InstanceRow) => {
-              const s = r.retainedByHeap.find(x => x.heap === h.name);
-              return <span className="font-mono">{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>;
-            },
-          })),
-          { label: "Object", render: r => <InstanceLink row={r} navigate={navigate} /> },
-        ]}
-        data={rows}
-      />
+      <SortableTable<InstanceRow> columns={cols} data={rows} />
     </div>
   );
 }
@@ -516,7 +682,7 @@ function ObjectView({ proxy, heaps, navigate, params }: {
       )}
 
       {detail.pathFromRoot && (
-        <Section title="Sample Path from GC Root">
+        <Section title={detail.isUnreachablePath ? "Sample Path" : "Sample Path from GC Root"}>
           <div className="space-y-0.5">
             {detail.pathFromRoot.map((pe, i) => (
               <div key={i} className={`flex items-baseline gap-1 min-w-0 ${pe.isDominator ? "font-semibold" : ""}`} style={{ paddingLeft: Math.min(i, 20) * 12 }}>
@@ -544,9 +710,22 @@ function ObjectView({ proxy, heaps, navigate, params }: {
       <Section title="Object Size">
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
           <span className="text-stone-500">Shallow Size:</span>
-          <span className="font-mono">{fmtSize(row.shallowJava + row.shallowNative)}{row.shallowNative > 0 && <span className="text-stone-400"> (java: {fmtSize(row.shallowJava)}, native: {fmtSize(row.shallowNative)})</span>}</span>
+          <span className="font-mono">
+            {fmtSize(row.shallowJava + row.shallowNative)}
+            {row.shallowNative > 0 && <span className="text-stone-400"> (java: {fmtSize(row.shallowJava)}, native: {fmtSize(row.shallowNative)})</span>}
+            {row.baselineShallowJava !== undefined && (() => {
+              const d = (row.shallowJava + row.shallowNative) - ((row.baselineShallowJava ?? 0) + (row.baselineShallowNative ?? 0));
+              return d !== 0 ? <span className={`ml-2 whitespace-nowrap ${d > 0 ? "text-green-700" : "text-red-700"}`}>{fmtSizeDelta(d)}</span> : null;
+            })()}
+          </span>
           <span className="text-stone-500">Retained Size:</span>
-          <span className="font-mono font-semibold">{fmtSize(row.retainedTotal)}</span>
+          <span className="font-mono font-semibold">
+            {fmtSize(row.retainedTotal)}
+            {row.baselineRetainedTotal !== undefined && (() => {
+              const d = row.retainedTotal - row.baselineRetainedTotal;
+              return d !== 0 ? <span className={`ml-2 font-normal whitespace-nowrap ${d > 0 ? "text-green-700" : "text-red-700"}`}>{fmtSizeDelta(d)}</span> : null;
+            })()}
+          </span>
         </div>
       </Section>
 
@@ -563,14 +742,14 @@ function ObjectView({ proxy, heaps, navigate, params }: {
             </div>
           </Section>
           <Section title="Static Fields">
-            <FieldsTable fields={detail.staticFields} navigate={navigate} />
+            <FieldsTable fields={detail.staticFields} diffedFields={detail.diffedStaticFields} navigate={navigate} />
           </Section>
         </>
       )}
 
-      {detail.isClassInstance && detail.instanceFields.length > 0 && (
+      {detail.isClassInstance && (detail.instanceFields.length > 0 || (detail.diffedInstanceFields && detail.diffedInstanceFields.length > 0)) && (
         <Section title="Fields">
-          <FieldsTable fields={detail.instanceFields} navigate={navigate} />
+          <FieldsTable fields={detail.instanceFields} diffedFields={detail.diffedInstanceFields} navigate={navigate} />
         </Section>
       )}
 
@@ -584,6 +763,11 @@ function ObjectView({ proxy, heaps, navigate, params }: {
             onShowAll={detail.arrayLength > detail.arrayElems.length ? () => {
               proxy.query<InstanceDetail | null>("getInstance", { id: params.id, arrayLimit: 0 })
                 .then(full => { if (full) setDetail(full); })
+                .catch(console.error);
+            } : undefined}
+            onDownloadBytes={detail.elemTypeName === "byte" ? () => {
+              proxy.query<ArrayBuffer | null>("getByteArray", { id: params.id })
+                .then(buf => { if (buf) downloadBlob(`array-${fmtHex(params.id)}.bin`, buf); })
                 .catch(console.error);
             } : undefined}
           />
@@ -641,10 +825,50 @@ function SiteChainView({ siteId, proxy, navigate }: { siteId: number; proxy: Wor
   ))}</>;
 }
 
-function FieldsTable({ fields, navigate }: {
+function FieldsTable({ fields, diffedFields, navigate }: {
   fields: { name: string; typeName: string; value: PrimOrRef }[];
+  diffedFields?: DiffedField[];
   navigate: NavFn;
 }) {
+  if (diffedFields) {
+    return (
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr>
+              <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Type</th>
+              <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Name</th>
+              <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Value</th>
+              <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">{"\u0394"}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {diffedFields.map((f, i) => (
+              <tr key={i} className={`border-t border-stone-100 ${f.status === "deleted" ? "opacity-60" : ""}`}>
+                <td className="px-2 py-0.5 text-stone-500 font-mono">{f.typeName}</td>
+                <td className="px-2 py-0.5 font-mono">{f.name}</td>
+                <td className="px-2 py-0.5">
+                  {f.value ? <PrimOrRefCell v={f.value} navigate={navigate} /> : <span className="text-stone-400">{"\u2014"}</span>}
+                </td>
+                <td className="px-2 py-0.5 text-xs whitespace-nowrap">
+                  {f.status === "added" && <span className="text-green-700 font-medium">new</span>}
+                  {f.status === "deleted" && (
+                    <span className="text-red-700">
+                      <span className="font-medium">del</span>
+                      {f.baselineValue && <>{" was "}<PrimOrRefCell v={f.baselineValue} navigate={navigate} /></>}
+                    </span>
+                  )}
+                  {f.status === "matched" && f.baselineValue && (
+                    <span className="text-amber-700">was <PrimOrRefCell v={f.baselineValue} navigate={navigate} /></span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse">
@@ -669,20 +893,28 @@ function FieldsTable({ fields, navigate }: {
   );
 }
 
-function ArrayView({ elems, elemTypeName, total, navigate, onShowAll }: {
-  elems: { idx: number; value: PrimOrRef }[];
+function ArrayView({ elems, elemTypeName, total, navigate, onShowAll, onDownloadBytes }: {
+  elems: { idx: number; value: PrimOrRef; baselineValue?: PrimOrRef }[];
   elemTypeName: string;
   total: number;
   navigate: NavFn;
   onShowAll?: () => void;
+  onDownloadBytes?: () => void;
 }) {
+  const hasDiff = elems.some(e => e.baselineValue !== undefined);
   return (
     <div>
+      {onDownloadBytes && (
+        <div className="mb-2">
+          <button className="text-xs text-sky-600 hover:underline" onClick={onDownloadBytes}>Download bytes</button>
+        </div>
+      )}
       <table className="w-full border-collapse">
         <thead>
           <tr>
             <th className="text-right px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium w-16">Index</th>
             <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">Value ({elemTypeName})</th>
+            {hasDiff && <th className="text-left px-2 py-1 bg-stone-100 text-stone-600 text-xs font-medium">{"\u0394"}</th>}
           </tr>
         </thead>
         <tbody>
@@ -690,6 +922,11 @@ function ArrayView({ elems, elemTypeName, total, navigate, onShowAll }: {
             <tr key={e.idx} className="border-t border-stone-100">
               <td className="px-2 py-0.5 text-right font-mono text-stone-400">{e.idx}</td>
               <td className="px-2 py-0.5"><PrimOrRefCell v={e.value} navigate={navigate} /></td>
+              {hasDiff && (
+                <td className="px-2 py-0.5 text-xs whitespace-nowrap">
+                  {e.baselineValue && <span className="text-amber-700">was <PrimOrRefCell v={e.baselineValue} navigate={navigate} /></span>}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -747,7 +984,7 @@ function ObjectsView({ proxy, navigate, params }: { proxy: WorkerProxy; navigate
   );
 }
 
-function SiteView({ proxy, heaps, navigate, params }: { proxy: WorkerProxy; heaps: HeapInfo[]; navigate: NavFn; params: SiteParams }) {
+function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerProxy; heaps: HeapInfo[]; navigate: NavFn; params: SiteParams; isDiffed: boolean }) {
   const [data, setData] = useState<SiteData | null>(null);
   useEffect(() => {
     setData(null);
@@ -756,6 +993,77 @@ function SiteView({ proxy, heaps, navigate, params }: { proxy: WorkerProxy; heap
 
   if (!data) return <div className="text-stone-400 p-4">Loading&hellip;</div>;
   const heapCols = heaps.filter(h => h.java + h.native_ > 0);
+  const childDiffed = isDiffed && data.children.some(c => c.baselineTotalJava !== undefined);
+  const objDiffed = isDiffed && data.objectsInfos.some(o => o.baselineNumInstances !== undefined);
+
+  // Build child site columns
+  type ChildCol = { label: string; align?: string; sortKey?: (r: SiteChildRow) => number; render: (r: SiteChildRow, idx: number) => React.ReactNode };
+  const childCols: ChildCol[] = [
+    { label: "Total Size", align: "right", sortKey: r => r.totalJava + r.totalNative, render: r => <span className="font-mono">{fmtSize(r.totalJava + r.totalNative)}</span> },
+  ];
+  if (childDiffed) {
+    childCols.push({
+      label: "\u0394", align: "right",
+      sortKey: r => (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative)),
+      render: r => {
+        const d = (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative));
+        if (d === 0) return null;
+        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-green-700" : "text-red-700"}`}>{fmtSizeDelta(d)}</span>;
+      },
+    });
+  }
+  for (const h of heapCols) {
+    childCols.push({
+      label: h.name, align: "right",
+      sortKey: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return (s?.java ?? 0) + (s?.native_ ?? 0); },
+      render: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return <span className="font-mono">{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>; },
+    });
+  }
+  childCols.push({ label: "Child Site", render: r => <SiteLinkRaw {...r} navigate={navigate} /> });
+
+  // Build objects allocated columns
+  type ObjCol = { label: string; align?: string; sortKey?: (r: SiteObjectsRow) => number; render: (r: SiteObjectsRow, idx: number) => React.ReactNode };
+  const objCols: ObjCol[] = [
+    { label: "Size", align: "right", sortKey: r => r.java + r.native_, render: r => <span className="font-mono">{fmtSize(r.java + r.native_)}</span> },
+  ];
+  if (objDiffed) {
+    objCols.push({
+      label: "\u0394 Size", align: "right",
+      sortKey: r => (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_)),
+      render: r => {
+        const d = (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_));
+        if (d === 0) return null;
+        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-green-700" : "text-red-700"}`}>{fmtSizeDelta(d)}</span>;
+      },
+    });
+  }
+  objCols.push({
+    label: "Instances", align: "right",
+    sortKey: r => r.numInstances,
+    render: r => (
+      <button className="text-sky-700 underline decoration-sky-300 hover:decoration-sky-500 font-mono"
+        onClick={() => navigate("objects", { siteId: data.id, className: r.className, heap: r.heap })}>
+        {r.numInstances.toLocaleString()}
+      </button>
+    ),
+  });
+  if (objDiffed) {
+    objCols.push({
+      label: "\u0394 #", align: "right",
+      sortKey: r => r.numInstances - (r.baselineNumInstances ?? r.numInstances),
+      render: r => {
+        const d = r.numInstances - (r.baselineNumInstances ?? r.numInstances);
+        if (d === 0) return null;
+        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-green-700" : "text-red-700"}`}>{d > 0 ? "+" : "\u2212"}{Math.abs(d).toLocaleString()}</span>;
+      },
+    });
+  }
+  objCols.push({ label: "Heap", render: r => <span>{r.heap}</span> });
+  objCols.push({
+    label: "Class", render: r => r.classObjId != null
+      ? <InstanceLink row={{ id: r.classObjId, display: r.className, className: r.className, isRoot: false, rootTypeNames: null, reachabilityName: "strong", heap: r.heap, shallowJava: 0, shallowNative: 0, retainedTotal: 0, retainedByHeap: [], str: null, referent: null }} navigate={navigate} />
+      : <span>{r.className}</span>,
+  });
 
   return (
     <div className="space-y-3">
@@ -774,50 +1082,12 @@ function SiteView({ proxy, heaps, navigate, params }: { proxy: WorkerProxy; heap
 
       {data.children.length > 0 && (
         <Section title="Sites Called from Here">
-          <SortableTable<SiteChildRow>
-            columns={[
-              { label: "Total Size", align: "right", sortKey: r => r.totalJava + r.totalNative, render: r => <span className="font-mono">{fmtSize(r.totalJava + r.totalNative)}</span> },
-              ...heapCols.map(h => ({
-                label: h.name, align: "right",
-                sortKey: (r: SiteChildRow) => {
-                  const s = r.byHeap.find(x => x.heap === h.name);
-                  return (s?.java ?? 0) + (s?.native_ ?? 0);
-                },
-                render: (r: SiteChildRow) => {
-                  const s = r.byHeap.find(x => x.heap === h.name);
-                  return <span className="font-mono">{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>;
-                },
-              })),
-              { label: "Child Site", render: r => <SiteLinkRaw {...r} navigate={navigate} /> },
-            ]}
-            data={data.children}
-          />
+          <SortableTable<SiteChildRow> columns={childCols} data={data.children} />
         </Section>
       )}
 
       <Section title="Objects Allocated">
-        <SortableTable<SiteObjectsRow>
-          columns={[
-            { label: "Size", align: "right", sortKey: r => r.java + r.native_, render: r => <span className="font-mono">{fmtSize(r.java + r.native_)}</span> },
-            {
-              label: "Instances", align: "right",
-              sortKey: r => r.numInstances,
-              render: r => (
-                <button className="text-sky-700 underline decoration-sky-300 hover:decoration-sky-500 font-mono"
-                  onClick={() => navigate("objects", { siteId: data.id, className: r.className, heap: r.heap })}>
-                  {r.numInstances.toLocaleString()}
-                </button>
-              ),
-            },
-            { label: "Heap", render: r => <span>{r.heap}</span> },
-            {
-              label: "Class", render: r => r.classObjId != null
-                ? <InstanceLink row={{ id: r.classObjId, display: r.className, className: r.className, isRoot: false, rootTypeNames: null, reachabilityName: "strong", heap: r.heap, shallowJava: 0, shallowNative: 0, retainedTotal: 0, retainedByHeap: [], str: null, referent: null }} navigate={navigate} />
-                : <span>{r.className}</span>,
-            },
-          ]}
-          data={data.objectsInfos}
-        />
+        <SortableTable<SiteObjectsRow> columns={objCols} data={data.objectsInfos} />
       </Section>
     </div>
   );
@@ -1714,7 +1984,7 @@ function CaptureView({ onCaptured, conn }: {
 
           {/* Global memory summary */}
           {globalMemInfo && (
-            <div className="mb-3 bg-white border border-stone-200 px-3 py-2">
+            <div className="mb-3 bg-white border border-stone-200 px-3 py-2 overflow-x-auto">
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
                 {([
                   ["Total", globalMemInfo.totalRamKb, globalMemInfoDiff?.deltaTotalRamKb, false],
@@ -1723,7 +1993,7 @@ function CaptureView({ onCaptured, conn }: {
                   ...(globalMemInfo.memAvailableKb > 0 ? [["Available", globalMemInfo.memAvailableKb, globalMemInfoDiff?.deltaMemAvailableKb, true] as const] : []),
                   ...(globalMemInfo.lostRamKb > 0 ? [["Lost", globalMemInfo.lostRamKb, globalMemInfoDiff?.deltaLostRamKb, false] as const] : []),
                 ] as const).map(([label, value, delta, inverted]) => (
-                  <span key={label} className="text-stone-500">
+                  <span key={label} className="text-stone-500 whitespace-nowrap">
                     {label}{" "}
                     <span className="font-mono text-stone-800">{fmtSize(value * 1024)}</span>
                     {delta != null && delta !== 0 && (
@@ -1734,7 +2004,7 @@ function CaptureView({ onCaptured, conn }: {
                   </span>
                 ))}
                 {globalMemInfo.swapTotalKb > 0 && (
-                  <span className="text-stone-500">
+                  <span className="text-stone-500 whitespace-nowrap">
                     ZRAM{" "}
                     <span className="font-mono text-stone-800">
                       {fmtSize(globalMemInfo.zramPhysicalKb * 1024)}{" / "}{fmtSize(globalMemInfo.swapTotalKb * 1024)}
@@ -2000,16 +2270,20 @@ function openInPerfetto(buffer: ArrayBuffer, title: string): void {
   window.addEventListener("message", onPong);
 }
 
-function downloadBuffer(name: string, buffer: ArrayBuffer): void {
+function downloadBlob(name: string, buffer: ArrayBuffer): void {
   const blob = new Blob([buffer], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = name.endsWith(".hprof") ? name : name + ".hprof";
+  a.download = name;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function downloadBuffer(name: string, buffer: ArrayBuffer): void {
+  downloadBlob(name.endsWith(".hprof") ? name : name + ".hprof", buffer);
 }
 
 let nextSessionId = 1;
@@ -2027,13 +2301,17 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [showCapture, setShowCapture] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [baselineSessionId, setBaselineSessionId] = useState<string | null>(null);
+  const [diffing, setDiffing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const mapFileRef = useRef<HTMLInputElement>(null);
   const skipPushRef = useRef(false);
   const adbConnRef = useRef(new AdbConnection());
 
   const activeSession = sessions.find(s => s.id === activeSessionId) ?? null;
   const proxy = activeSession?.proxy ?? null;
   const overview = activeSession?.overview ?? null;
+  const isDiffed = overview?.isDiffed ?? false;
 
   // Navigate: push new state to browser history
   const navigate: NavFn = useCallback((v, p = {}) => {
@@ -2129,22 +2407,77 @@ export default function App() {
     if (file) loadFile(file);
   }, [loadFile]);
 
+  const handleMapFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !proxy) return;
+    const text = await file.text();
+    await proxy.loadProguardMap(text);
+    // Refresh current view by re-querying overview
+    const ov = await proxy.query<OverviewData>("getOverview");
+    setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, overview: ov } : s));
+    e.target.value = "";
+  }, [proxy, activeSessionId]);
+
   const switchSession = useCallback((id: string) => {
     setActiveSessionId(id);
+    setBaselineSessionId(null); // clear diff when switching sessions
     setView("overview");
     setParams({});
     setShowCapture(false);
   }, []);
 
+  const handleBaselineChange = useCallback(async (blId: string | null) => {
+    if (!proxy || !activeSession) return;
+    if (!blId) {
+      // Clear baseline
+      setDiffing(true);
+      try {
+        const ov = await proxy.clearBaseline();
+        setBaselineSessionId(null);
+        setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, overview: ov } : s));
+      } finally {
+        setDiffing(false);
+      }
+      return;
+    }
+    const blSession = sessions.find(s => s.id === blId);
+    if (!blSession) return;
+    setDiffing(true);
+    try {
+      const ov = await proxy.diffWithBaseline(
+        blSession.buffer,
+        (_msg, _pct) => {}, // progress handled silently
+      );
+      setBaselineSessionId(blId);
+      setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, overview: ov } : s));
+    } catch (err) {
+      console.error("Diff failed:", err);
+      setBaselineSessionId(null);
+    } finally {
+      setDiffing(false);
+    }
+  }, [proxy, activeSession, sessions]);
+
   const discardSession = useCallback((id: string) => {
     const session = sessions.find(s => s.id === id);
     if (session) session.proxy.terminate();
     setSessions(prev => prev.filter(s => s.id !== id));
+    // Clear diff if discarding baseline session
+    if (id === baselineSessionId) {
+      setBaselineSessionId(null);
+      // Clear diff in active worker too
+      if (proxy && activeSessionId !== id) {
+        proxy.clearBaseline().then(ov => {
+          setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, overview: ov } : s));
+        }).catch(() => {});
+      }
+    }
     if (activeSessionId === id) {
       const remaining = sessions.filter(s => s.id !== id);
       setActiveSessionId(remaining.length > 0 ? remaining[0].id : null);
+      setBaselineSessionId(null);
     }
-  }, [sessions, activeSessionId]);
+  }, [sessions, activeSessionId, baselineSessionId, proxy]);
 
   const handleCaptured = useCallback((name: string, buffer: ArrayBuffer) => {
     loadBuffer(name, buffer);
@@ -2191,6 +2524,23 @@ export default function App() {
               </button>
             ))}
           </nav>
+          {sessions.length > 1 && (
+            <div className="flex items-center gap-1.5 ml-3 border-l border-stone-600 pl-3">
+              <span className="text-stone-500 text-xs">Diff:</span>
+              <select
+                className="text-xs bg-stone-700 text-stone-300 border border-stone-600 px-1.5 py-0.5 cursor-pointer"
+                value={baselineSessionId ?? ""}
+                disabled={diffing}
+                onChange={e => handleBaselineChange(e.target.value || null)}
+              >
+                <option value="">None</option>
+                {sessions.filter(s => s.id !== activeSessionId).map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+              {diffing && <span className="text-stone-500 text-xs">{"\u2026"}</span>}
+            </div>
+          )}
           <div className="ml-auto flex items-center gap-3">
             <button
               className="text-stone-400 hover:text-white text-sm"
@@ -2228,6 +2578,11 @@ export default function App() {
                   <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}>
                     Open File
                   </button>
+                  {activeSession && (
+                    <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { mapFileRef.current?.click(); setMenuOpen(false); }}>
+                      Load Mapping
+                    </button>
+                  )}
                   {activeSession && sessions.length === 1 && (
                     <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-rose-400" onClick={() => { discardSession(activeSession.id); setMenuOpen(false); }}>
                       Discard
@@ -2237,6 +2592,7 @@ export default function App() {
               )}
             </div>
             <input ref={fileRef} type="file" accept=".hprof" className="hidden" onChange={handleFile} />
+            <input ref={mapFileRef} type="file" accept=".txt,.map" className="hidden" onChange={handleMapFile} />
           </div>
         </header>
       )}
@@ -2326,11 +2682,11 @@ export default function App() {
       {/* Main content views */}
       {hasSession && !showCapture && (
         <main className="flex-1 p-4 max-w-[95%] mx-auto w-full text-sm">
-          {view === "overview" && overview && <OverviewView overview={overview} sessions={sessions} activeSessionId={activeSessionId} onSwitch={switchSession} onDiscard={discardSession} />}
-          {view === "rooted"   && proxy    && <RootedView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} />}
+          {view === "overview" && overview && <OverviewView overview={overview} sessions={sessions} activeSessionId={activeSessionId} onSwitch={switchSession} onDiscard={discardSession} navigate={navigate} />}
+          {view === "rooted"   && proxy    && <RootedView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} isDiffed={isDiffed} />}
           {view === "object"   && proxy    && <ObjectView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as ObjectParams} />}
           {view === "objects"  && proxy    && <ObjectsView proxy={proxy} navigate={navigate} params={params as unknown as ObjectsParams} />}
-          {view === "site"     && proxy    && <SiteView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as SiteParams} />}
+          {view === "site"     && proxy    && <SiteView proxy={proxy} heaps={overview?.heaps ?? []} navigate={navigate} params={params as unknown as SiteParams} isDiffed={isDiffed} />}
           {view === "search"   && proxy    && <SearchView proxy={proxy} navigate={navigate} initialQuery={params.q as string | undefined} />}
           {view === "bitmaps"  && proxy    && <BitmapGalleryView proxy={proxy} navigate={navigate} />}
         </main>
