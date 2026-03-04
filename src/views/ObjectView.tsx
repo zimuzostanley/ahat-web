@@ -255,6 +255,8 @@ function FieldsTable({ fields, diffedFields, navigate }: {
   );
 }
 
+const ARRAY_SHOW_LIMIT = 5_000;
+
 function ArrayView({ elems, elemTypeName, total, navigate, onDownloadBytes }: {
   elems: { idx: number; value: PrimOrRef; baselineValue?: PrimOrRef }[];
   elemTypeName: string;
@@ -262,7 +264,9 @@ function ArrayView({ elems, elemTypeName, total, navigate, onDownloadBytes }: {
   navigate: NavFn;
   onDownloadBytes?: () => void;
 }) {
+  const [showCount, setShowCount] = useState(ARRAY_SHOW_LIMIT);
   const hasDiff = elems.some(e => e.baselineValue !== undefined);
+  const visible = elems.slice(0, showCount);
   return (
     <div>
       {onDownloadBytes && (
@@ -279,7 +283,7 @@ function ArrayView({ elems, elemTypeName, total, navigate, onDownloadBytes }: {
           </tr>
         </thead>
         <tbody>
-          {elems.map(e => (
+          {visible.map(e => (
             <tr key={e.idx} className="border-t border-stone-100">
               <td className="px-2 py-0.5 text-right font-mono text-stone-400">{e.idx}</td>
               <td className="px-2 py-0.5"><PrimOrRefCell v={e.value} navigate={navigate} /></td>
@@ -292,6 +296,15 @@ function ArrayView({ elems, elemTypeName, total, navigate, onDownloadBytes }: {
           ))}
         </tbody>
       </table>
+      {elems.length > showCount && (
+        <div className="text-xs text-stone-500 py-2">
+          Showing {showCount.toLocaleString()} of {elems.length.toLocaleString()}
+          {" \u2014 "}
+          <button className="text-sky-600 ml-1 hover:underline" onClick={() => setShowCount(Math.min(showCount + 5_000, elems.length))}>show more</button>
+          {" "}
+          <button className="text-sky-600 ml-2 hover:underline" onClick={() => setShowCount(elems.length)}>show all</button>
+        </div>
+      )}
       {total > elems.length && (
         <div className="text-xs text-stone-500 pt-2">
           Showing first {elems.length.toLocaleString()} of {total.toLocaleString()} elements
