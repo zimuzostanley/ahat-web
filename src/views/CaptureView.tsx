@@ -338,6 +338,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   const [captureProgress, setCaptureProgress] = useState<{ done: number; total: number } | null>(null);
 
   // VMA dump state
+  const vmaDumpAbortRef = useRef<AbortController | null>(null);
   const [vmaDumpStatus, setVmaDumpStatus] = useState<string | null>(null);
 
   // Smaps — fetched alongside meminfo enrichment (root-only)
@@ -397,6 +398,13 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     setCapturing(false);
     setCaptureStatus("");
     setCaptureProgress(null);
+  }, []);
+
+  const cancelVmaDump = useCallback(() => {
+    if (!vmaDumpAbortRef.current) return;
+    vmaDumpAbortRef.current.abort();
+    vmaDumpAbortRef.current = null;
+    setVmaDumpStatus(null);
   }, []);
 
   const refreshProcesses = useCallback(async () => {
@@ -567,25 +575,34 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     regions: { addrStart: string; addrEnd: string }[],
   ) => {
     if (!connected || vmaDumpStatus) return;
+    cancelEnrichment();
+    const ac = new AbortController();
+    vmaDumpAbortRef.current = ac;
     try {
       setVmaDumpStatus(`Dumping ${label}\u2026`);
       const data = await conn.dumpVmaMemory(pid, regions, status => {
         setVmaDumpStatus(status);
-      });
+      }, ac.signal);
+      if (ac.signal.aborted) return;
       const sanitized = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const labelSan = label.replace(/[^a-zA-Z0-9._-]/g, "_");
       onVmaDump(`vma_${pid}_${sanitized}_${labelSan}`, data.buffer as ArrayBuffer, regions);
     } catch (e) {
+      if (ac.signal.aborted) return;
       if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "VMA dump failed");
     } finally {
-      setVmaDumpStatus(null);
+      if (vmaDumpAbortRef.current === ac) {
+        vmaDumpAbortRef.current = null;
+        setVmaDumpStatus(null);
+      }
     }
-  }, [connected, vmaDumpStatus, conn, onVmaDump]);
+  }, [connected, vmaDumpStatus, conn, onVmaDump, cancelEnrichment]);
 
   const handleDisconnect = useCallback(() => {
     cancelEnrichment();
     cancelCapture();
+    cancelVmaDump();
     conn.disconnect();
     setConnected(false);
     // Keep processes/smaps/diff data visible — user can refresh to reconnect
@@ -595,12 +612,12 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     setCapturing(false);
     setCaptureStatus("");
     setCaptureProgress(null);
-  }, [cancelEnrichment, cancelCapture]);
+  }, [cancelEnrichment, cancelCapture, cancelVmaDump]);
 
   // Clean up on unmount
   useEffect(() => {
-    return () => { cancelEnrichment(); cancelCapture(); conn.disconnect(); };
-  }, [cancelEnrichment, cancelCapture]);
+    return () => { cancelEnrichment(); cancelCapture(); cancelVmaDump(); conn.disconnect(); };
+  }, [cancelEnrichment, cancelCapture, cancelVmaDump]);
 
   const sorted = useMemo(() => {
     if (!processes) return null;
@@ -649,6 +666,29 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     if (vmaSortField === field) setVmaSortAsc(!vmaSortAsc);
     else { setVmaSortField(field); setVmaSortAsc(false); }
   }, [vmaSortField, vmaSortAsc]);
+
+  // Per-process VMA diff summary: count added/removed/changed mappings at a glance
+  const smapsDiffSummary = useMemo(() => {
+    if (!diffMode || !processDiffs) return null;
+    const counts = new Map<number, { added: number; removed: number; changed: number; deltaPssKb: number }>();
+    for (const d of processDiffs) {
+      const pid = d.current.pid;
+      if (d.status === "removed") continue;
+      if (!prevSmapsData.has(pid) || !smapsData.has(pid)) continue;
+      const diffs = diffSmaps(prevSmapsData.get(pid)!, smapsData.get(pid)!);
+      let added = 0, removed = 0, changed = 0, deltaPssKb = 0;
+      for (const sd of diffs) {
+        if (sd.status === "added") added++;
+        else if (sd.status === "removed") removed++;
+        else if (sd.deltaPssKb !== 0) changed++;
+        deltaPssKb += sd.deltaPssKb;
+      }
+      if (added > 0 || removed > 0 || changed > 0) {
+        counts.set(pid, { added, removed, changed, deltaPssKb });
+      }
+    }
+    return counts;
+  }, [diffMode, processDiffs, prevSmapsData, smapsData]);
 
   const hasWebUsb = typeof navigator !== "undefined" && "usb" in navigator;
 
@@ -747,7 +787,10 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
           {/* VMA dump progress */}
           {vmaDumpStatus && (
             <div className="mb-2 text-xs text-stone-500">
-              <span>{vmaDumpStatus}</span>
+              <div className="flex items-center gap-2">
+                <span className="truncate">{vmaDumpStatus}</span>
+                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelVmaDump}>Cancel</button>
+              </div>
             </div>
           )}
 
@@ -964,6 +1007,19 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                           <span className="text-stone-300 mr-1 text-[10px]">{"\u2026"}</span>
                         ) : null}
                         {p.pid}
+                        {(() => {
+                          const sc = smapsDiffSummary?.get(p.pid);
+                          if (!sc) return null;
+                          const parts: string[] = [];
+                          if (sc.added) parts.push(`+${sc.added}`);
+                          if (sc.removed) parts.push(`-${sc.removed}`);
+                          if (sc.changed) parts.push(`${"\u0394"}${sc.changed}`);
+                          return (
+                            <span className="ml-1.5 text-[9px] text-stone-400" title={`VMA: ${parts.join(" ")} mappings${sc.deltaPssKb ? `, PSS ${fmtDelta(sc.deltaPssKb)}` : ""}`}>
+                              [{parts.join(" ")}]
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td className={`py-1 px-2 text-stone-800 truncate max-w-[400px] ${d.status === "removed" ? "line-through" : ""}`} title={p.name}>
                         {p.name}
