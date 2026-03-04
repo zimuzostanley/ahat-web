@@ -15,17 +15,17 @@ function RootedView({ proxy, heaps, navigate, isDiffed }: { proxy: WorkerProxy; 
   const heapCols = heaps.filter(h => h.java + h.native_ > 0);
   const diffed = isDiffed && rows.some(r => r.baselineRetainedTotal !== undefined);
 
-  type Col = { label: string; align?: string; sortKey?: (r: InstanceRow) => number; render: (r: InstanceRow, idx: number) => React.ReactNode };
+  type Col = { label: string; align?: string; minWidth?: string; sortKey?: (r: InstanceRow) => number; render: (r: InstanceRow, idx: number) => React.ReactNode };
   const cols: Col[] = [
     {
-      label: "Retained", align: "right",
+      label: "Retained", align: "right", minWidth: "5rem",
       sortKey: r => r.retainedTotal,
       render: r => <span className={`font-mono ${r.isPlaceHolder ? "opacity-60" : ""}`}>{fmtSize(r.retainedTotal)}</span>,
     },
   ];
   if (diffed) {
     cols.push({
-      label: "\u0394", align: "right",
+      label: "\u0394", align: "right", minWidth: "5rem",
       sortKey: r => r.retainedTotal - (r.baselineRetainedTotal ?? r.retainedTotal),
       render: r => {
         const d = r.retainedTotal - (r.baselineRetainedTotal ?? r.retainedTotal);
@@ -36,7 +36,7 @@ function RootedView({ proxy, heaps, navigate, isDiffed }: { proxy: WorkerProxy; 
   }
   for (const h of heapCols) {
     cols.push({
-      label: h.name, align: "right",
+      label: h.name, align: "right", minWidth: "5rem",
       sortKey: (r: InstanceRow) => {
         const s = r.retainedByHeap.find(x => x.heap === h.name);
         return (s?.java ?? 0) + (s?.native_ ?? 0);
@@ -48,7 +48,7 @@ function RootedView({ proxy, heaps, navigate, isDiffed }: { proxy: WorkerProxy; 
     });
     if (diffed) {
       cols.push({
-        label: "\u0394", align: "right",
+        label: "\u0394", align: "right", minWidth: "5rem",
         sortKey: (r: InstanceRow) => {
           const s = r.retainedByHeap.find(x => x.heap === h.name);
           const bs = r.baselineRetainedByHeap?.find(x => x.heap === h.name);

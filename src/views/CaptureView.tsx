@@ -262,7 +262,20 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
 
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
-type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb" | "codeKb";
+type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb" | "codeKb"
+  | "deltaPssKb" | "deltaRssKb" | "deltaJavaHeapKb" | "deltaNativeHeapKb" | "deltaGraphicsKb" | "deltaCodeKb";
+
+const DELTA_FIELDS: Record<string, keyof ProcessDiff> = {
+  deltaPssKb: "deltaPssKb", deltaRssKb: "deltaRssKb",
+  deltaJavaHeapKb: "deltaJavaHeapKb", deltaNativeHeapKb: "deltaNativeHeapKb",
+  deltaGraphicsKb: "deltaGraphicsKb", deltaCodeKb: "deltaCodeKb",
+};
+
+const VALUE_TO_DELTA: Record<string, SortField> = {
+  pssKb: "deltaPssKb", rssKb: "deltaRssKb",
+  javaHeapKb: "deltaJavaHeapKb", nativeHeapKb: "deltaNativeHeapKb",
+  graphicsKb: "deltaGraphicsKb", codeKb: "deltaCodeKb",
+};
 
 
 function CaptureView({ onCaptured, conn }: {
@@ -515,19 +528,14 @@ function CaptureView({ onCaptured, conn }: {
     cancelCapture();
     conn.disconnect();
     setConnected(false);
-    setProcesses(null);
-    setSelectedPid(null);
+    // Keep processes/smaps/diff data visible — user can refresh to reconnect
     setError(null);
     setEnrichStatus(null);
     setEnrichProgress(null);
     setCapturing(false);
     setCaptureStatus("");
     setCaptureProgress(null);
-    setSmapsData(new Map());
-    setExpandedSmapsPid(null);
-    setExpandedSmapsGroup(null);
-    clearDiff();
-  }, [cancelEnrichment, cancelCapture, clearDiff]);
+  }, [cancelEnrichment, cancelCapture]);
 
   // Clean up on unmount
   useEffect(() => {
@@ -537,21 +545,30 @@ function CaptureView({ onCaptured, conn }: {
   const sorted = useMemo(() => {
     if (!processes) return null;
     const copy = [...processes];
-    copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
+    // For non-diff mode, delta sort fields fall back to the base field
+    const field = (DELTA_FIELDS[sortField] ? sortField.replace("delta", "").replace(/^./, c => c.toLowerCase()) : sortField) as keyof ProcessInfo;
+    copy.sort((a, b) => sortAsc ? (a[field] as number) - (b[field] as number) : (b[field] as number) - (a[field] as number));
     return copy;
   }, [processes, sortField, sortAsc]);
 
   const sortedDiffs = useMemo(() => {
     if (!processDiffs) return null;
     const copy = [...processDiffs];
+    const deltaKey = DELTA_FIELDS[sortField];
     copy.sort((a, b) => {
       // Pin added/removed to top
       const aPin = a.status !== "matched" ? 1 : 0;
       const bPin = b.status !== "matched" ? 1 : 0;
       if (aPin !== bPin) return bPin - aPin;
-      // Sort by current value (same field as normal mode)
-      const aVal = a.current[sortField];
-      const bVal = b.current[sortField];
+      if (deltaKey) {
+        // Sort by delta field
+        const aVal = a[deltaKey] as number;
+        const bVal = b[deltaKey] as number;
+        return sortAsc ? aVal - bVal : bVal - aVal;
+      }
+      // Sort by current value
+      const aVal = a.current[sortField as keyof ProcessInfo] as number;
+      const bVal = b.current[sortField as keyof ProcessInfo] as number;
       return sortAsc ? aVal - bVal : bVal - aVal;
     });
     return copy;
@@ -591,7 +608,7 @@ function CaptureView({ onCaptured, conn }: {
   return (
     <div>
       {/* Connection */}
-      {!connected ? (
+      {!connected && !processes && (
         <div className="text-center py-8">
           <button
             className="px-6 py-3 bg-stone-800 text-white hover:bg-stone-700 transition-colors disabled:opacity-50"
@@ -604,11 +621,18 @@ function CaptureView({ onCaptured, conn }: {
             Enable USB debugging on device. If ADB is running, stop it first: <code className="bg-stone-100 px-1">adb kill-server</code>
           </p>
         </div>
-      ) : (
+      )}
+      {(connected || processes) && (
         <div>
           <div className="flex items-center gap-3 mb-4 flex-wrap">
-            <span className="text-stone-600">{conn.productName}</span>
-            <span className="text-stone-400 font-mono text-xs">{conn.serial}</span>
+            {connected ? (
+              <>
+                <span className="text-stone-600">{conn.productName}</span>
+                <span className="text-stone-400 font-mono text-xs">{conn.serial}</span>
+              </>
+            ) : (
+              <span className="text-amber-600 text-xs">Disconnected</span>
+            )}
             <label className="flex items-center gap-1.5 text-stone-500 text-xs ml-auto">
               <input type="checkbox" checked={withBitmaps} onChange={e => setWithBitmaps(e.target.checked)} className="accent-sky-600" />
               Bitmaps (-b)
@@ -618,15 +642,15 @@ function CaptureView({ onCaptured, conn }: {
                 capturing ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
               }`}
               onClick={() => handleCapture()}
-              disabled={selectedPid === null || capturing}
+              disabled={!connected || selectedPid === null || capturing}
               title={selectedPid === null ? "Select a process first" : capturing ? "Dump in progress" : "Dump Java heap"}
             >
               {capturing ? (captureStatus || "Dumping\u2026") : "Java dump"}
             </button>
-            <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={refreshProcesses}>
+            <button className={`text-xs ${connected ? "text-stone-400 hover:text-stone-600" : "text-stone-300 cursor-not-allowed"}`} onClick={refreshProcesses} disabled={!connected}>
               {enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Diffing\u2026" : "Refresh"}
             </button>
-            {processes && !enrichStatus && (
+            {connected && processes && !enrichStatus && (
               <button
                 className="text-sky-600 hover:text-sky-800 text-xs border border-sky-300 px-2 py-0.5"
                 onClick={handleDiff}
@@ -642,9 +666,19 @@ function CaptureView({ onCaptured, conn }: {
                 Clear Diff
               </button>
             )}
-            <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={handleDisconnect}>
-              Disconnect
-            </button>
+            {connected ? (
+              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={handleDisconnect}>
+                Disconnect
+              </button>
+            ) : (
+              <button
+                className="px-3 py-0.5 text-xs bg-stone-800 text-white hover:bg-stone-700 transition-colors disabled:opacity-50"
+                onClick={handleConnect}
+                disabled={connectStatus !== null}
+              >
+                {connectStatus ?? "Reconnect"}
+              </button>
+            )}
           </div>
 
           {/* Non-root banner */}
@@ -727,24 +761,41 @@ function CaptureView({ onCaptured, conn }: {
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14">PID</th>
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">Process</th>
                     {hasOomLabel && <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">State</th>}
-                    {([
-                      ...(hasRss ? [["rssKb", "RSS"]] : []),
-                      ["pssKb", "PSS"],
-                      ...(hasBreakdown ? [
-                        ["javaHeapKb", "Java"],
-                        ["nativeHeapKb", "Native"],
-                        ["graphicsKb", "Graphics"],
-                        ["codeKb", "Code"],
-                      ] : []),
-                    ] as [SortField, string][]).map(([field, label]) => (
-                      <th
-                        key={field}
-                        className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
-                        onClick={() => toggleSort(field)}
-                      >
-                        {label} {sortField === field ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
-                      </th>
-                    ))}
+                    {(() => {
+                      const isDiff = diffMode && sortedDiffs !== null;
+                      const fields: [SortField, string][] = [
+                        ...(hasRss ? [["rssKb", "RSS"] as [SortField, string]] : []),
+                        ["pssKb", "PSS"],
+                        ...(hasBreakdown ? [
+                          ["javaHeapKb", "Java"] as [SortField, string],
+                          ["nativeHeapKb", "Native"] as [SortField, string],
+                          ["graphicsKb", "Graphics"] as [SortField, string],
+                          ["codeKb", "Code"] as [SortField, string],
+                        ] : []),
+                      ];
+                      return fields.flatMap(([field, label]) => {
+                        const th = (
+                          <th
+                            key={field}
+                            className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
+                            onClick={() => toggleSort(field)}
+                          >
+                            {label} {sortField === field ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+                          </th>
+                        );
+                        if (!isDiff) return [th];
+                        const deltaField = VALUE_TO_DELTA[field];
+                        return [th, (
+                          <th
+                            key={`d-${field}`}
+                            className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
+                            onClick={() => toggleSort(deltaField)}
+                          >
+                            {"\u0394"} {sortField === deltaField ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+                          </th>
+                        )];
+                      });
+                    })()}
                   </tr>
                 </thead>
                 <tbody>
@@ -779,16 +830,19 @@ function CaptureView({ onCaptured, conn }: {
                     return (
                       <tr className="border-b-2 border-stone-300 font-semibold bg-stone-50">
                         <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 4 : 3}>Total ({rows.filter(d => d.status !== "removed").length})</td>
-                        {cols.map(({ value, delta, key }) => (
-                          <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] ${isDiff ? deltaBgClass(delta) : ""}`}>
-                            {fmtSize(value * 1024)}
-                            {isDiff && (
-                              <span className={`ml-1 text-xs font-normal inline-block min-w-[4.5rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
-                                {delta !== 0 ? fmtDelta(delta) : ""}
-                              </span>
-                            )}
-                          </td>
-                        ))}
+                        {cols.flatMap(({ value, delta, key }) => {
+                          const valTd = (
+                            <td key={key} className="py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem]">
+                              {fmtSize(value * 1024)}
+                            </td>
+                          );
+                          if (!isDiff) return [valTd];
+                          return [valTd, (
+                            <td key={`d-${key}`} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] text-xs font-normal ${deltaBgClass(delta)} ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                              {delta !== 0 ? fmtDelta(delta) : ""}
+                            </td>
+                          )];
+                        })}
                       </tr>
                     );
                   })()}
@@ -798,8 +852,9 @@ function CaptureView({ onCaptured, conn }: {
                     const isCapturingThis = capturing && selectedPid === p.pid;
                     const hasSmaps = smapsData.has(p.pid);
                     const isSmapsExpanded = expandedSmapsPid === p.pid && hasSmaps;
-                    const colCount = 3 + (hasOomLabel ? 1 : 0) + 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 4 : 0);
                     const isDiff = diffMode && sortedDiffs !== null;
+                    const numValueCols = 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 4 : 0);
+                    const colCount = 3 + (hasOomLabel ? 1 : 0) + numValueCols + (isDiff ? numValueCols : 0);
                     const rowKey = `${d.status}-${p.pid}`;
                     return (
                     <Fragment key={rowKey}>
@@ -828,8 +883,8 @@ function CaptureView({ onCaptured, conn }: {
                           canCapture ? (
                             <button
                               className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
-                              disabled={capturing}
-                              title={capturing ? "Dump in progress" : "Dump Java heap"}
+                              disabled={!connected || capturing}
+                              title={!connected ? "Disconnected" : capturing ? "Dump in progress" : "Dump Java heap"}
                               onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
                             >
                               {isCapturingThis ? "\u2026" : "Java dump"}
@@ -855,7 +910,16 @@ function CaptureView({ onCaptured, conn }: {
                           </span>
                         )}
                       </td>
-                      {hasOomLabel && <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">{p.oomLabel}</td>}
+                      {hasOomLabel && (
+                        <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">
+                          {p.oomLabel}
+                          {isDiff && d.prev && d.prev.oomLabel !== p.oomLabel && (
+                            <span className="ml-1 text-amber-600" title={`was: ${d.prev.oomLabel || "(none)"}`}>
+                              {"\u2190 "}{d.prev.oomLabel || "\u2014"}
+                            </span>
+                          )}
+                        </td>
+                      )}
                       {(() => {
                         // Build the list of numeric columns with their current value and delta
                         // Suppress breakdown deltas if prev wasn't enriched (all breakdown fields zero)
@@ -870,21 +934,22 @@ function CaptureView({ onCaptured, conn }: {
                           cols.push({ value: p.graphicsKb, delta: d.deltaGraphicsKb, key: "graphics" });
                           cols.push({ value: p.codeKb, delta: d.deltaCodeKb, key: "code" });
                         }
-                        return cols.map(({ value, delta, key }) => {
+                        return cols.flatMap(({ value, delta, key }) => {
                           const isBreakdownCol = key !== "rss" && key !== "pss";
                           const skipDelta = isBreakdownCol && prevUnenriched;
                           const effectiveDelta = skipDelta ? 0 : delta;
                           const showDash = isBreakdownCol && value === 0 && (!isDiff || effectiveDelta === 0);
-                          return (
-                            <td key={key} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] ${isDiff ? deltaBgClass(effectiveDelta) : ""}`}>
+                          const valTd = (
+                            <td key={key} className="py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem]">
                               {showDash ? "\u2014" : fmtSize(value * 1024)}
-                              {isDiff && (
-                                <span className={`ml-1 text-xs inline-block min-w-[4.5rem] text-right ${effectiveDelta > 0 ? "text-red-700" : effectiveDelta < 0 ? "text-green-700" : ""}`}>
-                                  {effectiveDelta !== 0 ? fmtDelta(effectiveDelta) : ""}
-                                </span>
-                              )}
                             </td>
                           );
+                          if (!isDiff) return [valTd];
+                          return [valTd, (
+                            <td key={`d-${key}`} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] text-xs ${deltaBgClass(effectiveDelta)} ${effectiveDelta > 0 ? "text-red-700" : effectiveDelta < 0 ? "text-green-700" : ""}`}>
+                              {effectiveDelta !== 0 ? fmtDelta(effectiveDelta) : ""}
+                            </td>
+                          )];
                         });
                       })()}
                     </tr>

@@ -75,6 +75,7 @@ export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: 
   columns: {
     label: string;
     align?: string;
+    minWidth?: string;
     sortKey?: (row: T) => number;
     render: (row: T, idx: number) => React.ReactNode;
   }[];
@@ -105,6 +106,7 @@ export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: 
               <th
                 key={i}
                 className="px-2 py-1.5 text-left bg-stone-700 text-stone-200 text-xs font-medium cursor-pointer select-none whitespace-nowrap border-b border-stone-600"
+                style={c.minWidth ? { minWidth: c.minWidth } : undefined}
                 onClick={() => { if (sortCol === i) setSortAsc(!sortAsc); else { setSortCol(i); setSortAsc(false); } }}
               >
                 {c.label} {sortCol === i ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
@@ -116,7 +118,7 @@ export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: 
           {visible.map((row, ri) => (
             <tr key={rowKey ? rowKey(row, ri) : ri} className="border-b border-stone-200 hover:bg-stone-50">
               {columns.map((c, ci) => (
-                <td key={ci} className={`px-2 py-1 ${c.align === "right" ? "text-right font-mono whitespace-nowrap" : ""}`}>
+                <td key={ci} className={`px-2 py-1 ${c.align === "right" ? "text-right font-mono whitespace-nowrap" : ""}`} style={c.minWidth ? { minWidth: c.minWidth } : undefined}>
                   {c.render(row, ri)}
                 </td>
               ))}

@@ -178,7 +178,6 @@ export default function App() {
     if (tabId !== "device") {
       setView("overview");
       setParams({});
-      setBaselineSessionId(null);
       window.history.replaceState({ view: "overview", params: {} }, "", stateToUrl("overview", {}));
     }
   }, [activeTab]);
@@ -315,24 +314,23 @@ export default function App() {
                   >Device</button>
                 )}
                 {sessions.map(s => (
-                  <div key={s.id} className="flex items-center group">
+                  <div
+                    key={s.id}
+                    className={`group flex items-center gap-1.5 px-3 py-1 text-sm rounded-t cursor-pointer transition-colors ${
+                      activeTab === s.id ? "bg-stone-600 text-white" : "text-stone-400 hover:bg-stone-700 hover:text-white"
+                    }`}
+                    onClick={() => switchToTab(s.id)}
+                  >
+                    {s.status === "loading" && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />}
+                    {s.status === "error" && <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />}
+                    <span className="truncate max-w-[120px]">{s.name}</span>
                     <button
-                      className={`px-3 py-1 text-sm transition-colors flex items-center gap-1.5 ${
-                        activeTab === s.id ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
-                      }`}
-                      onClick={() => switchToTab(s.id)}
-                    >
-                      {s.status === "loading" && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />}
-                      {s.status === "error" && <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />}
-                      <span className="truncate max-w-[120px]">{s.name}</span>
-                    </button>
-                    <button
-                      className={`text-stone-500 hover:text-rose-400 text-xs px-1 ${
-                        activeTab === s.id ? "visible" : "invisible group-hover:visible"
+                      className={`text-xs leading-none hover:text-rose-400 ${
+                        activeTab === s.id ? "text-stone-400" : "opacity-0 group-hover:opacity-100 text-stone-500"
                       }`}
                       onClick={e => { e.stopPropagation(); closeTab(s.id); }}
                       title="Close tab"
-                    >&times;</button>
+                    >{"\u00d7"}</button>
                   </div>
                 ))}
                 <button

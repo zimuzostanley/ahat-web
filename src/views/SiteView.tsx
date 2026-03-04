@@ -19,13 +19,13 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
   const objDiffed = isDiffed && data.objectsInfos.some(o => o.baselineNumInstances !== undefined);
 
   // Build child site columns
-  type ChildCol = { label: string; align?: string; sortKey?: (r: SiteChildRow) => number; render: (r: SiteChildRow, idx: number) => React.ReactNode };
+  type ChildCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteChildRow) => number; render: (r: SiteChildRow, idx: number) => React.ReactNode };
   const childCols: ChildCol[] = [
-    { label: "Total Size", align: "right", sortKey: r => r.totalJava + r.totalNative, render: r => <span className="font-mono">{fmtSize(r.totalJava + r.totalNative)}</span> },
+    { label: "Total Size", align: "right", minWidth: "5rem", sortKey: r => r.totalJava + r.totalNative, render: r => <span className="font-mono">{fmtSize(r.totalJava + r.totalNative)}</span> },
   ];
   if (childDiffed) {
     childCols.push({
-      label: "\u0394", align: "right",
+      label: "\u0394", align: "right", minWidth: "5rem",
       sortKey: r => (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative)),
       render: r => {
         const d = (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative));
@@ -44,13 +44,13 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
   childCols.push({ label: "Child Site", render: r => <SiteLinkRaw {...r} navigate={navigate} /> });
 
   // Build objects allocated columns
-  type ObjCol = { label: string; align?: string; sortKey?: (r: SiteObjectsRow) => number; render: (r: SiteObjectsRow, idx: number) => React.ReactNode };
+  type ObjCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteObjectsRow) => number; render: (r: SiteObjectsRow, idx: number) => React.ReactNode };
   const objCols: ObjCol[] = [
-    { label: "Size", align: "right", sortKey: r => r.java + r.native_, render: r => <span className="font-mono">{fmtSize(r.java + r.native_)}</span> },
+    { label: "Size", align: "right", minWidth: "5rem", sortKey: r => r.java + r.native_, render: r => <span className="font-mono">{fmtSize(r.java + r.native_)}</span> },
   ];
   if (objDiffed) {
     objCols.push({
-      label: "\u0394 Size", align: "right",
+      label: "\u0394 Size", align: "right", minWidth: "5rem",
       sortKey: r => (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_)),
       render: r => {
         const d = (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_));
@@ -60,7 +60,7 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
     });
   }
   objCols.push({
-    label: "Instances", align: "right",
+    label: "Instances", align: "right", minWidth: "4rem",
     sortKey: r => r.numInstances,
     render: r => (
       <button className="text-sky-700 underline decoration-sky-300 hover:decoration-sky-500 font-mono"
@@ -71,7 +71,7 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
   });
   if (objDiffed) {
     objCols.push({
-      label: "\u0394 #", align: "right",
+      label: "\u0394 #", align: "right", minWidth: "4rem",
       sortKey: r => r.numInstances - (r.baselineNumInstances ?? r.numInstances),
       render: r => {
         const d = r.numInstances - (r.baselineNumInstances ?? r.numInstances);
