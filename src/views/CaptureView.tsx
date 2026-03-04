@@ -93,7 +93,7 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
               className="ml-2 text-stone-400 hover:text-sky-600 disabled:text-stone-300"
               disabled={dumpDisabled || ed?.status === "removed"}
               title="Dump this VMA"
-              onClick={() => onDump(pid, processName, `${e.addrStart}-${e.addrEnd}`, [{ addrStart: e.addrStart, addrEnd: e.addrEnd }])}
+              onClick={() => onDump(pid, processName, `${groupName}_${e.addrStart}-${e.addrEnd}`, [{ addrStart: e.addrStart, addrEnd: e.addrEnd }])}
             >dump</button>
           </td>
           <td />
@@ -584,9 +584,9 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
         setVmaDumpStatus(status);
       }, ac.signal);
       if (ac.signal.aborted) return;
-      const sanitized = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const procSan = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const labelSan = label.replace(/[^a-zA-Z0-9._-]/g, "_");
-      onVmaDump(`vma_${pid}_${sanitized}_${labelSan}`, data.buffer as ArrayBuffer, regions);
+      onVmaDump(`${procSan}_${labelSan}`, data.buffer as ArrayBuffer, regions);
     } catch (e) {
       if (ac.signal.aborted) return;
       if (e instanceof DOMException && e.name === "AbortError") return;
