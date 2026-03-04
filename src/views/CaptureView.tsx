@@ -784,6 +784,22 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
             </div>
           )}
 
+          {/* Capture status */}
+          {capturing && (
+            <div className="mb-2 text-xs text-stone-600">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="truncate font-medium">{captureStatus}</span>
+                {captureProgress && <span className="text-stone-400 whitespace-nowrap">{(captureProgress.done / 1048576).toFixed(1)}/{(captureProgress.total / 1048576).toFixed(1)} MiB</span>}
+                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelCapture}>Cancel</button>
+              </div>
+              {captureProgress && captureProgress.total > 0 && (
+                <div className="h-1 bg-stone-100 rounded overflow-hidden">
+                  <div className="h-full bg-sky-600 transition-all" style={{ width: `${(captureProgress.done / captureProgress.total) * 100}%` }} />
+                </div>
+              )}
+            </div>
+          )}
+
           {/* VMA dump progress */}
           {vmaDumpStatus && (
             <div className="mb-2 text-xs text-stone-500">
@@ -1103,21 +1119,6 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
             </div>
           )}
 
-          {/* Capture status */}
-          {capturing && (
-            <div className="mt-2 text-xs text-stone-600">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="truncate font-medium">{captureStatus}</span>
-                {captureProgress && <span className="text-stone-400 whitespace-nowrap">{(captureProgress.done / 1048576).toFixed(1)}/{(captureProgress.total / 1048576).toFixed(1)} MiB</span>}
-                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelCapture}>Cancel</button>
-              </div>
-              {captureProgress && captureProgress.total > 0 && (
-                <div className="h-1 bg-stone-100 rounded overflow-hidden">
-                  <div className="h-full bg-sky-600 transition-all" style={{ width: `${(captureProgress.done / captureProgress.total) * 100}%` }} />
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
 

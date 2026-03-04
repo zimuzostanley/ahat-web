@@ -10,7 +10,12 @@ export function openInPerfetto(buffer: ArrayBuffer, title: string): void {
     clearInterval(timer);
     clearTimeout(timeout);
     window.removeEventListener("message", onPong);
-    win.postMessage({ perfetto: { buffer, title } }, PERFETTO_UI);
+    const copy = buffer.slice(0);
+    win.postMessage(
+      { perfetto: { buffer: copy, title, fileName: title + ".hprof" } },
+      PERFETTO_UI,
+      [copy],
+    );
   };
   window.addEventListener("message", onPong);
 }

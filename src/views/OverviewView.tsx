@@ -102,7 +102,7 @@ function OverviewView({ overview, name, navigate }: {
           <p className="text-sm text-stone-700 mb-2">
             {overview.duplicateBitmaps.length} group{overview.duplicateBitmaps.length > 1 ? "s" : ""} of duplicate bitmaps detected, wasting{" "}
             <span className="font-mono font-semibold">{fmtSize(overview.duplicateBitmaps.reduce((a, g) => a + g.wastedBytes, 0))}</span>.{" "}
-            <button className="text-sky-600 hover:underline" onClick={() => navigate("/bitmaps")}>View Bitmaps</button>
+            <button className="text-sky-600 hover:underline" onClick={() => navigate("bitmaps")}>View Bitmaps</button>
           </p>
           <table className="w-full text-sm">
             <thead>
