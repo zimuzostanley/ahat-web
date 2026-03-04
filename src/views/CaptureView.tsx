@@ -239,20 +239,22 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
                 }`}
                 onClick={() => sd?.status !== "removed" && onToggleGroup(g.name)}
               >
-                <td className={`py-0.5 px-2 font-mono text-stone-700 truncate max-w-[300px] ${sd?.status === "removed" ? "line-through" : ""}`} title={g.name}>
-                  <span className="text-stone-400 mr-1">{expandedGroup === g.name ? "\u25BC" : "\u25B6"}</span>
-                  {g.name}
-                  {sd && sd.status !== "matched" && (
-                    <span className={`ml-2 text-[10px] font-medium ${sd.status === "added" ? "text-green-600" : "text-red-600"}`}>
-                      {sd.status === "added" ? "NEW" : "GONE"}
-                    </span>
-                  )}
-                  <button
-                    className="ml-2 text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300"
-                    disabled={dumpDisabled || sd?.status === "removed"}
-                    title={`Dump ${g.name} memory`}
-                    onClick={e => { e.stopPropagation(); onDump(pid, processName, g.name, g.entries.map(en => ({ addrStart: en.addrStart, addrEnd: en.addrEnd }))); }}
-                  >dump</button>
+                <td className={`py-0.5 px-2 font-mono text-stone-700 ${sd?.status === "removed" ? "line-through" : ""}`} title={g.name}>
+                  <div className="flex items-center gap-1">
+                    <span className="text-stone-400 shrink-0">{expandedGroup === g.name ? "\u25BC" : "\u25B6"}</span>
+                    <span className="truncate max-w-[280px]">{g.name}</span>
+                    {sd && sd.status !== "matched" && (
+                      <span className={`text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600" : "text-red-600"}`}>
+                        {sd.status === "added" ? "NEW" : "GONE"}
+                      </span>
+                    )}
+                    <button
+                      className="text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300 shrink-0"
+                      disabled={dumpDisabled || sd?.status === "removed"}
+                      title={`Dump ${g.name} memory`}
+                      onClick={e => { e.stopPropagation(); onDump(pid, processName, g.name, g.entries.map(en => ({ addrStart: en.addrStart, addrEnd: en.addrEnd }))); }}
+                    >dump</button>
+                  </div>
                 </td>
                 <td className="py-0.5 px-1 text-right font-mono text-stone-400">{g.count}</td>
                 {SMAPS_COLUMNS.map(([f]) => {
@@ -312,7 +314,7 @@ const VALUE_TO_DELTA: Record<string, SortField> = {
 
 function CaptureView({ onCaptured, onVmaDump, conn }: {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
-  onVmaDump: (name: string, buffer: ArrayBuffer) => void;
+  onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
   conn: AdbConnection;
 }) {
   const [connected, setConnected] = useState(false);
@@ -572,7 +574,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
       });
       const sanitized = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
       const labelSan = label.replace(/[^a-zA-Z0-9._-]/g, "_");
-      onVmaDump(`vma_${pid}_${sanitized}_${labelSan}`, data.buffer as ArrayBuffer);
+      onVmaDump(`vma_${pid}_${sanitized}_${labelSan}`, data.buffer as ArrayBuffer, regions);
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
       setError(e instanceof Error ? e.message : "VMA dump failed");

@@ -20,6 +20,9 @@ import BitmapGalleryView from "./views/BitmapGalleryView";
 
 type SessionStatus = "loading" | "ready" | "error";
 
+/** Address region for VMA dumps — used to show real memory addresses. */
+export interface VmaRegion { addrStart: string; addrEnd: string }
+
 interface Session {
   id: string;
   name: string;
@@ -31,6 +34,7 @@ interface Session {
   progress: { msg: string; pct: number };
   worker: Worker | null;
   errorMsg: string | null;
+  vmaRegions?: VmaRegion[];
 }
 
 let nextSessionId = 1;
@@ -249,13 +253,14 @@ export default function App() {
     loadBuffer(name, buffer);
   }, [loadBuffer]);
 
-  const loadVmaDump = useCallback((name: string, buffer: ArrayBuffer) => {
+  const loadVmaDump = useCallback((name: string, buffer: ArrayBuffer, regions?: VmaRegion[]) => {
     const sessionId = `session-${nextSessionId++}`;
     const newSession: Session = {
       id: sessionId, name, kind: "vmadump", status: "ready",
       buffer, proxy: null, overview: null,
       progress: { msg: "", pct: 100 },
       worker: null, errorMsg: null,
+      vmaRegions: regions,
     };
     setSessions(prev => [...prev, newSession]);
     setActiveTab(sessionId);
@@ -560,7 +565,7 @@ export default function App() {
           {/* Ready — vmadump hex view */}
           {activeSession.status === "ready" && activeSession.kind === "vmadump" && activeSession.buffer && (
             <main className="flex-1 p-4 max-w-[95%] mx-auto w-full">
-              <HexView buffer={activeSession.buffer} name={activeSession.name} />
+              <HexView buffer={activeSession.buffer} name={activeSession.name} regions={activeSession.vmaRegions} />
             </main>
           )}
 
