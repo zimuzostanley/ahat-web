@@ -12,8 +12,43 @@ const SMAPS_COLUMNS: [SmapsSortFieldType, string][] = [
   ["swapKb", "Swap"], ["sizeKb", "VSize"],
 ];
 
-function VmaEntries({ entries, sortField, sortAsc, onToggleSort, entryDiffs }: {
+const SMAPS_TSV_FIELDS: SmapsSortFieldType[] = ["rssKb", "pssKb", "privateCleanKb", "privateDirtyKb", "sharedCleanKb", "sharedDirtyKb", "swapKb", "sizeKb"];
+const SMAPS_TSV_HEADER = ["Mapping", "Count", ...SMAPS_TSV_FIELDS.map(f => SMAPS_COLUMNS.find(c => c[0] === f)![1] + " (KiB)")].join("\t");
+
+function smapsTsv(aggregated: SmapsAggregated[]): string {
+  const rows = aggregated.map(g =>
+    [g.name, g.count, ...SMAPS_TSV_FIELDS.map(f => g[f])].join("\t")
+  );
+  return [SMAPS_TSV_HEADER, ...rows].join("\n");
+}
+
+function vmaTsv(entries: SmapsEntry[], groupName: string): string {
+  const header = ["Address", "Perms", ...SMAPS_TSV_FIELDS.map(f => SMAPS_COLUMNS.find(c => c[0] === f)![1] + " (KiB)")].join("\t");
+  const rows = entries.map(e =>
+    [`${e.addrStart}-${e.addrEnd}`, e.perms, ...SMAPS_TSV_FIELDS.map(f => e[f])].join("\t")
+  );
+  return [`# ${groupName}`, header, ...rows].join("\n");
+}
+
+function downloadText(content: string, filename: string) {
+  const blob = new Blob([content], { type: "text/tab-separated-values" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function copyText(content: string) {
+  navigator.clipboard.writeText(content);
+}
+
+function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, entryDiffs }: {
   entries: SmapsEntry[];
+  groupName: string;
+  pid: number;
+  processName: string;
   sortField: VmaSortFieldType;
   sortAsc: boolean;
   onToggleSort: (f: VmaSortFieldType) => void;
@@ -55,6 +90,17 @@ function VmaEntries({ entries, sortField, sortAsc, onToggleSort, entryDiffs }: {
             Address {sortField === "addrStart" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
           </span>
           <span className="ml-3 text-stone-400 text-[10px]">Perms</span>
+          {(() => {
+            const sanitized = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
+            const vmaName = groupName.replace(/[^a-zA-Z0-9._-]/g, "_");
+            const tsv = vmaTsv(entries, groupName);
+            return (
+              <>
+                <button className="ml-3 text-stone-400 hover:text-stone-600 text-[10px]" title="Copy VMAs to clipboard" onClick={() => copyText(tsv)}>copy</button>
+                <button className="ml-1 text-stone-400 hover:text-stone-600 text-[10px]" title="Download VMAs as TSV" onClick={() => downloadText(tsv, `vma_${pid}_${sanitized}_${vmaName}.tsv`)}>download</button>
+              </>
+            );
+          })()}
         </td>
         <td />
         {SMAPS_COLUMNS.map(([f, label]) => (
@@ -107,7 +153,9 @@ const SMAPS_DELTA_KEY: Record<SmapsSortFieldType, keyof SmapsDiff> = {
   swapKb: "deltaSwapKb",
 };
 
-function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, smapsDiffs, prevAggregated }: {
+function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, smapsDiffs, prevAggregated }: {
+  pid: number;
+  processName: string;
   aggregated: SmapsAggregated[];
   expandedGroup: string | null;
   onToggleGroup: (name: string) => void;
@@ -168,12 +216,18 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
     return t;
   }, [aggregated, smapsDiffs]);
 
+  const sanitizedName = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
+
   return (
     <div className="bg-stone-50 px-4 pb-2 max-h-[400px] overflow-y-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-stone-50 z-10">
           <tr className="border-b border-stone-200">
-            <th className="text-left py-1 px-2 text-stone-500 font-medium">Mapping</th>
+            <th className="text-left py-1 px-2 text-stone-500 font-medium">
+              <span>Mapping</span>
+              <button className="ml-3 text-stone-400 hover:text-stone-600" title="Copy all smaps to clipboard" onClick={() => copyText(smapsTsv(aggregated))}>copy</button>
+              <button className="ml-1 text-stone-400 hover:text-stone-600" title="Download smaps as TSV" onClick={() => downloadText(smapsTsv(aggregated), `smaps_${pid}_${sanitizedName}.tsv`)}>download</button>
+            </th>
             <th className="text-right py-1 px-1 text-stone-400 font-medium w-8">#</th>
             {SMAPS_COLUMNS.map(([f, label]) => (
               <th
@@ -245,6 +299,9 @@ function SmapsSubTable({ aggregated, expandedGroup, onToggleGroup, sortField, so
               {expandedGroup === g.name && sd?.status !== "removed" && (
                 <VmaEntries
                   entries={g.entries}
+                  groupName={g.name}
+                  pid={pid}
+                  processName={processName}
                   sortField={vmaSortField}
                   sortAsc={vmaSortAsc}
                   onToggleSort={onToggleVmaSort}
@@ -953,6 +1010,8 @@ function CaptureView({ onCaptured, conn }: {
                       <tr>
                         <td colSpan={colCount} className="p-0 border-t border-stone-200">
                           <SmapsSubTable
+                            pid={p.pid}
+                            processName={p.name}
                             aggregated={smapsData.get(p.pid)!}
                             expandedGroup={expandedSmapsGroup}
                             onToggleGroup={name => setExpandedSmapsGroup(expandedSmapsGroup === name ? null : name)}
