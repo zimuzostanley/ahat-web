@@ -77,7 +77,7 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
       {sorted.map((e, i) => {
         const ed = diffByAddr?.get(e.addrStart);
         return (
-        <tr key={i} className={`border-t border-stone-50 ${
+        <tr key={i} className={`border-t border-stone-50 hover:bg-stone-100 ${
           ed?.status === "removed" ? "opacity-60" :
           ed?.status === "added" ? "bg-green-50/50" : ""
         }`}>
