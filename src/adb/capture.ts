@@ -654,6 +654,49 @@ export class AdbConnection {
     onProgress?.(sorted.length, sorted.length, "");
   }
 
+  /** Dump raw memory from /proc/<pid>/mem for one or more VMA regions. */
+  async dumpVmaMemory(
+    pid: number,
+    regions: { addrStart: string; addrEnd: string }[],
+    onProgress: (status: string) => void,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
+    if (!this.device) throw new Error("Not connected");
+    if (!this._isRoot) throw new Error("Root required");
+    if (regions.length === 0) throw new Error("No regions");
+
+    const tmpPath = `/data/local/tmp/vma_${pid}_${Date.now()}.bin`;
+    const ddCmds = regions.map((r, i) => {
+      const startByte = parseInt(r.addrStart, 16);
+      const endByte = parseInt(r.addrEnd, 16);
+      const startPage = Math.floor(startByte / 4096);
+      const numPages = Math.ceil((endByte - startByte) / 4096);
+      const redir = i === 0 ? ">" : ">>";
+      return `dd if=/proc/${pid}/mem bs=4096 skip=${startPage} count=${numPages} ${redir} ${tmpPath} 2>/dev/null`;
+    });
+
+    try {
+      onProgress("Reading memory\u2026");
+      const shellCmd = this._suPrefix === "su -c"
+        ? `su -c '${ddCmds.join(" && ")}'`
+        : `su 0 sh -c '${ddCmds.join(" && ")}'`;
+      await this.device.shell(shellCmd, signal);
+
+      onProgress("Pulling\u2026");
+      const data = await pullFile(this.device, tmpPath,
+        (received, total) => {
+          const mb = (received / 1_048_576).toFixed(1);
+          const pct = total > 0 ? Math.round(100 * received / total) : 0;
+          onProgress(`Pulling: ${mb} MiB (${pct}%)`);
+        },
+        signal,
+      );
+      return data;
+    } finally {
+      try { await this.device?.shell(`rm -f ${tmpPath}`); } catch { /* ignore */ }
+    }
+  }
+
   disconnect(): void {
     this.device?.close();
     this.device = null;

@@ -12,39 +12,7 @@ const SMAPS_COLUMNS: [SmapsSortFieldType, string][] = [
   ["swapKb", "Swap"], ["sizeKb", "VSize"],
 ];
 
-const SMAPS_TSV_FIELDS: SmapsSortFieldType[] = ["rssKb", "pssKb", "privateCleanKb", "privateDirtyKb", "sharedCleanKb", "sharedDirtyKb", "swapKb", "sizeKb"];
-const SMAPS_TSV_HEADER = ["Mapping", "Count", ...SMAPS_TSV_FIELDS.map(f => SMAPS_COLUMNS.find(c => c[0] === f)![1] + " (KiB)")].join("\t");
-
-function smapsTsv(aggregated: SmapsAggregated[]): string {
-  const rows = aggregated.map(g =>
-    [g.name, g.count, ...SMAPS_TSV_FIELDS.map(f => g[f])].join("\t")
-  );
-  return [SMAPS_TSV_HEADER, ...rows].join("\n");
-}
-
-function vmaTsv(entries: SmapsEntry[], groupName: string): string {
-  const header = ["Address", "Perms", ...SMAPS_TSV_FIELDS.map(f => SMAPS_COLUMNS.find(c => c[0] === f)![1] + " (KiB)")].join("\t");
-  const rows = entries.map(e =>
-    [`${e.addrStart}-${e.addrEnd}`, e.perms, ...SMAPS_TSV_FIELDS.map(f => e[f])].join("\t")
-  );
-  return [`# ${groupName}`, header, ...rows].join("\n");
-}
-
-function downloadText(content: string, filename: string) {
-  const blob = new Blob([content], { type: "text/tab-separated-values" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function copyText(content: string) {
-  navigator.clipboard.writeText(content);
-}
-
-function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, entryDiffs }: {
+function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, onDump, dumpDisabled, entryDiffs }: {
   entries: SmapsEntry[];
   groupName: string;
   pid: number;
@@ -52,6 +20,8 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
   sortField: VmaSortFieldType;
   sortAsc: boolean;
   onToggleSort: (f: VmaSortFieldType) => void;
+  onDump: (pid: number, processName: string, label: string, regions: { addrStart: string; addrEnd: string }[]) => void;
+  dumpDisabled: boolean;
   entryDiffs?: SmapsEntryDiff[] | null;
 }) {
   const diffByAddr = useMemo(() => {
@@ -90,17 +60,12 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
             Address {sortField === "addrStart" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
           </span>
           <span className="ml-3 text-stone-400 text-[10px]">Perms</span>
-          {(() => {
-            const sanitized = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
-            const vmaName = groupName.replace(/[^a-zA-Z0-9._-]/g, "_");
-            const tsv = vmaTsv(entries, groupName);
-            return (
-              <>
-                <button className="ml-3 text-stone-400 hover:text-stone-600 text-[10px]" title="Copy VMAs to clipboard" onClick={() => copyText(tsv)}>copy</button>
-                <button className="ml-1 text-stone-400 hover:text-stone-600 text-[10px]" title="Download VMAs as TSV" onClick={() => downloadText(tsv, `vma_${pid}_${sanitized}_${vmaName}.tsv`)}>download</button>
-              </>
-            );
-          })()}
+          <button
+            className="ml-3 text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300"
+            disabled={dumpDisabled}
+            title="Dump all VMA memory in this group"
+            onClick={() => onDump(pid, processName, groupName, entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd })))}
+          >dump all</button>
         </td>
         <td />
         {SMAPS_COLUMNS.map(([f, label]) => (
@@ -124,6 +89,12 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
                 {ed.status === "added" ? "NEW" : "GONE"}
               </span>
             )}
+            <button
+              className="ml-2 text-stone-400 hover:text-sky-600 disabled:text-stone-300"
+              disabled={dumpDisabled || ed?.status === "removed"}
+              title="Dump this VMA"
+              onClick={() => onDump(pid, processName, `${e.addrStart}-${e.addrEnd}`, [{ addrStart: e.addrStart, addrEnd: e.addrEnd }])}
+            >dump</button>
           </td>
           <td />
           {SMAPS_COLUMNS.map(([f]) => {
@@ -153,7 +124,7 @@ const SMAPS_DELTA_KEY: Record<SmapsSortFieldType, keyof SmapsDiff> = {
   swapKb: "deltaSwapKb",
 };
 
-function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, smapsDiffs, prevAggregated }: {
+function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated }: {
   pid: number;
   processName: string;
   aggregated: SmapsAggregated[];
@@ -165,6 +136,8 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
   vmaSortField: VmaSortFieldType;
   vmaSortAsc: boolean;
   onToggleVmaSort: (f: VmaSortFieldType) => void;
+  onDump: (pid: number, processName: string, label: string, regions: { addrStart: string; addrEnd: string }[]) => void;
+  dumpDisabled: boolean;
   smapsDiffs?: SmapsDiff[] | null;
   prevAggregated?: SmapsAggregated[] | null;
 }) {
@@ -216,18 +189,12 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
     return t;
   }, [aggregated, smapsDiffs]);
 
-  const sanitizedName = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
-
   return (
     <div className="bg-stone-50 px-4 pb-2 max-h-[400px] overflow-y-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 bg-stone-50 z-10">
           <tr className="border-b border-stone-200">
-            <th className="text-left py-1 px-2 text-stone-500 font-medium">
-              <span>Mapping</span>
-              <button className="ml-3 text-stone-400 hover:text-stone-600" title="Copy all smaps to clipboard" onClick={() => copyText(smapsTsv(aggregated))}>copy</button>
-              <button className="ml-1 text-stone-400 hover:text-stone-600" title="Download smaps as TSV" onClick={() => downloadText(smapsTsv(aggregated), `smaps_${pid}_${sanitizedName}.tsv`)}>download</button>
-            </th>
+            <th className="text-left py-1 px-2 text-stone-500 font-medium">Mapping</th>
             <th className="text-right py-1 px-1 text-stone-400 font-medium w-8">#</th>
             {SMAPS_COLUMNS.map(([f, label]) => (
               <th
@@ -280,6 +247,12 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
                       {sd.status === "added" ? "NEW" : "GONE"}
                     </span>
                   )}
+                  <button
+                    className="ml-2 text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300"
+                    disabled={dumpDisabled || sd?.status === "removed"}
+                    title={`Dump ${g.name} memory`}
+                    onClick={e => { e.stopPropagation(); onDump(pid, processName, g.name, g.entries.map(en => ({ addrStart: en.addrStart, addrEnd: en.addrEnd }))); }}
+                  >dump</button>
                 </td>
                 <td className="py-0.5 px-1 text-right font-mono text-stone-400">{g.count}</td>
                 {SMAPS_COLUMNS.map(([f]) => {
@@ -305,6 +278,8 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
                   sortField={vmaSortField}
                   sortAsc={vmaSortAsc}
                   onToggleSort={onToggleVmaSort}
+                  onDump={onDump}
+                  dumpDisabled={dumpDisabled}
                   entryDiffs={prevEntries ? diffSmapsEntries(prevEntries, g.entries) : null}
                 />
               )}
@@ -335,8 +310,9 @@ const VALUE_TO_DELTA: Record<string, SortField> = {
 };
 
 
-function CaptureView({ onCaptured, conn }: {
+function CaptureView({ onCaptured, onVmaDump, conn }: {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
+  onVmaDump: (name: string, buffer: ArrayBuffer) => void;
   conn: AdbConnection;
 }) {
   const [connected, setConnected] = useState(false);
@@ -358,6 +334,9 @@ function CaptureView({ onCaptured, conn }: {
   const [capturing, setCapturing] = useState(false);
   const [captureStatus, setCaptureStatus] = useState("");
   const [captureProgress, setCaptureProgress] = useState<{ done: number; total: number } | null>(null);
+
+  // VMA dump state
+  const [vmaDumpStatus, setVmaDumpStatus] = useState<string | null>(null);
 
   // Smaps — fetched alongside meminfo enrichment (root-only)
   const [smapsData, setSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
@@ -580,6 +559,28 @@ function CaptureView({ onCaptured, conn }: {
     }
   }, [selectedPid, withBitmaps, processes, onCaptured, capturing, cancelEnrichment]);
 
+  const handleVmaDump = useCallback(async (
+    pid: number, processName: string,
+    label: string,
+    regions: { addrStart: string; addrEnd: string }[],
+  ) => {
+    if (!connected || vmaDumpStatus) return;
+    try {
+      setVmaDumpStatus(`Dumping ${label}\u2026`);
+      const data = await conn.dumpVmaMemory(pid, regions, status => {
+        setVmaDumpStatus(status);
+      });
+      const sanitized = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const labelSan = label.replace(/[^a-zA-Z0-9._-]/g, "_");
+      onVmaDump(`vma_${pid}_${sanitized}_${labelSan}`, data.buffer as ArrayBuffer);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      setError(e instanceof Error ? e.message : "VMA dump failed");
+    } finally {
+      setVmaDumpStatus(null);
+    }
+  }, [connected, vmaDumpStatus, conn, onVmaDump]);
+
   const handleDisconnect = useCallback(() => {
     cancelEnrichment();
     cancelCapture();
@@ -738,6 +739,13 @@ function CaptureView({ onCaptured, conn }: {
           {connected && !conn.isRoot && processes && (
             <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2 mb-3">
               Non-rooted device — only debuggable apps can be captured
+            </div>
+          )}
+
+          {/* VMA dump progress */}
+          {vmaDumpStatus && (
+            <div className="mb-2 text-xs text-stone-500">
+              <span>{vmaDumpStatus}</span>
             </div>
           )}
 
@@ -1021,6 +1029,8 @@ function CaptureView({ onCaptured, conn }: {
                             vmaSortField={vmaSortField}
                             vmaSortAsc={vmaSortAsc}
                             onToggleVmaSort={toggleVmaSort}
+                            onDump={handleVmaDump}
+                            dumpDisabled={!connected || !!vmaDumpStatus}
                             smapsDiffs={isDiff && prevSmapsData.has(p.pid) ? diffSmaps(prevSmapsData.get(p.pid)!, smapsData.get(p.pid)!) : null}
                             prevAggregated={isDiff && prevSmapsData.has(p.pid) ? prevSmapsData.get(p.pid)! : null}
                           />

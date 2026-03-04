@@ -5,8 +5,9 @@ import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
 import { stateToUrl, urlToState } from "./routing";
 import type { NavFn } from "./components";
-import { downloadBuffer, openInPerfetto } from "./utils";
+import { downloadBuffer, downloadBlob, openInPerfetto } from "./utils";
 import CaptureView from "./views/CaptureView";
+import HexView from "./views/HexView";
 import OverviewView from "./views/OverviewView";
 import RootedView from "./views/RootedView";
 import ObjectView, { type ObjectParams } from "./views/ObjectView";
@@ -22,6 +23,7 @@ type SessionStatus = "loading" | "ready" | "error";
 interface Session {
   id: string;
   name: string;
+  kind: "hprof" | "vmadump";
   status: SessionStatus;
   buffer: ArrayBuffer | null;
   proxy: WorkerProxy | null;
@@ -96,7 +98,7 @@ export default function App() {
     setError(null);
 
     const newSession: Session = {
-      id: sessionId, name, status: "loading",
+      id: sessionId, name, kind: "hprof", status: "loading",
       buffer: null, proxy: null, overview: null,
       progress: { msg: "Starting parser\u2026", pct: 2 },
       worker, errorMsg: null,
@@ -247,6 +249,18 @@ export default function App() {
     loadBuffer(name, buffer);
   }, [loadBuffer]);
 
+  const loadVmaDump = useCallback((name: string, buffer: ArrayBuffer) => {
+    const sessionId = `session-${nextSessionId++}`;
+    const newSession: Session = {
+      id: sessionId, name, kind: "vmadump", status: "ready",
+      buffer, proxy: null, overview: null,
+      progress: { msg: "", pct: 100 },
+      worker: null, errorMsg: null,
+    };
+    setSessions(prev => [...prev, newSession]);
+    setActiveTab(sessionId);
+  }, []);
+
   const isLanding = sessions.length === 0 && !captureUsed;
 
   const navItems = [
@@ -386,15 +400,26 @@ export default function App() {
                     )}
                     {activeSession?.status === "ready" && activeSession.buffer && (
                       <>
-                        <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { mapFileRef.current?.click(); setMenuOpen(false); }}>
-                          Load Mapping
-                        </button>
-                        <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { downloadBuffer(activeSession.name, activeSession.buffer!); setMenuOpen(false); }}>
+                        {activeSession.kind === "hprof" && (
+                          <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { mapFileRef.current?.click(); setMenuOpen(false); }}>
+                            Load Mapping
+                          </button>
+                        )}
+                        <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => {
+                          if (activeSession.kind === "vmadump") {
+                            downloadBlob(activeSession.name + ".bin", activeSession.buffer!);
+                          } else {
+                            downloadBuffer(activeSession.name, activeSession.buffer!);
+                          }
+                          setMenuOpen(false);
+                        }}>
                           Download
                         </button>
-                        <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { openInPerfetto(activeSession.buffer!, activeSession.name); setMenuOpen(false); }}>
-                          Perfetto
-                        </button>
+                        {activeSession.kind === "hprof" && (
+                          <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { openInPerfetto(activeSession.buffer!, activeSession.name); setMenuOpen(false); }}>
+                            Perfetto
+                          </button>
+                        )}
                       </>
                     )}
                     {activeSession && !showTabs && (
@@ -408,8 +433,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* Sub-bar: dump nav + diff — multi-dump layout only, when active tab is a ready dump */}
-          {showTabs && activeSession?.status === "ready" && activeTab !== "device" && (
+          {/* Sub-bar: dump nav + diff — multi-dump layout only, when active tab is a ready hprof */}
+          {showTabs && activeSession?.status === "ready" && activeSession.kind === "hprof" && activeTab !== "device" && (
             <div className="px-4 py-1 border-t border-stone-700 flex items-center gap-4">
               <nav className="flex gap-0.5">
                 {navItems.map(n => (
@@ -491,7 +516,7 @@ export default function App() {
             </div>
           )}
           <div className={sessions.length > 0 ? "flex-1 p-4 max-w-[95%] mx-auto w-full text-sm" : "max-w-[95%] mx-auto px-8"}>
-            <CaptureView onCaptured={handleCaptured} conn={adbConnRef.current} />
+            <CaptureView onCaptured={handleCaptured} onVmaDump={loadVmaDump} conn={adbConnRef.current} />
           </div>
         </div>
       )}
@@ -532,8 +557,15 @@ export default function App() {
             </div>
           )}
 
-          {/* Ready — main content views */}
-          {activeSession.status === "ready" && activeProxy && activeOverview && (
+          {/* Ready — vmadump hex view */}
+          {activeSession.status === "ready" && activeSession.kind === "vmadump" && activeSession.buffer && (
+            <main className="flex-1 p-4 max-w-[95%] mx-auto w-full">
+              <HexView buffer={activeSession.buffer} name={activeSession.name} />
+            </main>
+          )}
+
+          {/* Ready — hprof content views */}
+          {activeSession.status === "ready" && activeSession.kind === "hprof" && activeProxy && activeOverview && (
             <main className="flex-1 p-4 max-w-[95%] mx-auto w-full text-sm">
               {view === "overview" && <OverviewView overview={activeOverview} name={activeSession.name} navigate={navigate} />}
               {view === "rooted"   && <RootedView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} isDiffed={isDiffed} />}
