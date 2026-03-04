@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, type ProcessInfo, type GlobalMemInfo, type SmapsAggregated, type SmapsEntry } from "./capture";
-import { deltaBgClass, fmtDelta } from "../App";
+import { deltaBgClass, fmtDelta } from "../format";
 
 function makeProc(pid: number, name: string, pssKb: number, overrides?: Partial<ProcessInfo>): ProcessInfo {
   return {
@@ -146,25 +146,25 @@ describe("deltaBgClass", () => {
     expect(deltaBgClass(-999)).toBe("");
   });
 
-  it("returns green-50 at 1 MB threshold", () => {
-    expect(deltaBgClass(1000)).toBe("bg-green-50");
-    expect(deltaBgClass(9999)).toBe("bg-green-50");
+  it("returns red-50 at 1 MB threshold (increase = bad)", () => {
+    expect(deltaBgClass(1000)).toBe("bg-red-50");
+    expect(deltaBgClass(9999)).toBe("bg-red-50");
   });
 
-  it("returns green-100 at 10 MB threshold", () => {
-    expect(deltaBgClass(10_000)).toBe("bg-green-100");
-    expect(deltaBgClass(49_999)).toBe("bg-green-100");
+  it("returns red-100 at 10 MB threshold", () => {
+    expect(deltaBgClass(10_000)).toBe("bg-red-100");
+    expect(deltaBgClass(49_999)).toBe("bg-red-100");
   });
 
-  it("returns green-200 at 50 MB threshold", () => {
-    expect(deltaBgClass(50_000)).toBe("bg-green-200");
-    expect(deltaBgClass(500_000)).toBe("bg-green-200");
+  it("returns red-200 at 50 MB threshold", () => {
+    expect(deltaBgClass(50_000)).toBe("bg-red-200");
+    expect(deltaBgClass(500_000)).toBe("bg-red-200");
   });
 
-  it("returns red classes for negative deltas", () => {
-    expect(deltaBgClass(-1000)).toBe("bg-red-50");
-    expect(deltaBgClass(-10_000)).toBe("bg-red-100");
-    expect(deltaBgClass(-50_000)).toBe("bg-red-200");
+  it("returns green classes for negative deltas (decrease = good)", () => {
+    expect(deltaBgClass(-1000)).toBe("bg-green-50");
+    expect(deltaBgClass(-10_000)).toBe("bg-green-100");
+    expect(deltaBgClass(-50_000)).toBe("bg-green-200");
   });
 });
 
