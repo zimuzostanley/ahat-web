@@ -165,6 +165,7 @@ let snap: AhatSnapshot | null = null;
 let baselineSnap: AhatSnapshot | null = null;
 let originalHeapCount = 0;
 let proguardMap = new ProguardMap();
+let rawBuffer: ArrayBuffer | null = null;
 
 /** Deobfuscate a class name through the ProGuard map. */
 function deobClass(name: string | undefined): string {
@@ -686,6 +687,7 @@ addEventListener("message", (e: MessageEvent) => {
 
   if (msg.type === "parse") {
     try {
+      rawBuffer = msg.buffer;
       snap = parseHprof(msg.buffer, (m: string, pct: number) => {
         console.log(`[hprof] ${m} (${pct.toFixed(1)}%)`);
         postMessage({ type: "progress", msg: m, pct });
@@ -742,6 +744,16 @@ addEventListener("message", (e: MessageEvent) => {
   if (msg.type === "query") {
     const { id, name, params } = msg;
     try {
+      // getRawBuffer returns the original hprof ArrayBuffer (copy, not transfer — worker keeps its copy)
+      if (name === "getRawBuffer") {
+        if (rawBuffer) {
+          const copy = rawBuffer.slice(0);
+          postMessage({ type: "result", id, data: copy }, { transfer: [copy] });
+        } else {
+          postMessage({ type: "result", id, data: null });
+        }
+        return;
+      }
       // getByteArray returns an ArrayBuffer that must be transferred
       if (name === "getByteArray") {
         const buf = handleGetByteArray(params.id as number);

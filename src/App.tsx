@@ -117,10 +117,12 @@ export default function App() {
         )),
       );
       // Check session still exists (not cancelled)
+      // Don't keep the raw buffer on the main thread — the worker holds it.
+      // Saves ~180MB per hprof session. Use proxy.query("getRawBuffer") to retrieve.
       setSessions(prev => {
         if (!prev.find(s => s.id === sessionId)) return prev;
         return prev.map(s => s.id === sessionId
-          ? { ...s, status: "ready" as const, buffer, proxy: p, overview: ov, worker: null }
+          ? { ...s, status: "ready" as const, buffer: null, proxy: p, overview: ov, worker: null }
           : s);
       });
       const initial = urlToState(new URL(window.location.href));
@@ -230,12 +232,17 @@ export default function App() {
       return;
     }
     const blSession = readySessions.find(s => s.id === blId);
-    if (!blSession || !blSession.buffer) return;
+    if (!blSession) return;
     setDiffing(true);
-    setDiffProgress({ msg: "Starting diff\u2026", pct: 0 });
+    setDiffProgress({ msg: "Fetching baseline\u2026", pct: 0 });
     try {
+      // Fetch raw buffer from baseline session's worker (main thread doesn't keep it)
+      const blBuffer = blSession.buffer ?? (blSession.proxy
+        ? await blSession.proxy.query<ArrayBuffer | null>("getRawBuffer")
+        : null);
+      if (!blBuffer) { setDiffing(false); setDiffProgress(null); return; }
       const ov = await activeProxy.diffWithBaseline(
-        blSession.buffer,
+        blBuffer,
         (msg, pct) => setDiffProgress({ msg, pct }),
       );
       setBaselineSessionId(blId);
@@ -412,25 +419,30 @@ export default function App() {
                         Capture from device
                       </button>
                     )}
-                    {activeSession?.status === "ready" && activeSession.buffer && (
+                    {activeSession?.status === "ready" && (activeSession.buffer || activeSession.proxy) && (
                       <>
                         {activeSession.kind === "hprof" && (
                           <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { mapFileRef.current?.click(); setMenuOpen(false); }}>
                             Load Mapping
                           </button>
                         )}
-                        <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => {
-                          if (activeSession.kind === "vmadump") {
-                            downloadBlob(activeSession.name + ".bin", activeSession.buffer!);
-                          } else {
-                            downloadBuffer(activeSession.name, activeSession.buffer!);
-                          }
+                        <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={async () => {
                           setMenuOpen(false);
+                          if (activeSession.kind === "vmadump" && activeSession.buffer) {
+                            downloadBlob(activeSession.name + ".bin", activeSession.buffer);
+                          } else if (activeSession.proxy) {
+                            const buf = await activeSession.proxy.query<ArrayBuffer | null>("getRawBuffer");
+                            if (buf) downloadBuffer(activeSession.name, buf);
+                          }
                         }}>
                           Download
                         </button>
-                        {activeSession.kind === "hprof" && (
-                          <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { openInPerfetto(activeSession.buffer!, activeSession.name); setMenuOpen(false); }}>
+                        {activeSession.kind === "hprof" && activeSession.proxy && (
+                          <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={async () => {
+                            setMenuOpen(false);
+                            const buf = await activeSession.proxy!.query<ArrayBuffer | null>("getRawBuffer");
+                            if (buf) openInPerfetto(buf, activeSession.name);
+                          }}>
                             Perfetto
                           </button>
                         )}

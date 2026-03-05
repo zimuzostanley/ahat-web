@@ -1,6 +1,6 @@
 import type { OverviewData } from "./hprof.worker";
 
-export type QueryName = "getOverview" | "getRooted" | "getInstance" | "getSite" | "search" | "getObjects" | "getBitmapList" | "getByteArray";
+export type QueryName = "getOverview" | "getRooted" | "getInstance" | "getSite" | "search" | "getObjects" | "getBitmapList" | "getByteArray" | "getRawBuffer";
 
 export type WorkerInMessage =
   | { type: "progress"; msg: string; pct: number }
