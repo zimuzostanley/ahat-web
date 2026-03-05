@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseLruProcesses, parseSystemUidPs, parseProcMeminfo } from "./capture";
+import { parseLruProcesses, parseProcMeminfo } from "./capture";
 
 // ─── parseLruProcesses ──────────────────────────────────────────────────────
 
@@ -90,49 +90,6 @@ describe("parseLruProcesses", () => {
     const result = parseLruProcesses(single);
     expect(result.length).toBe(1);
     expect(result[0]).toMatchObject({ pid: 42, name: "com.example.app", oomLabel: "Top" });
-  });
-});
-
-// ─── parseSystemUidPs ────────────────────────────────────────────────────────
-
-describe("parseSystemUidPs", () => {
-  const PS_OUTPUT = `PID NAME
-  891 system_server
- 1234 com.android.systemui
- 2345 surfaceflinger
- 3456 servicemanager
-`;
-
-  it("parses PID and NAME from ps output", () => {
-    const result = parseSystemUidPs(PS_OUTPUT, new Set());
-    expect(result.length).toBe(4);
-    expect(result[0]).toMatchObject({ pid: 891, name: "system_server", oomLabel: "AID_SYSTEM" });
-    expect(result[1]).toMatchObject({ pid: 1234, name: "com.android.systemui" });
-  });
-
-  it("excludes PIDs in the exclude set", () => {
-    const result = parseSystemUidPs(PS_OUTPUT, new Set([1234, 3456]));
-    expect(result.length).toBe(2);
-    expect(result.map(p => p.pid)).toEqual([891, 2345]);
-  });
-
-  it("sets memory fields to zero", () => {
-    const result = parseSystemUidPs(PS_OUTPUT, new Set());
-    for (const p of result) {
-      expect(p.pssKb).toBe(0);
-      expect(p.rssKb).toBe(0);
-    }
-  });
-
-  it("returns empty array for empty output", () => {
-    expect(parseSystemUidPs("", new Set())).toEqual([]);
-    expect(parseSystemUidPs("PID NAME\n", new Set())).toEqual([]);
-  });
-
-  it("skips header line", () => {
-    const result = parseSystemUidPs("PID NAME\n100 init\n", new Set());
-    expect(result.length).toBe(1);
-    expect(result[0].pid).toBe(100);
   });
 });
 

@@ -190,26 +190,8 @@ export function parseLruProcesses(output: string): ProcessInfo[] {
   return results;
 }
 
-/** Parse `ps -o PID,NAME -u 1000` output, excluding already-known PIDs. */
-export function parseSystemUidPs(output: string, excludePids: Set<number>): ProcessInfo[] {
-  const results: ProcessInfo[] = [];
-  for (const line of output.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("PID")) continue;
-    const parts = trimmed.split(/\s+/, 2);
-    if (parts.length < 2) continue;
-    const pid = parseInt(parts[0], 10);
-    if (!isFinite(pid) || excludePids.has(pid)) continue;
-    results.push({
-      pid,
-      name: parts[1],
-      oomLabel: "AID_SYSTEM",
-      pssKb: 0, rssKb: 0,
-      javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
-    });
-  }
-  return results;
-}
+/** Key system processes to pin at the top of the process list. */
+export const PINNED_PROCESSES = new Set(["system_server", "com.android.systemui"]);
 
 // ─── AdbConnection ───────────────────────────────────────────────────────────
 
@@ -279,12 +261,22 @@ export class AdbConnection {
     return parseLruProcesses(output);
   }
 
-  /** Get UID 1000 (AID_SYSTEM) processes not in the LRU list. */
-  async getSystemUidProcesses(excludePids: Set<number>, signal?: AbortSignal): Promise<ProcessInfo[]> {
+  /** Get PIDs for pinned system processes not already in the list. */
+  async getPinnedProcesses(excludePids: Set<number>, signal?: AbortSignal): Promise<ProcessInfo[]> {
     if (!this.device) throw new Error("Not connected");
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const output = await this.device.shell("ps -o PID,NAME -u 1000", signal);
-    return parseSystemUidPs(output, excludePids);
+    const results: ProcessInfo[] = [];
+    for (const name of PINNED_PROCESSES) {
+      const output = (await this.device.shell(`pidof ${name}`, signal)).trim();
+      const pid = parseInt(output, 10);
+      if (!isFinite(pid) || excludePids.has(pid)) continue;
+      results.push({
+        pid, name, oomLabel: "System",
+        pssKb: 0, rssKb: 0,
+        javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
+      });
+    }
+    return results;
   }
 
   /**

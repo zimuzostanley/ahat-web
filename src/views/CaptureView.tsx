@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "react";
-import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
+import { AdbConnection, PINNED_PROCESSES, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
 
 type SmapsNumericField = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
@@ -656,16 +656,16 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     setJavaPids(new Set());
     setError(null);
     try {
-      // Step 1: Fast Java process list from `dumpsys activity lru` + UID 1000 system processes
+      // Step 1: Fast Java process list from `dumpsys activity lru` + pinned system processes
       const lruList = await conn.getLruProcesses(ac.signal);
       if (ac.signal.aborted) return;
       const lruPids = new Set(lruList.map(p => p.pid));
       try {
-        const sysList = await conn.getSystemUidProcesses(lruPids, ac.signal);
-        if (!ac.signal.aborted) lruList.push(...sysList);
+        const pinned = await conn.getPinnedProcesses(lruPids, ac.signal);
+        if (!ac.signal.aborted) lruList.unshift(...pinned);
       } catch { /* best-effort */ }
       if (ac.signal.aborted) return;
-      const lruJavaPids = new Set(lruList.filter(p => p.oomLabel !== "AID_SYSTEM").map(p => p.pid));
+      const lruJavaPids = new Set(lruList.map(p => p.pid));
       setProcesses(lruList);
       setJavaPids(lruJavaPids);
 
@@ -931,6 +931,10 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     if (!processes) return null;
     const copy = [...processes];
     copy.sort((a, b) => {
+      // Pin "System" processes at top
+      const aPin = PINNED_PROCESSES.has(a.name) ? 0 : 1;
+      const bPin = PINNED_PROCESSES.has(b.name) ? 0 : 1;
+      if (aPin !== bPin) return aPin - bPin;
       if (sortField === "name") {
         const cmp = a.name.localeCompare(b.name);
         return sortAsc ? cmp : -cmp;
@@ -951,6 +955,9 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     if (!processDiffs) return null;
     const copy = [...processDiffs];
     copy.sort((a, b) => {
+      const aPin = PINNED_PROCESSES.has(a.current.name) ? 0 : 1;
+      const bPin = PINNED_PROCESSES.has(b.current.name) ? 0 : 1;
+      if (aPin !== bPin) return aPin - bPin;
       if (sortField === "name") {
         const cmp = a.current.name.localeCompare(b.current.name);
         return sortAsc ? cmp : -cmp;
