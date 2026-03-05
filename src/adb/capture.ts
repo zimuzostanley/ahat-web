@@ -389,8 +389,9 @@ export class AdbConnection {
   }
 
   /**
-   * Root fast path: single shell command iterates /proc, reads cmdline + smaps_rollup.
-   * Java detection: cmdline not starting with "/" or "[" is a Java/ART process.
+   * Root fast path: single shell command iterates /proc, reads cmdline + smaps_rollup,
+   * writes to a temp file on device. We then pull that file over USB (avoiding huge
+   * shell output that can crash USB) and parse locally.
    */
   async getProcessesFromProc(signal?: AbortSignal): Promise<{
     list: ProcessInfo[];
@@ -400,35 +401,47 @@ export class AdbConnection {
     if (!this.device || !this._isRoot) return { list: [], rollups: new Map(), javaPids: new Set() };
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
-    // Shell vars can't hold nulls, so $(cat cmdline) yields just argv[0] — the process name.
-    // Fallback to comm (16-char truncated) if cmdline is empty (kernel threads).
-    const inner = 'for p in /proc/[0-9]*/smaps_rollup;do d=${p%/smaps_rollup};pid=${d##*/};name=$(cat /proc/$pid/cmdline 2>/dev/null);[ -z "$name" ]&&name=$(cat /proc/$pid/comm 2>/dev/null);echo "===PID:$pid===$name";cat $p 2>/dev/null;done';
-    const cmd = this._suPrefix === "su -c"
+    const tmpPath = `/data/local/tmp/ahat_rollup_${Date.now()}.txt`;
+    const suPfx = this._suPrefix;
+
+    // Single shell command: iterate all /proc PIDs, read cmdline + smaps_rollup,
+    // write everything to a temp file. One syscall pass, no batching needed.
+    const inner = `for d in /proc/[0-9]*/smaps_rollup;do pid=\${d#/proc/};pid=\${pid%%/*};name=$(cat /proc/$pid/cmdline 2>/dev/null);[ -z "$name" ]&&name=$(cat /proc/$pid/comm 2>/dev/null);echo "===PID:$pid===$name";cat $d 2>/dev/null;done > ${tmpPath}`;
+    const cmd = suPfx === "su -c"
       ? `su -c '${inner}'`
       : `su 0 sh -c '${inner}'`;
 
-    const output = await this.device.shell(cmd, signal);
-    const parsed = parseSmapsRollups(output);
+    try {
+      await this.device.shell(cmd, signal);
 
-    const javaPids = new Set<number>();
-    const rollups = new Map<number, SmapsRollup>();
-    const list: ProcessInfo[] = [];
+      // Pull the temp file over USB (pullFile handles chunked transfer)
+      const data = await pullFile(this.device, tmpPath, undefined, signal);
+      const output = new TextDecoder().decode(data);
+      const parsed = parseSmapsRollups(output);
 
-    for (const [pid, data] of parsed) {
-      const name = (data.name ?? "").trim();
-      if (!name) continue;
-      rollups.set(pid, data);
-      if (!name.startsWith("/") && !name.startsWith("[")) {
-        javaPids.add(pid);
+      const javaPids = new Set<number>();
+      const rollups = new Map<number, SmapsRollup>();
+      const list: ProcessInfo[] = [];
+
+      for (const [pid, entry] of parsed) {
+        const name = (entry.name ?? "").trim();
+        if (!name) continue;
+        rollups.set(pid, entry);
+        if (!name.startsWith("/") && !name.startsWith("[")) {
+          javaPids.add(pid);
+        }
+        list.push({
+          pid, name, oomLabel: "",
+          pssKb: entry.pssKb, rssKb: entry.rssKb,
+          javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
+        });
       }
-      list.push({
-        pid, name, oomLabel: "",
-        pssKb: data.pssKb, rssKb: data.rssKb,
-        javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
-      });
+
+      list.sort((a, b) => b.pssKb - a.pssKb);
+      return { list, rollups, javaPids };
+    } finally {
+      try { await this.device?.shell(`rm -f ${tmpPath}`); } catch { /* best-effort */ }
     }
-    list.sort((a, b) => b.pssKb - a.pssKb);
-    return { list, rollups, javaPids };
   }
 
   /** Fetch /proc/meminfo for extra global memory details (root-only). */
