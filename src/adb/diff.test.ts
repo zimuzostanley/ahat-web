@@ -274,6 +274,7 @@ describe("diffSmaps", () => {
 function makeEntry(addrStart: string, pssKb: number, overrides?: Partial<SmapsEntry>): SmapsEntry {
   return {
     addrStart, addrEnd: addrStart.replace(/0$/, "f"), perms: "r--p", name: "/lib/test.so",
+    dev: "fd:01", inode: 12345,
     sizeKb: 0, rssKb: 0, pssKb,
     sharedCleanKb: 0, sharedDirtyKb: 0,
     privateCleanKb: 0, privateDirtyKb: 0,

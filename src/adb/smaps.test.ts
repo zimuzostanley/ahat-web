@@ -79,6 +79,8 @@ describe("parseSmaps", () => {
     expect(e.addrEnd).toBe("7f1235000");
     expect(e.perms).toBe("r-xp");
     expect(e.name).toBe("/system/lib64/libart.so");
+    expect(e.dev).toBe("fd:01");
+    expect(e.inode).toBe(12345);
     expect(e.sizeKb).toBe(4);
     expect(e.rssKb).toBe(4);
     expect(e.pssKb).toBe(2);
@@ -110,6 +112,8 @@ describe("parseSmaps", () => {
     const entries = parseSmaps(ANONYMOUS_VMA);
     expect(entries).toHaveLength(1);
     expect(entries[0].name).toBe("");
+    expect(entries[0].dev).toBe("00:00");
+    expect(entries[0].inode).toBe(0);
     expect(entries[0].pssKb).toBe(4);
     expect(entries[0].privateDirtyKb).toBe(4);
   });

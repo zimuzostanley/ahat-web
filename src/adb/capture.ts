@@ -38,6 +38,8 @@ export interface SmapsEntry {
   addrEnd: string;
   perms: string;
   name: string;
+  dev: string;
+  inode: number;
   sizeKb: number;
   rssKb: number;
   pssKb: number;
@@ -63,6 +65,35 @@ export interface SmapsAggregated {
   swapKb: number;
   swapPssKb: number;
   entries: SmapsEntry[];
+}
+
+/** Per-process contribution to a cross-process shared mapping. */
+export interface SharedMappingProcess {
+  pid: number;
+  name: string;
+  pssKb: number;
+  rssKb: number;
+  sizeKb: number;
+  sharedCleanKb: number;
+  sharedDirtyKb: number;
+  privateCleanKb: number;
+  privateDirtyKb: number;
+  swapKb: number;
+}
+
+/** A mapping name aggregated across all processes. */
+export interface SharedMapping {
+  name: string;
+  processCount: number;
+  pssKb: number;
+  rssKb: number;
+  sizeKb: number;
+  sharedCleanKb: number;
+  sharedDirtyKb: number;
+  privateCleanKb: number;
+  privateDirtyKb: number;
+  swapKb: number;
+  processes: SharedMappingProcess[];
 }
 
 // Map compact-format OOM adj labels to human-readable AOSP process states.
@@ -727,7 +758,7 @@ function abortableSleep(ms: number, signal?: AbortSignal): Promise<void> {
 
 // ─── Smaps parsing ──────────────────────────────────────────────────────────
 
-const SMAPS_HEADER_RE = /^([0-9a-f]+)-([0-9a-f]+)\s+([\w-]{4})\s+[0-9a-f]+\s+[0-9a-f]+:[0-9a-f]+\s+\d+\s*(.*)?$/i;
+const SMAPS_HEADER_RE = /^([0-9a-f]+)-([0-9a-f]+)\s+([\w-]{4})\s+[0-9a-f]+\s+([0-9a-f]+:[0-9a-f]+)\s+(\d+)\s*(.*)?$/i;
 const SMAPS_KV_RE = /^(\w[\w_]*):\s+(\d+)\s+kB$/i;
 
 /** Parse raw /proc/<pid>/smaps output into individual VMA entries. */
@@ -744,7 +775,8 @@ export function parseSmaps(output: string): SmapsEntry[] {
       if (cur) entries.push(cur);
       cur = {
         addrStart: hdr[1], addrEnd: hdr[2], perms: hdr[3],
-        name: (hdr[4] ?? "").trim(),
+        dev: hdr[4], inode: parseInt(hdr[5], 10) || 0,
+        name: (hdr[6] ?? "").trim(),
         sizeKb: 0, rssKb: 0, pssKb: 0,
         sharedCleanKb: 0, sharedDirtyKb: 0,
         privateCleanKb: 0, privateDirtyKb: 0,
@@ -808,6 +840,63 @@ export function aggregateSmaps(entries: SmapsEntry[]): SmapsAggregated[] {
 
   const result = [...groups.values()];
   result.sort((a, b) => b.pssKb - a.pssKb);
+  return result;
+}
+
+/** Aggregate smaps data across all processes, grouping by mapping identity.
+ *  File-backed mappings (inode > 0) are keyed by dev:inode to avoid pathname collisions.
+ *  Anonymous mappings (inode == 0) are keyed by name. Sorted by total PSS descending. */
+export function aggregateSharedMappings(
+  smapsData: Map<number, SmapsAggregated[]>,
+  processes: ProcessInfo[],
+): SharedMapping[] {
+  const procByPid = new Map(processes.map(p => [p.pid, p]));
+  const byKey = new Map<string, SharedMapping>();
+
+  for (const [pid, aggregated] of smapsData) {
+    const proc = procByPid.get(pid);
+    if (!proc) continue;
+
+    for (const agg of aggregated) {
+      // Use dev:inode for file-backed, name for anonymous
+      const firstEntry = agg.entries[0];
+      const key = firstEntry && firstEntry.inode > 0
+        ? `${firstEntry.dev}:${firstEntry.inode}`
+        : agg.name;
+
+      let mapping = byKey.get(key);
+      if (!mapping) {
+        mapping = {
+          name: agg.name, processCount: 0,
+          pssKb: 0, rssKb: 0, sizeKb: 0,
+          sharedCleanKb: 0, sharedDirtyKb: 0,
+          privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
+          processes: [],
+        };
+        byKey.set(key, mapping);
+      }
+      mapping.processCount++;
+      mapping.pssKb += agg.pssKb;
+      mapping.rssKb += agg.rssKb;
+      mapping.sizeKb += agg.sizeKb;
+      mapping.sharedCleanKb += agg.sharedCleanKb;
+      mapping.sharedDirtyKb += agg.sharedDirtyKb;
+      mapping.privateCleanKb += agg.privateCleanKb;
+      mapping.privateDirtyKb += agg.privateDirtyKb;
+      mapping.swapKb += agg.swapKb;
+      mapping.processes.push({
+        pid, name: proc.name,
+        pssKb: agg.pssKb, rssKb: agg.rssKb, sizeKb: agg.sizeKb,
+        sharedCleanKb: agg.sharedCleanKb, sharedDirtyKb: agg.sharedDirtyKb,
+        privateCleanKb: agg.privateCleanKb, privateDirtyKb: agg.privateDirtyKb,
+        swapKb: agg.swapKb,
+      });
+    }
+  }
+
+  const result = [...byKey.values()];
+  result.sort((a, b) => b.pssKb - a.pssKb);
+  for (const m of result) m.processes.sort((a, b) => b.pssKb - a.pssKb);
   return result;
 }
 

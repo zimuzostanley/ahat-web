@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "react";
-import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries } from "../adb/capture";
+import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SharedMapping, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
 
 type SmapsSortFieldType = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
@@ -290,6 +290,130 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// ─── Shared Mappings Table ────────────────────────────────────────────────────
+
+function SharedMappingsTable({ mappings, loadedCount, totalCount }: {
+  mappings: SharedMapping[];
+  loadedCount: number;
+  totalCount: number;
+}) {
+  const [sortField, setSortField] = useState<SmapsSortFieldType>("pssKb");
+  const [sortAsc, setSortAsc] = useState(false);
+  const [expandedMapping, setExpandedMapping] = useState<string | null>(null);
+
+  const toggleSort = useCallback((f: SmapsSortFieldType) => {
+    if (sortField === f) setSortAsc(!sortAsc);
+    else { setSortField(f); setSortAsc(false); }
+  }, [sortField, sortAsc]);
+
+  const sorted = useMemo(() => {
+    const copy = [...mappings];
+    copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
+    return copy;
+  }, [mappings, sortField, sortAsc]);
+
+  const totals = useMemo(() => {
+    const t = { pssKb: 0, rssKb: 0, sizeKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0 };
+    for (const m of mappings) {
+      for (const [f] of SMAPS_COLUMNS) t[f] += m[f];
+    }
+    return t;
+  }, [mappings]);
+
+  const loading = loadedCount < totalCount;
+
+  return (
+    <div className="mt-4">
+      <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">
+        Shared Mappings
+        <span className="font-normal ml-2">
+          ({mappings.length} mappings across {loadedCount} processes{loading ? ` of ${totalCount}` : ""})
+        </span>
+        {loading && <span className="ml-2 text-sky-600 animate-pulse">loading{"\u2026"}</span>}
+      </h3>
+      <div className="bg-white border border-stone-200 max-h-[500px] overflow-y-auto">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-stone-50 z-10">
+            <tr className="border-b border-stone-200">
+              <th className="text-left py-1 px-2 text-stone-500 font-medium">Mapping</th>
+              <th className="text-right py-1 px-1 text-stone-400 font-medium w-8">Procs</th>
+              {SMAPS_COLUMNS.map(([f, label]) => (
+                <th
+                  key={f}
+                  className="text-right py-1 px-2 text-stone-500 font-medium cursor-pointer select-none hover:text-stone-700 whitespace-nowrap"
+                  onClick={() => toggleSort(f)}
+                >
+                  {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b-2 border-stone-300 font-semibold">
+              <td className="py-0.5 px-2 text-stone-600">Total</td>
+              <td />
+              {SMAPS_COLUMNS.map(([f]) => (
+                <td key={f} className="py-0.5 px-2 text-right font-mono whitespace-nowrap">
+                  {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
+                </td>
+              ))}
+            </tr>
+            {sorted.map(m => (
+              <Fragment key={m.name}>
+                <tr
+                  className="border-t border-stone-100 cursor-pointer hover:bg-stone-50"
+                  onClick={() => setExpandedMapping(expandedMapping === m.name ? null : m.name)}
+                >
+                  <td className="py-0.5 px-2 font-mono text-stone-700" title={m.name}>
+                    <div className="flex items-center gap-1">
+                      <span className="text-stone-400 shrink-0">{expandedMapping === m.name ? "\u25BC" : "\u25B6"}</span>
+                      <span className="truncate max-w-[280px]">{m.name}</span>
+                    </div>
+                  </td>
+                  <td className="py-0.5 px-1 text-right font-mono text-stone-400">{m.processCount}</td>
+                  {SMAPS_COLUMNS.map(([f]) => (
+                    <td key={f} className="py-0.5 px-2 text-right font-mono whitespace-nowrap">
+                      {m[f] > 0 ? fmtSize(m[f] * 1024) : "\u2014"}
+                    </td>
+                  ))}
+                </tr>
+                {expandedMapping === m.name && (
+                  <>
+                    <tr className="bg-stone-100">
+                      <td className="py-0.5 px-2 pl-6 text-stone-500 text-[10px] font-medium">
+                        Process (PID)
+                      </td>
+                      <td />
+                      {SMAPS_COLUMNS.map(([, label]) => (
+                        <td key={label} className="py-0.5 px-2 text-right text-stone-500 text-[10px] font-medium">
+                          {label}
+                        </td>
+                      ))}
+                    </tr>
+                    {m.processes.map(p => (
+                      <tr key={p.pid} className="border-t border-stone-50 hover:bg-stone-100">
+                        <td className="py-0.5 px-2 pl-6 text-[10px] text-stone-600 whitespace-nowrap">
+                          {p.name} <span className="text-stone-400">({p.pid})</span>
+                        </td>
+                        <td />
+                        {SMAPS_COLUMNS.map(([f]) => (
+                          <td key={f} className="py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap">
+                            {p[f] > 0 ? fmtSize(p[f] * 1024) : "\u2014"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </>
+                )}
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -646,6 +770,12 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     });
     return copy;
   }, [processDiffs, sortField, sortAsc]);
+
+  // Cross-process shared mappings — recomputed incrementally as smapsData grows
+  const sharedMappings = useMemo(() => {
+    if (smapsData.size === 0 || !processes) return null;
+    return aggregateSharedMappings(smapsData, processes);
+  }, [smapsData, processes]);
 
   const hasRss = processes ? processes.some(p => p.rssKb > 0) : false;
   // Show breakdown columns as soon as enrichment starts or any data arrives
@@ -1117,6 +1247,14 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                 </tbody>
               </table>
             </div>
+          )}
+
+          {sharedMappings && sharedMappings.length > 0 && (
+            <SharedMappingsTable
+              mappings={sharedMappings}
+              loadedCount={smapsData.size}
+              totalCount={processes?.length ?? 0}
+            />
           )}
 
         </div>
