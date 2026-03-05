@@ -546,27 +546,36 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
   }
 
   return (
-    <div ref={ref} className="relative inline-block">
+    <div ref={ref} className="relative inline-flex w-[104px]">
       <button
-        className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap w-[104px]"
+        className="flex-1 text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-r-0 border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap rounded-l"
         disabled={disabled}
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        title="Dump Java heap"
+        onClick={(e) => { e.stopPropagation(); onDump(pid, false); }}
       >
         Dump
       </button>
+      <button
+        className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-1 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 rounded-r"
+        disabled={disabled}
+        title="More options"
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+      >
+        {"\u25BE"}
+      </button>
       {open && (
-        <div className="absolute left-0 top-full mt-0.5 z-20 bg-white border border-stone-200 shadow-md text-xs whitespace-nowrap">
+        <div className="absolute right-0 top-full mt-0.5 z-20 bg-white border border-stone-200 shadow-lg rounded text-xs w-[160px]">
           <button
-            className="block w-full text-left px-3 py-1.5 hover:bg-stone-50 text-stone-700"
+            className="block w-full text-left px-3 py-1.5 hover:bg-sky-50 text-stone-700 rounded-t"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onDump(pid, false); }}
           >
             Java dump
           </button>
           <button
-            className="block w-full text-left px-3 py-1.5 hover:bg-stone-50 text-stone-700 border-t border-stone-100"
+            className="block w-full text-left px-3 py-1.5 hover:bg-sky-50 text-stone-700 border-t border-stone-100 rounded-b"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onDump(pid, true); }}
           >
-            Java dump + bitmaps
+            + bitmaps
           </button>
         </div>
       )}
