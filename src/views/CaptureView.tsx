@@ -302,11 +302,11 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount, diffs }: {
   totalCount: number;
   diffs?: SharedMappingDiff[] | null;
 }) {
-  const [sortField, setSortField] = useState<SmapsSortFieldType>("pssKb");
+  const [sortField, setSortField] = useState<SmapsSortFieldType | "processCount">("pssKb");
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedMapping, setExpandedMapping] = useState<string | null>(null);
 
-  const toggleSort = useCallback((f: SmapsSortFieldType) => {
+  const toggleSort = useCallback((f: SmapsSortFieldType | "processCount") => {
     if (sortField === f) setSortAsc(!sortAsc);
     else { setSortField(f); setSortAsc(false); }
   }, [sortField, sortAsc]);
@@ -369,7 +369,12 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount, diffs }: {
           <thead className="sticky top-0 bg-stone-50 z-10">
             <tr className="border-b border-stone-200">
               <th className="text-left py-1 px-2 text-stone-500 font-medium">Mapping</th>
-              <th className="text-right py-1 px-1 text-stone-400 font-medium w-8">Procs</th>
+              <th
+                className="text-right py-1 px-1 text-stone-400 font-medium w-8 cursor-pointer select-none hover:text-stone-700"
+                onClick={() => toggleSort("processCount")}
+              >
+                Procs {sortField === "processCount" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+              </th>
               {SMAPS_COLUMNS.map(([f, label]) => (
                 <th
                   key={f}
@@ -400,10 +405,10 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount, diffs }: {
                 );
               })}
             </tr>
-            {sorted.map(m => {
+            {sorted.map((m, i) => {
               const sd = diffByName?.get(m.name);
               return (
-              <Fragment key={m.name}>
+              <Fragment key={`${m.name}-${i}`}>
                 <tr
                   className={`border-t border-stone-100 cursor-pointer hover:bg-stone-50 ${
                     sd?.status === "removed" ? "opacity-60" :
