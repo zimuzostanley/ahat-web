@@ -473,6 +473,9 @@ export class AdbConnection {
         if (e instanceof DOMException && e.name === "AbortError") break;
         // Process may have died — skip
       }
+
+      // Pause every 20 processes to avoid overwhelming USB
+      if ((i + 1) % 20 === 0) await abortableSleep(100, signal).catch(() => {});
     }
 
     onProgress?.(sorted.length, sorted.length, "");

@@ -517,16 +517,20 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
   onCancel: (pid: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const caretRef = useRef<HTMLButtonElement>(null);
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click or scroll
   useEffect(() => {
     if (!open) return;
+    const close = () => setOpen(false);
     const handler = (e: Event) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) close();
     };
     document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    document.addEventListener("scroll", close, true);
+    return () => { document.removeEventListener("mousedown", handler); document.removeEventListener("scroll", close, true); };
   }, [open]);
 
   if (job) {
@@ -556,15 +560,26 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
         Dump
       </button>
       <button
+        ref={caretRef}
         className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-1 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 rounded-r"
         disabled={disabled}
         title="More options"
-        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!open && caretRef.current) {
+            const r = caretRef.current.getBoundingClientRect();
+            setMenuPos({ top: r.bottom + 2, left: r.right - 160 });
+          }
+          setOpen(!open);
+        }}
       >
         {"\u25BE"}
       </button>
-      {open && (
-        <div className="absolute right-0 top-full mt-0.5 z-20 bg-white border border-stone-200 shadow-lg rounded text-xs w-[160px]">
+      {open && menuPos && (
+        <div
+          className="fixed z-50 bg-white border border-stone-200 shadow-lg rounded text-xs w-[160px]"
+          style={{ top: menuPos.top, left: menuPos.left }}
+        >
           <button
             className="block w-full text-left px-3 py-1.5 hover:bg-sky-50 text-stone-700 rounded-t"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onDump(pid, false); }}
