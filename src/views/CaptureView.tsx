@@ -496,7 +496,7 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
 
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
-type SortField = "pssKb" | "rssKb" | "privateDirtyKb" | "privateCleanKb" | "sharedDirtyKb" | "sharedCleanKb" | "swapKb";
+type SortField = "pssKb" | "rssKb" | "privateDirtyKb" | "privateCleanKb" | "sharedDirtyKb" | "sharedCleanKb" | "swapKb" | "oomLabel";
 
 // Process table columns shown when rollup data is available
 const ROLLUP_COLUMNS: [SortField, string][] = [
@@ -919,6 +919,10 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     if (!processes) return null;
     const copy = [...processes];
     copy.sort((a, b) => {
+      if (sortField === "oomLabel") {
+        const cmp = a.oomLabel.localeCompare(b.oomLabel);
+        return sortAsc ? cmp : -cmp;
+      }
       const aVal = getFieldValue(a, sortField, smapsRollups.get(a.pid));
       const bVal = getFieldValue(b, sortField, smapsRollups.get(b.pid));
       return sortAsc ? aVal - bVal : bVal - aVal;
@@ -930,6 +934,10 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     if (!processDiffs) return null;
     const copy = [...processDiffs];
     copy.sort((a, b) => {
+      if (sortField === "oomLabel") {
+        const cmp = a.current.oomLabel.localeCompare(b.current.oomLabel);
+        return sortAsc ? cmp : -cmp;
+      }
       const aVal = getFieldValue(a.current, sortField, smapsRollups.get(a.current.pid));
       const bVal = getFieldValue(b.current, sortField, smapsRollups.get(b.current.pid));
       return sortAsc ? aVal - bVal : bVal - aVal;
@@ -1179,7 +1187,14 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                     <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-16"></th>
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14">PID</th>
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">Process</th>
-                    {hasOomLabel && <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">State</th>}
+                    {hasOomLabel && (
+                      <th
+                        className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium cursor-pointer select-none hover:text-stone-700"
+                        onClick={() => toggleSort("oomLabel")}
+                      >
+                        State {sortField === "oomLabel" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+                      </th>
+                    )}
                     {(hasRollup ? ROLLUP_COLUMNS : [["pssKb", "PSS"] as [SortField, string]]).map(([field, label]) => (
                       <th
                         key={field}
