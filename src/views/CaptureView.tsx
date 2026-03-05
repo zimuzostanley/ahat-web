@@ -536,7 +536,7 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
       : null;
     return (
       <button
-        className="text-xs text-amber-700 hover:text-rose-700 px-2 py-0.5 border border-amber-300 hover:border-rose-400 whitespace-nowrap max-w-[140px] truncate"
+        className="text-xs text-amber-700 hover:text-rose-700 px-2 py-0.5 border border-amber-300 hover:border-rose-400 whitespace-nowrap w-[104px] truncate"
         title="Click to cancel"
         onClick={(e) => { e.stopPropagation(); onCancel(pid); }}
       >
@@ -548,7 +548,7 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
   return (
     <div ref={ref} className="relative inline-block">
       <button
-        className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
+        className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap w-[104px]"
         disabled={disabled}
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
       >
@@ -1251,7 +1251,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
               <table className="w-full min-w-[700px] text-sm">
                 <thead>
                   <tr className="bg-stone-50 border-b border-stone-200">
-                    <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-16"></th>
+                    <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-[120px]"></th>
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14 cursor-pointer select-none hover:text-stone-700" onClick={() => toggleSort("pid")}>
                       PID {sortField === "pid" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
                     </th>
