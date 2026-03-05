@@ -757,7 +757,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     cancelSmapsFetch();
     const ac = new AbortController();
     smapsFetchAbortRef.current = ac;
-    setScanStatus("Scanning VMAs\u2026");
+    setScanStatus("Fetching process smaps\u2026");
     setScanProgress(null);
     try {
       await conn.fetchAllSmaps(
@@ -768,7 +768,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
         },
         (done, total, name) => {
           if (ac.signal.aborted) return;
-          setScanStatus(name || "Scanning VMAs\u2026");
+          setScanStatus(name || "Fetching process smaps\u2026");
           setScanProgress({ done, total });
         },
         ac.signal,
@@ -1326,7 +1326,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                     {isSmapsLoading && (
                       <tr>
                         <td colSpan={colCount} className="p-2 text-xs text-stone-400 animate-pulse border-t border-stone-200">
-                          Loading VMAs{"\u2026"}
+                          Fetching process smaps{"\u2026"}
                         </td>
                       </tr>
                     )}
