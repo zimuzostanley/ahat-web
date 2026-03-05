@@ -5,7 +5,7 @@ import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
 import { stateToUrl, urlToState } from "./routing";
 import type { NavFn } from "./components";
-import { downloadBuffer, downloadBlob, openInPerfetto } from "./utils";
+import { downloadBuffer, downloadBlob } from "./utils";
 import CaptureView from "./views/CaptureView";
 import HexView from "./views/HexView";
 import OverviewView from "./views/OverviewView";
@@ -438,15 +438,6 @@ export default function App() {
                         }}>
                           Download
                         </button>
-                        {activeSession.kind === "hprof" && activeSession.proxy && (
-                          <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={async () => {
-                            setMenuOpen(false);
-                            const buf = await activeSession.proxy!.query<ArrayBuffer | null>("getRawBuffer");
-                            if (buf) openInPerfetto(buf, activeSession.name);
-                          }}>
-                            Perfetto
-                          </button>
-                        )}
                       </>
                     )}
                     {activeSession && !showTabs && (
