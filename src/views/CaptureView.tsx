@@ -501,6 +501,79 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
   );
 }
 
+// ─── Per-Row Dump Button ──────────────────────────────────────────────────────
+
+interface CaptureJob {
+  status: string;
+  progress: { done: number; total: number } | null;
+  error: string | null;
+}
+
+function DumpButton({ pid, job, disabled, onDump, onCancel }: {
+  pid: number;
+  job: CaptureJob | undefined;
+  disabled: boolean;
+  onDump: (pid: number, withBitmaps: boolean) => void;
+  onCancel: (pid: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: Event) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  if (job) {
+    // Active capture — show status + cancel
+    const pct = job.progress && job.progress.total > 0
+      ? `${Math.round(job.progress.done / job.progress.total * 100)}%`
+      : null;
+    return (
+      <button
+        className="text-xs text-amber-700 hover:text-rose-700 px-2 py-0.5 border border-amber-300 hover:border-rose-400 whitespace-nowrap max-w-[140px] truncate"
+        title="Click to cancel"
+        onClick={(e) => { e.stopPropagation(); onCancel(pid); }}
+      >
+        {pct ?? job.status}
+      </button>
+    );
+  }
+
+  return (
+    <div ref={ref} className="relative inline-block">
+      <button
+        className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
+        disabled={disabled}
+        onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
+      >
+        Dump
+      </button>
+      {open && (
+        <div className="absolute left-0 top-full mt-0.5 z-20 bg-white border border-stone-200 shadow-md text-xs whitespace-nowrap">
+          <button
+            className="block w-full text-left px-3 py-1.5 hover:bg-stone-50 text-stone-700"
+            onClick={(e) => { e.stopPropagation(); setOpen(false); onDump(pid, false); }}
+          >
+            Java dump
+          </button>
+          <button
+            className="block w-full text-left px-3 py-1.5 hover:bg-stone-50 text-stone-700 border-t border-stone-100"
+            onClick={(e) => { e.stopPropagation(); setOpen(false); onDump(pid, true); }}
+          >
+            Java dump + bitmaps
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
 type SortField = "pid" | "name" | "pssKb" | "rssKb" | "privateDirtyKb" | "privateCleanKb" | "sharedDirtyKb" | "sharedCleanKb" | "swapKb" | "oomLabel";
@@ -530,22 +603,18 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   const [connected, setConnected] = useState(false);
   const [connectStatus, setConnectStatus] = useState<string | null>(null);
   const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
-  const [selectedPid, setSelectedPid] = useState<number | null>(null);
-  const [withBitmaps, setWithBitmaps] = useState(false);
   const [sortField, setSortField] = useState<SortField>("pssKb");
   const [sortAsc, setSortAsc] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Enrichment runs in the background — doesn't block capture
+  // Enrichment runs in the background — independent of captures
   const enrichAbortRef = useRef<AbortController | null>(null);
   const [enrichStatus, setEnrichStatus] = useState<string | null>(null);
   const [enrichProgress, setEnrichProgress] = useState<{ done: number; total: number } | null>(null);
 
-  // Capture is a foreground operation — auto-cancels enrichment since ADB is serial
-  const captureAbortRef = useRef<AbortController | null>(null);
-  const [capturing, setCapturing] = useState(false);
-  const [captureStatus, setCaptureStatus] = useState("");
-  const [captureProgress, setCaptureProgress] = useState<{ done: number; total: number } | null>(null);
+  // Per-PID capture state — each process row has independent dump lifecycle
+  const [captureJobs, setCaptureJobs] = useState<Map<number, CaptureJob>>(new Map());
+  const captureAbortRefs = useRef<Map<number, AbortController>>(new Map());
 
   // VMA dump state
   const vmaDumpAbortRef = useRef<AbortController | null>(null);
@@ -613,13 +682,16 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     setEnrichProgress(null);
   }, []);
 
-  const cancelCapture = useCallback(() => {
-    if (!captureAbortRef.current) return;
-    captureAbortRef.current.abort();
-    captureAbortRef.current = null;
-    setCapturing(false);
-    setCaptureStatus("");
-    setCaptureProgress(null);
+  const cancelCapture = useCallback((pid: number) => {
+    const ac = captureAbortRefs.current.get(pid);
+    if (ac) { ac.abort(); captureAbortRefs.current.delete(pid); }
+    setCaptureJobs(prev => { const m = new Map(prev); m.delete(pid); return m; });
+  }, []);
+
+  const cancelAllCaptures = useCallback(() => {
+    for (const [, ac] of captureAbortRefs.current) ac.abort();
+    captureAbortRefs.current.clear();
+    setCaptureJobs(new Map());
   }, []);
 
   const cancelSmapsFetch = useCallback(() => {
@@ -824,18 +896,20 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     }
   }, []);
 
-  const handleCapture = useCallback(async (overridePid?: number) => {
-    const pid = overridePid ?? selectedPid;
-    if (pid === null || capturing) return;
-    cancelEnrichment();
-    cancelSmapsFetch();
-    if (overridePid !== undefined) setSelectedPid(overridePid);
+  const startCapture = useCallback(async (pid: number, withBitmaps: boolean) => {
+    if (captureAbortRefs.current.has(pid)) return; // already in flight
     const ac = new AbortController();
-    captureAbortRef.current = ac;
-    setCapturing(true);
-    setCaptureStatus("Starting heap dump\u2026");
-    setCaptureProgress(null);
-    setError(null);
+    captureAbortRefs.current.set(pid, ac);
+    setCaptureJobs(prev => new Map(prev).set(pid, { status: "Starting\u2026", progress: null, error: null }));
+
+    const updateJob = (patch: Partial<CaptureJob>) => {
+      setCaptureJobs(prev => {
+        const old = prev.get(pid);
+        if (!old) return prev;
+        return new Map(prev).set(pid, { ...old, ...patch });
+      });
+    };
+
     try {
       const proc = processes?.find(p => p.pid === pid);
       const procName = proc?.name ?? `pid_${pid}`;
@@ -844,38 +918,36 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
         withBitmaps,
         (phase: CapturePhase) => {
           switch (phase.step) {
-            case "dumping": setCaptureStatus("Dumping heap\u2026"); break;
-            case "waiting": setCaptureStatus(`Waiting for dump\u2026 (${Math.round(phase.elapsed / 1000)}s)`); break;
+            case "dumping": updateJob({ status: "Dumping\u2026" }); break;
+            case "waiting": updateJob({ status: `Waiting (${Math.round(phase.elapsed / 1000)}s)` }); break;
             case "pulling": {
               const pct = phase.total > 0 ? Math.round(phase.received / phase.total * 100) : 0;
               const mb = (phase.received / 1048576).toFixed(1);
-              setCaptureStatus(phase.total > 0 ? `Pulling: ${mb} MiB (${pct}%)` : `Pulling: ${mb} MiB`);
-              if (phase.total > 0) setCaptureProgress({ done: phase.received, total: phase.total });
+              updateJob({
+                status: phase.total > 0 ? `${pct}% (${mb} MiB)` : `${mb} MiB`,
+                progress: phase.total > 0 ? { done: phase.received, total: phase.total } : null,
+              });
               break;
             }
-            case "cleaning": setCaptureStatus("Cleaning up\u2026"); break;
+            case "cleaning": updateJob({ status: "Cleaning\u2026" }); break;
             case "done": break;
           }
         },
         ac.signal,
       );
       const ts = new Date().toISOString().slice(0, 16).replace("T", "_").replace(":", "");
-      const name = `${procName}_${ts}`;
-      onCaptured(name, buffer);
+      onCaptured(`${procName}_${ts}`, buffer);
     } catch (e) {
-      if (ac.signal.aborted) return;
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      setError(e instanceof Error ? e.message : "Capture failed");
-    } finally {
-      // Only clear state if we're still the active capture
-      if (captureAbortRef.current === ac) {
-        captureAbortRef.current = null;
-        setCapturing(false);
-        setCaptureStatus("");
-        setCaptureProgress(null);
+      if (!(e instanceof DOMException && e.name === "AbortError") && !ac.signal.aborted) {
+        updateJob({ status: "Failed", error: e instanceof Error ? e.message : "Capture failed" });
+        setTimeout(() => setCaptureJobs(prev => { const m = new Map(prev); m.delete(pid); return m; }), 3000);
+        captureAbortRefs.current.delete(pid);
+        return;
       }
     }
-  }, [selectedPid, withBitmaps, processes, onCaptured, capturing, cancelEnrichment]);
+    captureAbortRefs.current.delete(pid);
+    setCaptureJobs(prev => { const m = new Map(prev); m.delete(pid); return m; });
+  }, [conn, processes, onCaptured]);
 
   const handleVmaDump = useCallback(async (
     pid: number, processName: string,
@@ -883,8 +955,6 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     regions: { addrStart: string; addrEnd: string }[],
   ) => {
     if (!connected || vmaDumpStatus) return;
-    cancelEnrichment();
-    cancelSmapsFetch();
     const ac = new AbortController();
     vmaDumpAbortRef.current = ac;
     try {
@@ -906,26 +976,23 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
         setVmaDumpStatus(null);
       }
     }
-  }, [connected, vmaDumpStatus, conn, onVmaDump, cancelEnrichment]);
+  }, [connected, vmaDumpStatus, conn, onVmaDump]);
 
   const handleDisconnect = useCallback(() => {
     cancelEnrichment();
     cancelSmapsFetch();
-    cancelCapture();
+    cancelAllCaptures();
     cancelVmaDump();
     conn.disconnect();
     setConnected(false);
     setError(null);
     setEnrichStatus(null);
     setEnrichProgress(null);
-    setCapturing(false);
-    setCaptureStatus("");
-    setCaptureProgress(null);
-  }, [cancelEnrichment, cancelSmapsFetch, cancelCapture, cancelVmaDump]);
+  }, [cancelEnrichment, cancelSmapsFetch, cancelAllCaptures, cancelVmaDump]);
 
   useEffect(() => {
-    return () => { cancelEnrichment(); cancelSmapsFetch(); cancelCapture(); cancelVmaDump(); conn.disconnect(); };
-  }, [cancelEnrichment, cancelCapture, cancelVmaDump]);
+    return () => { cancelEnrichment(); cancelSmapsFetch(); cancelAllCaptures(); cancelVmaDump(); conn.disconnect(); };
+  }, [cancelEnrichment, cancelAllCaptures, cancelVmaDump]);
 
   const sorted = useMemo(() => {
     if (!processes) return null;
@@ -1047,20 +1114,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
             ) : (
               <span className="text-amber-600 text-xs">Disconnected</span>
             )}
-            <label className="flex items-center gap-1.5 text-stone-500 text-xs ml-auto">
-              <input type="checkbox" checked={withBitmaps} onChange={e => setWithBitmaps(e.target.checked)} className="accent-sky-600" />
-              Bitmaps (-b)
-            </label>
-            <button
-              className={`px-3 py-0.5 text-xs text-white transition-colors disabled:opacity-50 ${
-                capturing ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
-              }`}
-              onClick={() => handleCapture()}
-              disabled={!connected || selectedPid === null || capturing || !javaPids.has(selectedPid!)}
-              title={selectedPid === null ? "Select a process first" : !javaPids.has(selectedPid) ? "Not a Java process" : capturing ? "Dump in progress" : "Dump Java heap"}
-            >
-              {capturing ? (captureStatus || "Dumping\u2026") : "Java dump"}
-            </button>
+            <span className="ml-auto" />
             <button className={`text-xs ${connected ? "text-stone-400 hover:text-stone-600" : "text-stone-300 cursor-not-allowed"}`} onClick={refreshProcesses} disabled={!connected}>
               {enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Diffing\u2026" : "Refresh"}
             </button>
@@ -1099,22 +1153,6 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
           {connected && !conn.isRoot && processes && (
             <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2 mb-3">
               Non-rooted device — only debuggable apps can be captured
-            </div>
-          )}
-
-          {/* Capture status */}
-          {capturing && (
-            <div className="mb-2 text-xs text-stone-600">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="truncate font-medium">{captureStatus}</span>
-                {captureProgress && <span className="text-stone-400 whitespace-nowrap">{(captureProgress.done / 1048576).toFixed(1)}/{(captureProgress.total / 1048576).toFixed(1)} MiB</span>}
-                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelCapture}>Cancel</button>
-              </div>
-              {captureProgress && captureProgress.total > 0 && (
-                <div className="h-1 bg-stone-100 rounded overflow-hidden">
-                  <div className="h-full bg-sky-600 transition-all" style={{ width: `${(captureProgress.done / captureProgress.total) * 100}%` }} />
-                </div>
-              )}
             </div>
           )}
 
@@ -1265,7 +1303,6 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                     const p = d.current;
                     const isJava = javaPids.has(p.pid);
                     const canCapture = isJava && (conn.isRoot || p.debuggable !== false);
-                    const isCapturingThis = capturing && selectedPid === p.pid;
                     const hasSmaps = smapsData.has(p.pid);
                     const isExpanded = expandedSmapsPid === p.pid;
                     const isSmapsExpanded = isExpanded && hasSmaps;
@@ -1286,29 +1323,25 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                       }`}
                       onClick={() => {
                         if (d.status === "removed") return;
-                        setSelectedPid(p.pid);
                         if (isExpanded) {
                           setExpandedSmapsPid(null);
                           setExpandedSmapsGroup(null);
                         } else if (conn.isRoot) {
                           setExpandedSmapsPid(p.pid);
                           setExpandedSmapsGroup(null);
-                          if (!hasSmaps && !capturing && !vmaDumpStatus) {
-                            fetchSmapsOnDemand(p.pid);
-                          }
+                          if (!hasSmaps) fetchSmapsOnDemand(p.pid);
                         }
                       }}
                     >
                       <td className="py-1 px-2 text-center whitespace-nowrap">
                         {d.status !== "removed" && canCapture && (
-                          <button
-                            className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
-                            disabled={!connected || capturing}
-                            title={!connected ? "Disconnected" : capturing ? "Dump in progress" : "Dump Java heap"}
-                            onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
-                          >
-                            {isCapturingThis ? "\u2026" : "Java dump"}
-                          </button>
+                          <DumpButton
+                            pid={p.pid}
+                            job={captureJobs.get(p.pid)}
+                            disabled={!connected}
+                            onDump={startCapture}
+                            onCancel={cancelCapture}
+                          />
                         )}
                       </td>
                       <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">
@@ -1392,7 +1425,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                 <button
                   className="text-xs text-sky-600 hover:text-sky-800 border border-sky-300 px-2 py-0.5 mb-2"
                   onClick={scanStatus ? cancelSmapsFetch : scanAllSmaps}
-                  disabled={!connected || capturing || !!vmaDumpStatus}
+                  disabled={!connected || !!vmaDumpStatus}
                 >
                   {scanStatus ? `Cancel Scan (${smapsData.size}/${processes?.length ?? 0})` : `Scan All VMAs (${smapsData.size}/${processes?.length ?? 0})`}
                 </button>
