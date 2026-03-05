@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import type { SmapsAggregated, SmapsEntry, ProcessInfo } from "./capture";
-import { aggregateSharedMappings } from "./capture";
+import type { SmapsAggregated, SmapsEntry, ProcessInfo, SharedMapping } from "./capture";
+import { aggregateSharedMappings, diffSharedMappings } from "./capture";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -269,5 +269,135 @@ describe("aggregateSharedMappings", () => {
     // Falls back to name-based grouping since no entries → firstEntry is undefined
     expect(result[0].name).toBe("[anonymous]");
     expect(result[0].pssKb).toBe(4);
+  });
+});
+
+// ─── Helpers for diff tests ─────────────────────────────────────────────────
+
+function makeMapping(name: string, overrides: Partial<SharedMapping> = {}): SharedMapping {
+  return {
+    name, processCount: 1,
+    pssKb: 0, rssKb: 0, sizeKb: 0,
+    sharedCleanKb: 0, sharedDirtyKb: 0,
+    privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
+    processes: [],
+    ...overrides,
+  };
+}
+
+// ─── diffSharedMappings ─────────────────────────────────────────────────────
+
+describe("diffSharedMappings", () => {
+  it("no changes: all matched with zero deltas", () => {
+    const prev = [makeMapping("/lib.so", { pssKb: 100, rssKb: 200 })];
+    const current = [makeMapping("/lib.so", { pssKb: 100, rssKb: 200 })];
+    const diffs = diffSharedMappings(prev, current);
+
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("matched");
+    expect(diffs[0].deltaPssKb).toBe(0);
+    expect(diffs[0].deltaRssKb).toBe(0);
+    expect(diffs[0].deltaProcessCount).toBe(0);
+  });
+
+  it("new mapping added", () => {
+    const prev: SharedMapping[] = [];
+    const current = [makeMapping("/new.so", { pssKb: 50, processCount: 2 })];
+    const diffs = diffSharedMappings(prev, current);
+
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("added");
+    expect(diffs[0].prev).toBeNull();
+    expect(diffs[0].deltaPssKb).toBe(50);
+    expect(diffs[0].deltaProcessCount).toBe(2);
+  });
+
+  it("mapping removed", () => {
+    const prev = [makeMapping("/old.so", { pssKb: 30, processCount: 3 })];
+    const current: SharedMapping[] = [];
+    const diffs = diffSharedMappings(prev, current);
+
+    expect(diffs).toHaveLength(1);
+    expect(diffs[0].status).toBe("removed");
+    expect(diffs[0].deltaPssKb).toBe(-30);
+    expect(diffs[0].deltaProcessCount).toBe(-3);
+  });
+
+  it("PSS increased", () => {
+    const prev = [makeMapping("/lib.so", { pssKb: 100 })];
+    const current = [makeMapping("/lib.so", { pssKb: 150 })];
+    const diffs = diffSharedMappings(prev, current);
+
+    expect(diffs[0].status).toBe("matched");
+    expect(diffs[0].deltaPssKb).toBe(50);
+  });
+
+  it("PSS decreased", () => {
+    const prev = [makeMapping("/lib.so", { pssKb: 200 })];
+    const current = [makeMapping("/lib.so", { pssKb: 120 })];
+    const diffs = diffSharedMappings(prev, current);
+
+    expect(diffs[0].deltaPssKb).toBe(-80);
+  });
+
+  it("process count changed", () => {
+    const prev = [makeMapping("/lib.so", { processCount: 3 })];
+    const current = [makeMapping("/lib.so", { processCount: 5 })];
+    const diffs = diffSharedMappings(prev, current);
+
+    expect(diffs[0].deltaProcessCount).toBe(2);
+  });
+
+  it("all numeric deltas computed correctly", () => {
+    const prev = [makeMapping("/lib.so", {
+      pssKb: 10, rssKb: 20, sizeKb: 30,
+      sharedCleanKb: 1, sharedDirtyKb: 2,
+      privateCleanKb: 3, privateDirtyKb: 4, swapKb: 5,
+    })];
+    const current = [makeMapping("/lib.so", {
+      pssKb: 15, rssKb: 25, sizeKb: 35,
+      sharedCleanKb: 6, sharedDirtyKb: 7,
+      privateCleanKb: 8, privateDirtyKb: 9, swapKb: 10,
+    })];
+    const diffs = diffSharedMappings(prev, current);
+
+    expect(diffs[0].deltaPssKb).toBe(5);
+    expect(diffs[0].deltaRssKb).toBe(5);
+    expect(diffs[0].deltaSizeKb).toBe(5);
+    expect(diffs[0].deltaSharedCleanKb).toBe(5);
+    expect(diffs[0].deltaSharedDirtyKb).toBe(5);
+    expect(diffs[0].deltaPrivateCleanKb).toBe(5);
+    expect(diffs[0].deltaPrivateDirtyKb).toBe(5);
+    expect(diffs[0].deltaSwapKb).toBe(5);
+  });
+
+  it("mixed added/removed/matched", () => {
+    const prev = [
+      makeMapping("/kept.so", { pssKb: 100 }),
+      makeMapping("/gone.so", { pssKb: 50 }),
+    ];
+    const current = [
+      makeMapping("/kept.so", { pssKb: 120 }),
+      makeMapping("/new.so", { pssKb: 30 }),
+    ];
+    const diffs = diffSharedMappings(prev, current);
+
+    expect(diffs).toHaveLength(3);
+
+    const matched = diffs.find(d => d.status === "matched");
+    expect(matched!.current.name).toBe("/kept.so");
+    expect(matched!.deltaPssKb).toBe(20);
+
+    const added = diffs.find(d => d.status === "added");
+    expect(added!.current.name).toBe("/new.so");
+    expect(added!.deltaPssKb).toBe(30);
+
+    const removed = diffs.find(d => d.status === "removed");
+    expect(removed!.current.name).toBe("/gone.so");
+    expect(removed!.deltaPssKb).toBe(-50);
+  });
+
+  it("empty prev and current", () => {
+    expect(diffSharedMappings([], [])).toEqual([]);
   });
 });

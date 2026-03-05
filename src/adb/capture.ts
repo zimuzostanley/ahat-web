@@ -900,6 +900,68 @@ export function aggregateSharedMappings(
   return result;
 }
 
+export interface SharedMappingDiff {
+  status: DiffStatus;
+  current: SharedMapping;
+  prev: SharedMapping | null;
+  deltaPssKb: number;
+  deltaRssKb: number;
+  deltaSizeKb: number;
+  deltaSharedCleanKb: number;
+  deltaSharedDirtyKb: number;
+  deltaPrivateCleanKb: number;
+  deltaPrivateDirtyKb: number;
+  deltaSwapKb: number;
+  deltaProcessCount: number;
+}
+
+/** Diff two SharedMapping arrays by name. */
+export function diffSharedMappings(prev: SharedMapping[], current: SharedMapping[]): SharedMappingDiff[] {
+  const prevByName = new Map(prev.map(m => [m.name, m]));
+  const result: SharedMappingDiff[] = [];
+  const matchedNames = new Set<string>();
+
+  for (const cur of current) {
+    const old = prevByName.get(cur.name);
+    if (old) {
+      matchedNames.add(cur.name);
+      result.push({
+        status: "matched", current: cur, prev: old,
+        deltaSizeKb: cur.sizeKb - old.sizeKb, deltaRssKb: cur.rssKb - old.rssKb,
+        deltaPssKb: cur.pssKb - old.pssKb,
+        deltaSharedCleanKb: cur.sharedCleanKb - old.sharedCleanKb,
+        deltaSharedDirtyKb: cur.sharedDirtyKb - old.sharedDirtyKb,
+        deltaPrivateCleanKb: cur.privateCleanKb - old.privateCleanKb,
+        deltaPrivateDirtyKb: cur.privateDirtyKb - old.privateDirtyKb,
+        deltaSwapKb: cur.swapKb - old.swapKb,
+        deltaProcessCount: cur.processCount - old.processCount,
+      });
+    } else {
+      result.push({
+        status: "added", current: cur, prev: null,
+        deltaSizeKb: cur.sizeKb, deltaRssKb: cur.rssKb, deltaPssKb: cur.pssKb,
+        deltaSharedCleanKb: cur.sharedCleanKb, deltaSharedDirtyKb: cur.sharedDirtyKb,
+        deltaPrivateCleanKb: cur.privateCleanKb, deltaPrivateDirtyKb: cur.privateDirtyKb,
+        deltaSwapKb: cur.swapKb, deltaProcessCount: cur.processCount,
+      });
+    }
+  }
+
+  for (const old of prev) {
+    if (!matchedNames.has(old.name)) {
+      result.push({
+        status: "removed", current: old, prev: old,
+        deltaSizeKb: -old.sizeKb, deltaRssKb: -old.rssKb, deltaPssKb: -old.pssKb,
+        deltaSharedCleanKb: -old.sharedCleanKb, deltaSharedDirtyKb: -old.sharedDirtyKb,
+        deltaPrivateCleanKb: -old.privateCleanKb, deltaPrivateDirtyKb: -old.privateDirtyKb,
+        deltaSwapKb: -old.swapKb, deltaProcessCount: -old.processCount,
+      });
+    }
+  }
+
+  return result;
+}
+
 // ─── Global memory info parsers ─────────────────────────────────────────────
 
 /** Parse global memory stats from `dumpsys meminfo -c` compact output. */

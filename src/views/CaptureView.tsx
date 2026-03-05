@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "react";
-import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SharedMapping, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSharedMappings } from "../adb/capture";
+import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
 
 type SmapsSortFieldType = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
@@ -296,10 +296,11 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
 
 // ─── Shared Mappings Table ────────────────────────────────────────────────────
 
-function SharedMappingsTable({ mappings, loadedCount, totalCount }: {
+function SharedMappingsTable({ mappings, loadedCount, totalCount, diffs }: {
   mappings: SharedMapping[];
   loadedCount: number;
   totalCount: number;
+  diffs?: SharedMappingDiff[] | null;
 }) {
   const [sortField, setSortField] = useState<SmapsSortFieldType>("pssKb");
   const [sortAsc, setSortAsc] = useState(false);
@@ -310,19 +311,47 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount }: {
     else { setSortField(f); setSortAsc(false); }
   }, [sortField, sortAsc]);
 
+  const diffByName = useMemo(() => {
+    if (!diffs) return null;
+    return new Map(diffs.map(d => [d.current.name, d]));
+  }, [diffs]);
+
   const sorted = useMemo(() => {
+    if (diffs) {
+      const copy = [...diffs];
+      copy.sort((a, b) => {
+        const aPin = a.status !== "matched" ? 1 : 0;
+        const bPin = b.status !== "matched" ? 1 : 0;
+        if (aPin !== bPin) return bPin - aPin;
+        return sortAsc ? a.current[sortField] - b.current[sortField] : b.current[sortField] - a.current[sortField];
+      });
+      return copy.map(d => d.current);
+    }
     const copy = [...mappings];
     copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
     return copy;
-  }, [mappings, sortField, sortAsc]);
+  }, [mappings, diffs, sortField, sortAsc]);
 
   const totals = useMemo(() => {
-    const t = { pssKb: 0, rssKb: 0, sizeKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0 };
-    for (const m of mappings) {
-      for (const [f] of SMAPS_COLUMNS) t[f] += m[f];
+    const t = { pssKb: 0, rssKb: 0, sizeKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
+      deltaPssKb: 0, deltaRssKb: 0, deltaSizeKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0, deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0 };
+    if (diffs) {
+      for (const d of diffs) {
+        if (d.status !== "removed") {
+          for (const [f] of SMAPS_COLUMNS) t[f] += d.current[f];
+        }
+        for (const [f] of SMAPS_COLUMNS) {
+          const dk = SMAPS_DELTA_KEY[f];
+          (t as Record<string, number>)[dk] += (d as unknown as Record<string, number>)[dk];
+        }
+      }
+    } else {
+      for (const m of mappings) {
+        for (const [f] of SMAPS_COLUMNS) t[f] += m[f];
+      }
     }
     return t;
-  }, [mappings]);
+  }, [mappings, diffs]);
 
   const loading = loadedCount < totalCount;
 
@@ -356,32 +385,59 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount }: {
             <tr className="border-b-2 border-stone-300 font-semibold">
               <td className="py-0.5 px-2 text-stone-600">Total</td>
               <td />
-              {SMAPS_COLUMNS.map(([f]) => (
-                <td key={f} className="py-0.5 px-2 text-right font-mono whitespace-nowrap">
-                  {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
-                </td>
-              ))}
+              {SMAPS_COLUMNS.map(([f]) => {
+                const dk = SMAPS_DELTA_KEY[f];
+                const delta = (totals as Record<string, number>)[dk];
+                return (
+                  <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${diffs ? deltaBgClass(delta) : ""}`}>
+                    {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
+                    {diffs && (
+                      <span className={`ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                        {delta !== 0 ? fmtDelta(delta) : ""}
+                      </span>
+                    )}
+                  </td>
+                );
+              })}
             </tr>
-            {sorted.map(m => (
+            {sorted.map(m => {
+              const sd = diffByName?.get(m.name);
+              return (
               <Fragment key={m.name}>
                 <tr
-                  className="border-t border-stone-100 cursor-pointer hover:bg-stone-50"
-                  onClick={() => setExpandedMapping(expandedMapping === m.name ? null : m.name)}
+                  className={`border-t border-stone-100 cursor-pointer hover:bg-stone-50 ${
+                    sd?.status === "removed" ? "opacity-60" :
+                    sd?.status === "added" ? "bg-green-50/50" : ""
+                  }`}
+                  onClick={() => sd?.status !== "removed" && setExpandedMapping(expandedMapping === m.name ? null : m.name)}
                 >
-                  <td className="py-0.5 px-2 font-mono text-stone-700" title={m.name}>
+                  <td className={`py-0.5 px-2 font-mono text-stone-700 ${sd?.status === "removed" ? "line-through" : ""}`} title={m.name}>
                     <div className="flex items-center gap-1">
                       <span className="text-stone-400 shrink-0">{expandedMapping === m.name ? "\u25BC" : "\u25B6"}</span>
                       <span className="truncate max-w-[280px]">{m.name}</span>
+                      {sd && sd.status !== "matched" && (
+                        <span className={`text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600" : "text-red-600"}`}>
+                          {sd.status === "added" ? "NEW" : "GONE"}
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="py-0.5 px-1 text-right font-mono text-stone-400">{m.processCount}</td>
-                  {SMAPS_COLUMNS.map(([f]) => (
-                    <td key={f} className="py-0.5 px-2 text-right font-mono whitespace-nowrap">
-                      {m[f] > 0 ? fmtSize(m[f] * 1024) : "\u2014"}
-                    </td>
-                  ))}
+                  {SMAPS_COLUMNS.map(([f]) => {
+                    const delta = sd ? (sd as unknown as Record<string, number>)[SMAPS_DELTA_KEY[f]] : 0;
+                    return (
+                      <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
+                        {m[f] > 0 ? fmtSize(m[f] * 1024) : "\u2014"}
+                        {sd && (
+                          <span className={`ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                            {delta !== 0 ? fmtDelta(delta) : ""}
+                          </span>
+                        )}
+                      </td>
+                    );
+                  })}
                 </tr>
-                {expandedMapping === m.name && (
+                {expandedMapping === m.name && sd?.status !== "removed" && (
                   <>
                     <tr className="bg-stone-100">
                       <td className="py-0.5 px-2 pl-6 text-stone-500 text-[10px] font-medium">
@@ -410,7 +466,8 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount }: {
                   </>
                 )}
               </Fragment>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -776,6 +833,16 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     if (smapsData.size === 0 || !processes) return null;
     return aggregateSharedMappings(smapsData, processes);
   }, [smapsData, processes]);
+
+  const prevSharedMappings = useMemo(() => {
+    if (prevSmapsData.size === 0 || !prevProcesses) return null;
+    return aggregateSharedMappings(prevSmapsData, prevProcesses);
+  }, [prevSmapsData, prevProcesses]);
+
+  const sharedMappingDiffs = useMemo(() => {
+    if (!diffMode || !sharedMappings || !prevSharedMappings) return null;
+    return diffSharedMappings(prevSharedMappings, sharedMappings);
+  }, [diffMode, sharedMappings, prevSharedMappings]);
 
   const hasRss = processes ? processes.some(p => p.rssKb > 0) : false;
   // Show breakdown columns as soon as enrichment starts or any data arrives
@@ -1254,6 +1321,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
               mappings={sharedMappings}
               loadedCount={smapsData.size}
               totalCount={processes?.length ?? 0}
+              diffs={sharedMappingDiffs}
             />
           )}
 
