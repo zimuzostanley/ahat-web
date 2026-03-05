@@ -69,6 +69,7 @@ export interface SmapsAggregated {
 
 /** Per-process smaps rollup summary from /proc/<pid>/smaps_rollup. */
 export interface SmapsRollup {
+  sizeKb: number;
   rssKb: number;
   pssKb: number;
   sharedCleanKb: number;
@@ -615,7 +616,7 @@ export function parseSmapsRollups(output: string): Map<number, SmapsRollup & { n
   const result = new Map<number, SmapsRollup & { name?: string }>();
   let pid = -1;
   let name: string | undefined;
-  let r: SmapsRollup = { rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, swapPssKb: 0 };
+  let r: SmapsRollup = { sizeKb: 0, rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, swapPssKb: 0 };
   let hasData = false;
 
   for (const line of output.split("\n")) {
@@ -624,7 +625,7 @@ export function parseSmapsRollups(output: string): Map<number, SmapsRollup & { n
       if (pid >= 0 && hasData) result.set(pid, name ? { ...r, name } : r);
       pid = parseInt(m[1], 10);
       name = m[2] || undefined;
-      r = { rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, swapPssKb: 0 };
+      r = { sizeKb: 0, rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, swapPssKb: 0 };
       hasData = false;
       continue;
     }
@@ -633,6 +634,7 @@ export function parseSmapsRollups(output: string): Map<number, SmapsRollup & { n
     if (kv) {
       const val = parseInt(kv[2], 10) || 0;
       switch (kv[1]) {
+        case "Size": r.sizeKb = val; hasData = true; break;
         case "Rss": r.rssKb = val; hasData = true; break;
         case "Pss": r.pssKb = val; hasData = true; break;
         case "Shared_Clean": r.sharedCleanKb = val; hasData = true; break;

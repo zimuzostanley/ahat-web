@@ -12,7 +12,7 @@ const SMAPS_COLUMNS: [SmapsSortFieldType, string][] = [
   ["swapKb", "Swap"], ["sizeKb", "VSize"],
 ];
 
-function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, onDump, dumpDisabled, entryDiffs }: {
+function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, onDump, dumpDisabled, entryDiffs, leadingColCount }: {
   entries: SmapsEntry[];
   groupName: string;
   pid: number;
@@ -23,6 +23,7 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
   onDump: (pid: number, processName: string, label: string, regions: { addrStart: string; addrEnd: string }[]) => void;
   dumpDisabled: boolean;
   entryDiffs?: SmapsEntryDiff[] | null;
+  leadingColCount: number;
 }) {
   const diffByAddr = useMemo(() => {
     if (!entryDiffs) return null;
@@ -55,7 +56,7 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
   return (
     <>
       <tr className="bg-stone-100">
-        <td className="py-0.5 px-2 pl-6">
+        <td colSpan={leadingColCount} className="py-0.5 px-2 pl-8">
           <span className="text-stone-500 text-[10px] font-medium cursor-pointer hover:text-stone-700" onClick={() => onToggleSort("addrStart")}>
             Address {sortField === "addrStart" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
           </span>
@@ -67,7 +68,6 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
             onClick={() => onDump(pid, processName, groupName, entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd })))}
           >dump all</button>
         </td>
-        <td />
         {SMAPS_COLUMNS.map(([f, label]) => (
           <td key={f} className="py-0.5 px-2 text-right text-stone-500 text-[10px] font-medium cursor-pointer hover:text-stone-700" onClick={() => onToggleSort(f)}>
             {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
@@ -81,7 +81,7 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
           ed?.status === "removed" ? "opacity-60" :
           ed?.status === "added" ? "bg-green-50/50" : ""
         }`}>
-          <td className={`py-0.5 px-2 pl-6 font-mono text-[10px] text-stone-500 whitespace-nowrap ${ed?.status === "removed" ? "line-through" : ""}`}>
+          <td colSpan={leadingColCount} className={`py-0.5 px-2 pl-8 font-mono text-[10px] text-stone-500 whitespace-nowrap ${ed?.status === "removed" ? "line-through" : ""}`}>
             {e.addrStart}-{e.addrEnd}
             <span className="ml-2 text-stone-400">{e.perms}</span>
             {ed && ed.status !== "matched" && (
@@ -96,7 +96,6 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
               onClick={() => onDump(pid, processName, `${groupName}_${e.addrStart}-${e.addrEnd}`, [{ addrStart: e.addrStart, addrEnd: e.addrEnd }])}
             >dump</button>
           </td>
-          <td />
           {SMAPS_COLUMNS.map(([f]) => {
             const delta = ed ? ed[SMAPS_DELTA_KEY[f]] as number : 0;
             return (
@@ -124,7 +123,7 @@ const SMAPS_DELTA_KEY: Record<SmapsSortFieldType, keyof SmapsDiff> = {
   swapKb: "deltaSwapKb",
 };
 
-function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated }: {
+function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated, leadingColCount }: {
   pid: number;
   processName: string;
   aggregated: SmapsAggregated[];
@@ -140,6 +139,7 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
   dumpDisabled: boolean;
   smapsDiffs?: SmapsDiff[] | null;
   prevAggregated?: SmapsAggregated[] | null;
+  leadingColCount: number;
 }) {
   const diffByName = useMemo(() => {
     if (!smapsDiffs) return null;
@@ -190,36 +190,80 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
   }, [aggregated, smapsDiffs]);
 
   return (
-    <div className="bg-stone-50 px-4 pb-2 max-h-[400px] overflow-y-auto">
-      <table className="w-full text-xs">
-        <thead className="sticky top-0 bg-stone-50 z-10">
-          <tr className="border-b border-stone-200">
-            <th className="text-left py-1 px-2 text-stone-500 font-medium">Mapping</th>
-            <th className="text-right py-1 px-1 text-stone-400 font-medium w-8">#</th>
-            {SMAPS_COLUMNS.map(([f, label]) => (
-              <th
-                key={f}
-                className="text-right py-1 px-2 text-stone-500 font-medium cursor-pointer select-none hover:text-stone-700 whitespace-nowrap"
-                onClick={() => onToggleSort(f)}
-              >
-                {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {/* Totals row */}
-          <tr className="border-b-2 border-stone-300 font-semibold">
-            <td className="py-0.5 px-2 text-stone-600">Total</td>
-            <td />
+    <>
+      {/* Sub-table header */}
+      <tr className="bg-stone-50 border-t border-stone-200">
+        <td colSpan={leadingColCount - 1} className="text-left py-1 px-2 pl-6 text-stone-500 text-xs font-medium">
+          Mapping
+        </td>
+        <td className="text-right py-1 px-1 text-stone-400 text-xs font-medium">
+          #
+        </td>
+        {SMAPS_COLUMNS.map(([f, label]) => (
+          <td
+            key={f}
+            className="text-right py-1 px-2 text-stone-500 text-xs font-medium cursor-pointer select-none hover:text-stone-700 whitespace-nowrap"
+            onClick={() => onToggleSort(f)}
+          >
+            {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+          </td>
+        ))}
+      </tr>
+      {/* Totals row */}
+      <tr className="border-b-2 border-stone-300 font-semibold bg-stone-50">
+        <td colSpan={leadingColCount} className="py-0.5 px-2 pl-6 text-stone-600 text-xs">Total</td>
+        {SMAPS_COLUMNS.map(([f]) => {
+          const dk = SMAPS_DELTA_KEY[f];
+          const delta = (totals as Record<string, number>)[dk];
+          return (
+            <td key={f} className={`py-0.5 px-2 text-right font-mono text-xs whitespace-nowrap ${smapsDiffs ? deltaBgClass(delta) : ""}`}>
+              {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
+              {smapsDiffs && (
+                <span className={`ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                  {delta !== 0 ? fmtDelta(delta) : ""}
+                </span>
+              )}
+            </td>
+          );
+        })}
+      </tr>
+      {sorted.map(g => {
+        const sd = diffByName?.get(g.name);
+        const prevEntries = sd && sd.status === "matched" && prevByName ? prevByName.get(g.name)?.entries ?? null : null;
+        return (
+        <Fragment key={g.name}>
+          <tr
+            className={`border-t border-stone-100 cursor-pointer hover:bg-stone-100 bg-stone-50 text-xs ${
+              sd?.status === "removed" ? "opacity-60" :
+              sd?.status === "added" ? "bg-green-50/50" : ""
+            }`}
+            onClick={() => sd?.status !== "removed" && onToggleGroup(g.name)}
+          >
+            <td colSpan={leadingColCount - 1} className={`py-0.5 px-2 pl-6 font-mono text-stone-700 ${sd?.status === "removed" ? "line-through" : ""}`} title={g.name}>
+              <div className="flex items-center gap-1">
+                <span className="text-stone-400 shrink-0">{expandedGroup === g.name ? "\u25BC" : "\u25B6"}</span>
+                <span className="truncate max-w-[280px]">{g.name}</span>
+                {sd && sd.status !== "matched" && (
+                  <span className={`text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600" : "text-red-600"}`}>
+                    {sd.status === "added" ? "NEW" : "GONE"}
+                  </span>
+                )}
+                <button
+                  className="text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300 shrink-0"
+                  disabled={dumpDisabled || sd?.status === "removed"}
+                  title={`Dump ${g.name} memory`}
+                  onClick={e => { e.stopPropagation(); onDump(pid, processName, g.name, g.entries.map(en => ({ addrStart: en.addrStart, addrEnd: en.addrEnd }))); }}
+                >dump</button>
+              </div>
+            </td>
+            <td className="py-0.5 px-1 text-right font-mono text-stone-400">{g.count}</td>
             {SMAPS_COLUMNS.map(([f]) => {
-              const dk = SMAPS_DELTA_KEY[f];
-              const delta = (totals as Record<string, number>)[dk];
+              const delta = sd ? sd[SMAPS_DELTA_KEY[f]] as number : 0;
               return (
-                <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${smapsDiffs ? deltaBgClass(delta) : ""}`}>
-                  {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
-                  {smapsDiffs && (
-                    <span className={`ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
+                  {g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"}
+                  {sd && (
+                    <span className={`ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
                       {delta !== 0 ? fmtDelta(delta) : ""}
                     </span>
                   )}
@@ -227,70 +271,25 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
               );
             })}
           </tr>
-          {sorted.map(g => {
-            const sd = diffByName?.get(g.name);
-            const prevEntries = sd && sd.status === "matched" && prevByName ? prevByName.get(g.name)?.entries ?? null : null;
-            return (
-            <Fragment key={g.name}>
-              <tr
-                className={`border-t border-stone-100 cursor-pointer hover:bg-stone-100 ${
-                  sd?.status === "removed" ? "opacity-60" :
-                  sd?.status === "added" ? "bg-green-50/50" : ""
-                }`}
-                onClick={() => sd?.status !== "removed" && onToggleGroup(g.name)}
-              >
-                <td className={`py-0.5 px-2 font-mono text-stone-700 ${sd?.status === "removed" ? "line-through" : ""}`} title={g.name}>
-                  <div className="flex items-center gap-1">
-                    <span className="text-stone-400 shrink-0">{expandedGroup === g.name ? "\u25BC" : "\u25B6"}</span>
-                    <span className="truncate max-w-[280px]">{g.name}</span>
-                    {sd && sd.status !== "matched" && (
-                      <span className={`text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600" : "text-red-600"}`}>
-                        {sd.status === "added" ? "NEW" : "GONE"}
-                      </span>
-                    )}
-                    <button
-                      className="text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300 shrink-0"
-                      disabled={dumpDisabled || sd?.status === "removed"}
-                      title={`Dump ${g.name} memory`}
-                      onClick={e => { e.stopPropagation(); onDump(pid, processName, g.name, g.entries.map(en => ({ addrStart: en.addrStart, addrEnd: en.addrEnd }))); }}
-                    >dump</button>
-                  </div>
-                </td>
-                <td className="py-0.5 px-1 text-right font-mono text-stone-400">{g.count}</td>
-                {SMAPS_COLUMNS.map(([f]) => {
-                  const delta = sd ? sd[SMAPS_DELTA_KEY[f]] as number : 0;
-                  return (
-                    <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
-                      {g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"}
-                      {sd && (
-                        <span className={`ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
-                          {delta !== 0 ? fmtDelta(delta) : ""}
-                        </span>
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-              {expandedGroup === g.name && sd?.status !== "removed" && (
-                <VmaEntries
-                  entries={g.entries}
-                  groupName={g.name}
-                  pid={pid}
-                  processName={processName}
-                  sortField={vmaSortField}
-                  sortAsc={vmaSortAsc}
-                  onToggleSort={onToggleVmaSort}
-                  onDump={onDump}
-                  dumpDisabled={dumpDisabled}
-                  entryDiffs={prevEntries ? diffSmapsEntries(prevEntries, g.entries) : null}
-                />
-              )}
-            </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+          {expandedGroup === g.name && sd?.status !== "removed" && (
+            <VmaEntries
+              entries={g.entries}
+              groupName={g.name}
+              pid={pid}
+              processName={processName}
+              sortField={vmaSortField}
+              sortAsc={vmaSortAsc}
+              onToggleSort={onToggleVmaSort}
+              onDump={onDump}
+              dumpDisabled={dumpDisabled}
+              entryDiffs={prevEntries ? diffSmapsEntries(prevEntries, g.entries) : null}
+              leadingColCount={leadingColCount}
+            />
+          )}
+        </Fragment>
+        );
+      })}
+    </>
   );
 }
 
@@ -496,14 +495,14 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
 
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
-type SortField = "pssKb" | "rssKb" | "privateDirtyKb" | "privateCleanKb" | "sharedDirtyKb" | "sharedCleanKb" | "swapKb" | "oomLabel";
+type SortField = "pssKb" | "rssKb" | "privateDirtyKb" | "privateCleanKb" | "sharedDirtyKb" | "sharedCleanKb" | "swapKb" | "sizeKb" | "oomLabel";
 
 // Process table columns shown when rollup data is available
 const ROLLUP_COLUMNS: [SortField, string][] = [
   ["rssKb", "RSS"], ["pssKb", "PSS"],
   ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
   ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
-  ["swapKb", "Swap"],
+  ["swapKb", "Swap"], ["sizeKb", "VSize"],
 ];
 
 /** Get a sortable value from either rollup data or ProcessInfo fallback. */
@@ -1325,27 +1324,24 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                       </tr>
                     )}
                     {isSmapsExpanded && d.status !== "removed" && (
-                      <tr>
-                        <td colSpan={colCount} className="p-0 border-t border-stone-200">
-                          <SmapsSubTable
-                            pid={p.pid}
-                            processName={p.name}
-                            aggregated={smapsData.get(p.pid)!}
-                            expandedGroup={expandedSmapsGroup}
-                            onToggleGroup={name => setExpandedSmapsGroup(expandedSmapsGroup === name ? null : name)}
-                            sortField={smapsSortField}
-                            sortAsc={smapsSortAsc}
-                            onToggleSort={toggleSmapsSort}
-                            vmaSortField={vmaSortField}
-                            vmaSortAsc={vmaSortAsc}
-                            onToggleVmaSort={toggleVmaSort}
-                            onDump={handleVmaDump}
-                            dumpDisabled={!connected || !!vmaDumpStatus}
-                            smapsDiffs={isDiff && prevSmapsData.has(p.pid) ? diffSmaps(prevSmapsData.get(p.pid)!, smapsData.get(p.pid)!) : null}
-                            prevAggregated={isDiff && prevSmapsData.has(p.pid) ? prevSmapsData.get(p.pid)! : null}
-                          />
-                        </td>
-                      </tr>
+                      <SmapsSubTable
+                        pid={p.pid}
+                        processName={p.name}
+                        aggregated={smapsData.get(p.pid)!}
+                        expandedGroup={expandedSmapsGroup}
+                        onToggleGroup={name => setExpandedSmapsGroup(expandedSmapsGroup === name ? null : name)}
+                        sortField={smapsSortField}
+                        sortAsc={smapsSortAsc}
+                        onToggleSort={toggleSmapsSort}
+                        vmaSortField={vmaSortField}
+                        vmaSortAsc={vmaSortAsc}
+                        onToggleVmaSort={toggleVmaSort}
+                        onDump={handleVmaDump}
+                        dumpDisabled={!connected || !!vmaDumpStatus}
+                        smapsDiffs={isDiff && prevSmapsData.has(p.pid) ? diffSmaps(prevSmapsData.get(p.pid)!, smapsData.get(p.pid)!) : null}
+                        prevAggregated={isDiff && prevSmapsData.has(p.pid) ? prevSmapsData.get(p.pid)! : null}
+                        leadingColCount={3 + (hasOomLabel ? 1 : 0)}
+                      />
                     )}
                     </Fragment>
                     );
