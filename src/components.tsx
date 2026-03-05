@@ -106,7 +106,7 @@ export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: 
             {columns.map((c, i) => (
               <th
                 key={i}
-                className="px-2 py-1.5 text-left bg-stone-700 text-stone-200 text-xs font-medium cursor-pointer select-none whitespace-nowrap border-b border-stone-600"
+                className={`px-2 py-1.5 ${c.align === "right" ? "text-right" : "text-left"} bg-stone-700 text-stone-200 text-xs font-medium cursor-pointer select-none whitespace-nowrap border-b border-stone-600`}
                 style={c.minWidth ? { minWidth: c.minWidth } : undefined}
                 onClick={() => { if (sortCol === i) setSortAsc(!sortAsc); else { setSortCol(i); setSortAsc(false); } }}
               >
