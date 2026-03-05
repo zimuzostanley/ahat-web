@@ -656,10 +656,16 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     setJavaPids(new Set());
     setError(null);
     try {
-      // Step 1: Fast Java process list from `dumpsys activity lru` (works without root)
+      // Step 1: Fast Java process list from `dumpsys activity lru` + UID 1000 system processes
       const lruList = await conn.getLruProcesses(ac.signal);
       if (ac.signal.aborted) return;
-      const lruJavaPids = new Set(lruList.map(p => p.pid));
+      const lruPids = new Set(lruList.map(p => p.pid));
+      try {
+        const sysList = await conn.getSystemUidProcesses(lruPids, ac.signal);
+        if (!ac.signal.aborted) lruList.push(...sysList);
+      } catch { /* best-effort */ }
+      if (ac.signal.aborted) return;
+      const lruJavaPids = new Set(lruList.filter(p => p.oomLabel !== "AID_SYSTEM").map(p => p.pid));
       setProcesses(lruList);
       setJavaPids(lruJavaPids);
 
