@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "react";
-import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
+import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
 
 type SmapsSortFieldType = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
@@ -7,8 +7,8 @@ type VmaSortFieldType = SmapsSortFieldType | "addrStart";
 
 const SMAPS_COLUMNS: [SmapsSortFieldType, string][] = [
   ["rssKb", "RSS"], ["pssKb", "PSS"],
-  ["privateCleanKb", "Priv Clean"], ["privateDirtyKb", "Priv Dirty"],
-  ["sharedCleanKb", "Shared Clean"], ["sharedDirtyKb", "Shared Dirty"],
+  ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
+  ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
   ["swapKb", "Swap"], ["sizeKb", "VSize"],
 ];
 
@@ -296,11 +296,14 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
 
 // ─── Shared Mappings Table ────────────────────────────────────────────────────
 
-function SharedMappingsTable({ mappings, loadedCount, totalCount, diffs }: {
+function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData, onDump, dumpDisabled }: {
   mappings: SharedMapping[];
   loadedCount: number;
-  totalCount: number;
+  loading: boolean;
   diffs?: SharedMappingDiff[] | null;
+  smapsData: Map<number, SmapsAggregated[]>;
+  onDump: (pid: number, processName: string, label: string, regions: { addrStart: string; addrEnd: string }[]) => void;
+  dumpDisabled: boolean;
 }) {
   const [sortField, setSortField] = useState<SmapsSortFieldType | "processCount">("pssKb");
   const [sortAsc, setSortAsc] = useState(false);
@@ -353,14 +356,12 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount, diffs }: {
     return t;
   }, [mappings, diffs]);
 
-  const loading = loadedCount < totalCount;
-
   return (
     <div className="mt-4">
       <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">
         Shared Mappings
         <span className="font-normal ml-2">
-          ({mappings.length} mappings across {loadedCount} processes{loading ? ` of ${totalCount}` : ""})
+          ({mappings.length} mappings across {loadedCount} processes)
         </span>
         {loading && <span className="ml-2 text-sky-600 animate-pulse">loading{"\u2026"}</span>}
       </h3>
@@ -455,10 +456,22 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount, diffs }: {
                         </td>
                       ))}
                     </tr>
-                    {m.processes.map(p => (
+                    {m.processes.map(p => {
+                      const procAgg = smapsData.get(p.pid);
+                      const matchedGroup = procAgg?.find(g => g.name === m.name);
+                      const regions = matchedGroup?.entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }));
+                      return (
                       <tr key={p.pid} className="border-t border-stone-50 hover:bg-stone-100">
                         <td className="py-0.5 px-2 pl-6 text-[10px] text-stone-600 whitespace-nowrap">
-                          {p.name} <span className="text-stone-400">({p.pid})</span>
+                          <div className="flex items-center gap-1">
+                            <span>{p.name} <span className="text-stone-400">({p.pid})</span></span>
+                            <button
+                              className="text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300 shrink-0"
+                              disabled={dumpDisabled || !regions?.length}
+                              title={`Dump ${m.name} from ${p.name} (${p.pid})`}
+                              onClick={() => regions && onDump(p.pid, p.name, m.name, regions)}
+                            >dump</button>
+                          </div>
                         </td>
                         <td />
                         {SMAPS_COLUMNS.map(([f]) => (
@@ -467,7 +480,8 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount, diffs }: {
                           </td>
                         ))}
                       </tr>
-                    ))}
+                      );
+                    })}
                   </>
                 )}
               </Fragment>
@@ -482,20 +496,23 @@ function SharedMappingsTable({ mappings, loadedCount, totalCount, diffs }: {
 
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
-type SortField = "pssKb" | "rssKb" | "javaHeapKb" | "nativeHeapKb" | "graphicsKb" | "codeKb"
-  | "deltaPssKb" | "deltaRssKb" | "deltaJavaHeapKb" | "deltaNativeHeapKb" | "deltaGraphicsKb" | "deltaCodeKb";
+type SortField = "pssKb" | "rssKb" | "privateDirtyKb" | "privateCleanKb" | "sharedDirtyKb" | "sharedCleanKb" | "swapKb";
 
-const DELTA_FIELDS: Record<string, keyof ProcessDiff> = {
-  deltaPssKb: "deltaPssKb", deltaRssKb: "deltaRssKb",
-  deltaJavaHeapKb: "deltaJavaHeapKb", deltaNativeHeapKb: "deltaNativeHeapKb",
-  deltaGraphicsKb: "deltaGraphicsKb", deltaCodeKb: "deltaCodeKb",
-};
+// Process table columns shown when rollup data is available
+const ROLLUP_COLUMNS: [SortField, string][] = [
+  ["rssKb", "RSS"], ["pssKb", "PSS"],
+  ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
+  ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
+  ["swapKb", "Swap"],
+];
 
-const VALUE_TO_DELTA: Record<string, SortField> = {
-  pssKb: "deltaPssKb", rssKb: "deltaRssKb",
-  javaHeapKb: "deltaJavaHeapKb", nativeHeapKb: "deltaNativeHeapKb",
-  graphicsKb: "deltaGraphicsKb", codeKb: "deltaCodeKb",
-};
+/** Get a sortable value from either rollup data or ProcessInfo fallback. */
+function getFieldValue(p: ProcessInfo, field: SortField, rollup?: SmapsRollup): number {
+  if (rollup) return rollup[field as keyof SmapsRollup] as number;
+  if (field === "pssKb") return p.pssKb;
+  if (field === "rssKb") return p.rssKb;
+  return 0;
+}
 
 
 function CaptureView({ onCaptured, onVmaDump, conn }: {
@@ -527,9 +544,20 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   const vmaDumpAbortRef = useRef<AbortController | null>(null);
   const [vmaDumpStatus, setVmaDumpStatus] = useState<string | null>(null);
 
-  // Smaps — fetched alongside meminfo enrichment (root-only)
-  const [smapsData, setSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
+  // Smaps rollup — fast batch fetch (root-only)
+  const [smapsRollups, setSmapsRollups] = useState<Map<number, SmapsRollup>>(new Map());
   const [globalMemInfo, setGlobalMemInfo] = useState<GlobalMemInfo | null>(null);
+  // Java PIDs — from dumpsys meminfo, used to show Java dump button only for managed processes
+  const [javaPids, setJavaPids] = useState<Set<number>>(new Set());
+
+  // Full smaps — fetched on demand per process or via "Scan All"
+  const [smapsData, setSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
+  const smapsFetchAbortRef = useRef<AbortController | null>(null);
+  const [smapsFetchPid, setSmapsFetchPid] = useState<number | null>(null);
+  const [scanStatus, setScanStatus] = useState<string | null>(null);
+  const [scanProgress, setScanProgress] = useState<{ done: number; total: number } | null>(null);
+
+  // Smaps expansion / sort state
   const [expandedSmapsPid, setExpandedSmapsPid] = useState<number | null>(null);
   const [expandedSmapsGroup, setExpandedSmapsGroup] = useState<string | null>(null);
   type SmapsSortField = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
@@ -546,6 +574,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   const [processDiffs, setProcessDiffs] = useState<ProcessDiff[] | null>(null);
   const [globalMemInfoDiff, setGlobalMemInfoDiff] = useState<GlobalMemInfoDiff | null>(null);
   const [prevSmapsData, setPrevSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
+  const [prevSmapsRollups, setPrevSmapsRollups] = useState<Map<number, SmapsRollup>>(new Map());
   const diffTriggeredRef = useRef(false);
 
   const clearDiff = useCallback(() => {
@@ -555,6 +584,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     setProcessDiffs(null);
     setGlobalMemInfoDiff(null);
     setPrevSmapsData(new Map());
+    setPrevSmapsRollups(new Map());
     diffTriggeredRef.current = false;
   }, []);
 
@@ -586,6 +616,15 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     setCaptureProgress(null);
   }, []);
 
+  const cancelSmapsFetch = useCallback(() => {
+    if (!smapsFetchAbortRef.current) return;
+    smapsFetchAbortRef.current.abort();
+    smapsFetchAbortRef.current = null;
+    setSmapsFetchPid(null);
+    setScanStatus(null);
+    setScanProgress(null);
+  }, []);
+
   const cancelVmaDump = useCallback(() => {
     if (!vmaDumpAbortRef.current) return;
     vmaDumpAbortRef.current.abort();
@@ -596,66 +635,70 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   const refreshProcesses = useCallback(async () => {
     if (!conn.connected) return;
     cancelEnrichment();
-    // Normal refresh clears diff state; handleDiff sets the flag before calling us
+    cancelSmapsFetch();
     if (!diffTriggeredRef.current) clearDiff();
     diffTriggeredRef.current = false;
     const ac = new AbortController();
     enrichAbortRef.current = ac;
     setEnrichStatus("Fetching process list\u2026");
     setEnrichProgress(null);
+    setSmapsRollups(new Map());
     setSmapsData(new Map());
     setExpandedSmapsPid(null);
     setExpandedSmapsGroup(null);
     setGlobalMemInfo(null);
+    setJavaPids(new Set());
     setError(null);
     try {
-      const result = await conn.getProcessList(ac.signal);
-      const list = result.list;
-      if (ac.signal.aborted) return;
-      // Show process list immediately, then enrich in background
-      setProcesses(list);
-      if (result.globalMemInfo) setGlobalMemInfo(result.globalMemInfo);
-      // Fetch supplementary data in parallel (non-blocking for first render)
-      if (!ac.signal.aborted) {
-        const supplementary: Promise<void>[] = [];
-        if (result.globalMemInfo && conn.isRoot) {
-          supplementary.push(conn.getProcMeminfo(ac.signal).then(procInfo => {
-            if (ac.signal.aborted) return;
-            setGlobalMemInfo(gmi => gmi ? { ...gmi, memAvailableKb: procInfo.memAvailableKb ?? 0, buffersKb: procInfo.buffersKb ?? 0, cachedKb: procInfo.cachedKb ?? 0 } : gmi);
-          }).catch(() => {}));
+      if (conn.isRoot) {
+        // Root fast path: ps + smaps_rollup (two commands, no dumpsys)
+        const { list, rollups, javaPids: jp } = await conn.getProcessesFromProc(ac.signal);
+        if (ac.signal.aborted) return;
+        setProcesses(list);
+        setSmapsRollups(rollups);
+        setJavaPids(jp);
+
+        // Background: dumpsys meminfo -c for OOM labels + global mem info
+        if (!ac.signal.aborted) {
+          try {
+            const memResult = await conn.getProcessList(ac.signal);
+            if (!ac.signal.aborted) {
+              if (memResult.globalMemInfo) setGlobalMemInfo(memResult.globalMemInfo);
+              const memByPid = new Map(memResult.list.map(p => [p.pid, p]));
+              setProcesses(prev => (prev ?? []).map(p => {
+                const mp = memByPid.get(p.pid);
+                return mp ? { ...p, oomLabel: mp.oomLabel } : p;
+              }));
+            }
+          } catch {}
         }
-        if (!conn.isRoot) {
-          supplementary.push(conn.getDebuggablePackages(ac.signal).then(debuggable => {
-            if (ac.signal.aborted) return;
-            for (const p of list) p.debuggable = debuggable.has(p.name);
-            setProcesses([...list]);
-          }).catch(() => {}));
+
+        // /proc/meminfo for detailed global stats
+        if (!ac.signal.aborted) {
+          try {
+            const procInfo = await conn.getProcMeminfo(ac.signal);
+            if (!ac.signal.aborted) {
+              setGlobalMemInfo(gmi => gmi ? { ...gmi, memAvailableKb: procInfo.memAvailableKb ?? 0, buffersKb: procInfo.buffersKb ?? 0, cachedKb: procInfo.cachedKb ?? 0 } : gmi);
+            }
+          } catch {}
         }
-        await Promise.all(supplementary);
-      }
-      // Single per-process pass: enrich meminfo (if needed) + smaps (if root).
-      // Each process is fully ready before moving to the next.
-      const needsMeminfo = !result.hasBreakdown;
-      const needsSmaps = conn.isRoot;
-      if (needsMeminfo || needsSmaps) {
-        await conn.enrichPerProcess(
-          list,
-          { meminfo: needsMeminfo, smaps: needsSmaps },
-          (done, total, current) => {
-            if (ac.signal.aborted) return;
-            setEnrichStatus(current);
-            setEnrichProgress({ done, total });
-          },
-          () => {
-            if (ac.signal.aborted) return;
-            setProcesses([...list]);
-          },
-          (pid, data) => {
-            if (ac.signal.aborted) return;
-            setSmapsData(prev => new Map(prev).set(pid, data));
-          },
-          ac.signal,
-        );
+      } else {
+        // Non-root: dumpsys meminfo only
+        const result = await conn.getProcessList(ac.signal);
+        if (ac.signal.aborted) return;
+        setProcesses(result.list);
+        setJavaPids(result.javaPids);
+        if (result.globalMemInfo) setGlobalMemInfo(result.globalMemInfo);
+
+        if (!ac.signal.aborted) {
+          try {
+            const debuggable = await conn.getDebuggablePackages(ac.signal);
+            if (!ac.signal.aborted) {
+              for (const p of result.list) p.debuggable = debuggable.has(p.name);
+              setProcesses([...result.list]);
+            }
+          } catch {}
+        }
       }
     } catch (e) {
       if (ac.signal.aborted) return;
@@ -668,18 +711,76 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
         setEnrichProgress(null);
       }
     }
-  }, [cancelEnrichment, clearDiff]);
+  }, [cancelEnrichment, cancelSmapsFetch, clearDiff]);
+
+  // On-demand smaps fetch for a single process
+  const fetchSmapsOnDemand = useCallback(async (pid: number) => {
+    if (smapsData.has(pid) || !conn.connected || !conn.isRoot) return;
+    cancelSmapsFetch();
+    const ac = new AbortController();
+    smapsFetchAbortRef.current = ac;
+    setSmapsFetchPid(pid);
+    try {
+      const entries = await conn.getSmapsForPid(pid, ac.signal);
+      if (ac.signal.aborted) return;
+      if (entries.length > 0) {
+        setSmapsData(prev => new Map(prev).set(pid, aggregateSmaps(entries)));
+      }
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+    } finally {
+      if (smapsFetchAbortRef.current === ac) {
+        smapsFetchAbortRef.current = null;
+        setSmapsFetchPid(null);
+      }
+    }
+  }, [conn, smapsData, cancelSmapsFetch]);
+
+  // Scan all processes for full smaps data (populates shared mappings table)
+  const scanAllSmaps = useCallback(async () => {
+    if (!conn.connected || !conn.isRoot || !processes) return;
+    cancelSmapsFetch();
+    const ac = new AbortController();
+    smapsFetchAbortRef.current = ac;
+    setScanStatus("Scanning VMAs\u2026");
+    setScanProgress(null);
+    try {
+      await conn.fetchAllSmaps(
+        processes,
+        (pid, data) => {
+          if (ac.signal.aborted) return;
+          setSmapsData(prev => new Map(prev).set(pid, data));
+        },
+        (done, total, name) => {
+          if (ac.signal.aborted) return;
+          setScanStatus(name || "Scanning VMAs\u2026");
+          setScanProgress({ done, total });
+        },
+        ac.signal,
+      );
+    } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (ac.signal.aborted) return;
+      setError(e instanceof Error ? e.message : "VMA scan failed");
+    } finally {
+      if (smapsFetchAbortRef.current === ac) {
+        smapsFetchAbortRef.current = null;
+        setScanStatus(null);
+        setScanProgress(null);
+      }
+    }
+  }, [conn, processes, cancelSmapsFetch]);
 
   const handleDiff = useCallback(() => {
     if (!processes) return;
-    // Deep copy current state as baseline (enrichment mutates in place)
     setPrevProcesses(processes.map(p => ({ ...p })));
     if (globalMemInfo) setPrevGlobalMemInfo({ ...globalMemInfo });
     setPrevSmapsData(new Map(smapsData));
+    setPrevSmapsRollups(new Map(smapsRollups));
     setDiffMode(true);
     diffTriggeredRef.current = true;
     refreshProcesses();
-  }, [processes, globalMemInfo, smapsData, refreshProcesses]);
+  }, [processes, globalMemInfo, smapsData, smapsRollups, refreshProcesses]);
 
   useEffect(() => {
     if (connected) refreshProcesses();
@@ -705,8 +806,8 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   const handleCapture = useCallback(async (overridePid?: number) => {
     const pid = overridePid ?? selectedPid;
     if (pid === null || capturing) return;
-    // Cancel enrichment (includes smaps) — ADB device handles one command at a time
     cancelEnrichment();
+    cancelSmapsFetch();
     if (overridePid !== undefined) setSelectedPid(overridePid);
     const ac = new AbortController();
     captureAbortRef.current = ac;
@@ -762,6 +863,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   ) => {
     if (!connected || vmaDumpStatus) return;
     cancelEnrichment();
+    cancelSmapsFetch();
     const ac = new AbortController();
     vmaDumpAbortRef.current = ac;
     try {
@@ -787,53 +889,46 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
 
   const handleDisconnect = useCallback(() => {
     cancelEnrichment();
+    cancelSmapsFetch();
     cancelCapture();
     cancelVmaDump();
     conn.disconnect();
     setConnected(false);
-    // Keep processes/smaps/diff data visible — user can refresh to reconnect
     setError(null);
     setEnrichStatus(null);
     setEnrichProgress(null);
     setCapturing(false);
     setCaptureStatus("");
     setCaptureProgress(null);
-  }, [cancelEnrichment, cancelCapture, cancelVmaDump]);
+  }, [cancelEnrichment, cancelSmapsFetch, cancelCapture, cancelVmaDump]);
 
-  // Clean up on unmount
   useEffect(() => {
-    return () => { cancelEnrichment(); cancelCapture(); cancelVmaDump(); conn.disconnect(); };
+    return () => { cancelEnrichment(); cancelSmapsFetch(); cancelCapture(); cancelVmaDump(); conn.disconnect(); };
   }, [cancelEnrichment, cancelCapture, cancelVmaDump]);
 
   const sorted = useMemo(() => {
     if (!processes) return null;
     const copy = [...processes];
-    // For non-diff mode, delta sort fields fall back to the base field
-    const field = (DELTA_FIELDS[sortField] ? sortField.replace("delta", "").replace(/^./, c => c.toLowerCase()) : sortField) as keyof ProcessInfo;
-    copy.sort((a, b) => sortAsc ? (a[field] as number) - (b[field] as number) : (b[field] as number) - (a[field] as number));
+    copy.sort((a, b) => {
+      const aVal = getFieldValue(a, sortField, smapsRollups.get(a.pid));
+      const bVal = getFieldValue(b, sortField, smapsRollups.get(b.pid));
+      return sortAsc ? aVal - bVal : bVal - aVal;
+    });
     return copy;
-  }, [processes, sortField, sortAsc]);
+  }, [processes, sortField, sortAsc, smapsRollups]);
 
   const sortedDiffs = useMemo(() => {
     if (!processDiffs) return null;
     const copy = [...processDiffs];
-    const deltaKey = DELTA_FIELDS[sortField];
     copy.sort((a, b) => {
-      if (deltaKey) {
-        // Sort by delta field
-        const aVal = a[deltaKey] as number;
-        const bVal = b[deltaKey] as number;
-        return sortAsc ? aVal - bVal : bVal - aVal;
-      }
-      // Sort by current value
-      const aVal = a.current[sortField as keyof ProcessInfo] as number;
-      const bVal = b.current[sortField as keyof ProcessInfo] as number;
+      const aVal = getFieldValue(a.current, sortField, smapsRollups.get(a.current.pid));
+      const bVal = getFieldValue(b.current, sortField, smapsRollups.get(b.current.pid));
       return sortAsc ? aVal - bVal : bVal - aVal;
     });
     return copy;
-  }, [processDiffs, sortField, sortAsc]);
+  }, [processDiffs, sortField, sortAsc, smapsRollups]);
 
-  // Cross-process shared mappings — recomputed incrementally as smapsData grows
+  // Cross-process shared mappings — from full smaps data (populated by Scan All or on-demand)
   const sharedMappings = useMemo(() => {
     if (smapsData.size === 0 || !processes) return null;
     return aggregateSharedMappings(smapsData, processes);
@@ -849,9 +944,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     return diffSharedMappings(prevSharedMappings, sharedMappings);
   }, [diffMode, sharedMappings, prevSharedMappings]);
 
-  const hasRss = processes ? processes.some(p => p.rssKb > 0) : false;
-  // Show breakdown columns as soon as enrichment starts or any data arrives
-  const hasBreakdown = enrichStatus !== null || (processes ? processes.some(p => p.javaHeapKb > 0 || p.nativeHeapKb > 0 || p.graphicsKb > 0 || p.codeKb > 0) : false);
+  const hasRollup = true;
   const hasOomLabel = processes ? processes.some(p => p.oomLabel !== "") : false;
 
   const toggleSort = useCallback((field: SortField) => {
@@ -868,29 +961,6 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     if (vmaSortField === field) setVmaSortAsc(!vmaSortAsc);
     else { setVmaSortField(field); setVmaSortAsc(false); }
   }, [vmaSortField, vmaSortAsc]);
-
-  // Per-process VMA diff summary: count added/removed/changed mappings at a glance
-  const smapsDiffSummary = useMemo(() => {
-    if (!diffMode || !processDiffs) return null;
-    const counts = new Map<number, { added: number; removed: number; changed: number; deltaPssKb: number }>();
-    for (const d of processDiffs) {
-      const pid = d.current.pid;
-      if (d.status === "removed") continue;
-      if (!prevSmapsData.has(pid) || !smapsData.has(pid)) continue;
-      const diffs = diffSmaps(prevSmapsData.get(pid)!, smapsData.get(pid)!);
-      let added = 0, removed = 0, changed = 0, deltaPssKb = 0;
-      for (const sd of diffs) {
-        if (sd.status === "added") added++;
-        else if (sd.status === "removed") removed++;
-        else if (sd.deltaPssKb !== 0) changed++;
-        deltaPssKb += sd.deltaPssKb;
-      }
-      if (added > 0 || removed > 0 || changed > 0) {
-        counts.set(pid, { added, removed, changed, deltaPssKb });
-      }
-    }
-    return counts;
-  }, [diffMode, processDiffs, prevSmapsData, smapsData]);
 
   const hasWebUsb = typeof navigator !== "undefined" && "usb" in navigator;
 
@@ -940,8 +1010,8 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                 capturing ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
               }`}
               onClick={() => handleCapture()}
-              disabled={!connected || selectedPid === null || capturing}
-              title={selectedPid === null ? "Select a process first" : capturing ? "Dump in progress" : "Dump Java heap"}
+              disabled={!connected || selectedPid === null || capturing || !javaPids.has(selectedPid!)}
+              title={selectedPid === null ? "Select a process first" : !javaPids.has(selectedPid) ? "Not a Java process" : capturing ? "Dump in progress" : "Dump Java heap"}
             >
               {capturing ? (captureStatus || "Dumping\u2026") : "Java dump"}
             </button>
@@ -1012,7 +1082,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
             </div>
           )}
 
-          {/* Enrichment / smaps progress */}
+          {/* Enrichment progress */}
           {enrichStatus && (
             <div className="mb-2 text-xs text-stone-500">
               <div className="flex items-center gap-2 mb-1">
@@ -1023,6 +1093,22 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
               {enrichProgress && enrichProgress.total > 0 && (
                 <div className="h-1 bg-stone-100 rounded overflow-hidden">
                   <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* VMA scan progress */}
+          {scanStatus && (
+            <div className="mb-2 text-xs text-stone-500">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="truncate">Scanning: {scanStatus}</span>
+                {scanProgress && <span className="text-stone-400 whitespace-nowrap">{scanProgress.done}/{scanProgress.total}</span>}
+                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelSmapsFetch}>Cancel</button>
+              </div>
+              {scanProgress && scanProgress.total > 0 && (
+                <div className="h-1 bg-stone-100 rounded overflow-hidden">
+                  <div className="h-full bg-amber-500 transition-all" style={{ width: `${(scanProgress.done / scanProgress.total) * 100}%` }} />
                 </div>
               )}
             </div>
@@ -1085,100 +1171,53 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14">PID</th>
                     <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">Process</th>
                     {hasOomLabel && <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium">State</th>}
-                    {(() => {
-                      const isDiff = diffMode && sortedDiffs !== null;
-                      const fields: [SortField, string][] = [
-                        ...(hasRss ? [["rssKb", "RSS"] as [SortField, string]] : []),
-                        ["pssKb", "PSS"],
-                        ...(hasBreakdown ? [
-                          ["javaHeapKb", "Java"] as [SortField, string],
-                          ["nativeHeapKb", "Native"] as [SortField, string],
-                          ["graphicsKb", "Graphics"] as [SortField, string],
-                          ["codeKb", "Code"] as [SortField, string],
-                        ] : []),
-                      ];
-                      return fields.flatMap(([field, label]) => {
-                        const th = (
-                          <th
-                            key={field}
-                            className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
-                            onClick={() => toggleSort(field)}
-                          >
-                            {label} {sortField === field ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
-                          </th>
-                        );
-                        if (!isDiff) return [th];
-                        const deltaField = VALUE_TO_DELTA[field];
-                        return [th, (
-                          <th
-                            key={`d-${field}`}
-                            className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
-                            onClick={() => toggleSort(deltaField)}
-                          >
-                            {"\u0394"} {sortField === deltaField ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
-                          </th>
-                        )];
-                      });
-                    })()}
+                    {(hasRollup ? ROLLUP_COLUMNS : [["pssKb", "PSS"] as [SortField, string]]).map(([field, label]) => (
+                      <th
+                        key={field}
+                        className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
+                        onClick={() => toggleSort(field)}
+                      >
+                        {label} {sortField === field ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {/* Totals row */}
                   {(() => {
-                    const isDiff = diffMode && sortedDiffs !== null;
-                    const rows = isDiff ? sortedDiffs! : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }));
-                    const tot = { pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
-                      deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 };
-                    for (const d of rows) {
-                      if (d.status !== "removed") {
-                        tot.pssKb += d.current.pssKb; tot.rssKb += d.current.rssKb;
-                        tot.javaHeapKb += d.current.javaHeapKb; tot.nativeHeapKb += d.current.nativeHeapKb;
-                        tot.graphicsKb += d.current.graphicsKb; tot.codeKb += d.current.codeKb;
-                      }
-                      tot.deltaPssKb += d.deltaPssKb; tot.deltaRssKb += d.deltaRssKb;
-                      const pu = d.prev != null && d.prev.javaHeapKb === 0 && d.prev.nativeHeapKb === 0 && d.prev.graphicsKb === 0 && d.prev.codeKb === 0;
-                      if (!pu) {
-                        tot.deltaJavaHeapKb += d.deltaJavaHeapKb; tot.deltaNativeHeapKb += d.deltaNativeHeapKb;
-                        tot.deltaGraphicsKb += d.deltaGraphicsKb; tot.deltaCodeKb += d.deltaCodeKb;
-                      }
-                    }
-                    const cols: { value: number; delta: number; key: string }[] = [];
-                    if (hasRss) cols.push({ value: tot.rssKb, delta: tot.deltaRssKb, key: "rss" });
-                    cols.push({ value: tot.pssKb, delta: tot.deltaPssKb, key: "pss" });
-                    if (hasBreakdown) {
-                      cols.push({ value: tot.javaHeapKb, delta: tot.deltaJavaHeapKb, key: "java" });
-                      cols.push({ value: tot.nativeHeapKb, delta: tot.deltaNativeHeapKb, key: "native" });
-                      cols.push({ value: tot.graphicsKb, delta: tot.deltaGraphicsKb, key: "graphics" });
-                      cols.push({ value: tot.codeKb, delta: tot.deltaCodeKb, key: "code" });
+                    const activeProcs = (sorted ?? []).filter(p => !(diffMode && sortedDiffs?.find(d => d.current.pid === p.pid && d.status === "removed")));
+                    const cols = hasRollup ? ROLLUP_COLUMNS : [["pssKb", "PSS"] as [SortField, string]];
+                    const totals: Record<string, number> = {};
+                    for (const [f] of cols) totals[f] = 0;
+                    for (const p of activeProcs) {
+                      const r = smapsRollups.get(p.pid);
+                      for (const [f] of cols) totals[f] += getFieldValue(p, f, r);
                     }
                     return (
                       <tr className="border-b-2 border-stone-300 font-semibold bg-stone-50">
-                        <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 4 : 3}>Total ({rows.filter(d => d.status !== "removed").length})</td>
-                        {cols.flatMap(({ value, delta, key }) => {
-                          const valTd = (
-                            <td key={key} className="py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem]">
-                              {fmtSize(value * 1024)}
-                            </td>
-                          );
-                          if (!isDiff) return [valTd];
-                          return [valTd, (
-                            <td key={`d-${key}`} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] text-xs font-normal ${deltaBgClass(delta)} ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
-                              {delta !== 0 ? fmtDelta(delta) : ""}
-                            </td>
-                          )];
-                        })}
+                        <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 4 : 3}>Total ({activeProcs.length})</td>
+                        {cols.map(([f]) => (
+                          <td key={f} className="py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem]">
+                            {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
+                          </td>
+                        ))}
                       </tr>
                     );
                   })()}
                   {(diffMode && sortedDiffs ? sortedDiffs : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }))).map(d => {
                     const p = d.current;
-                    const canCapture = p.javaHeapKb > 0 && (conn.isRoot || p.debuggable !== false);
+                    const isJava = javaPids.has(p.pid);
+                    const canCapture = isJava && (conn.isRoot || p.debuggable !== false);
                     const isCapturingThis = capturing && selectedPid === p.pid;
                     const hasSmaps = smapsData.has(p.pid);
-                    const isSmapsExpanded = expandedSmapsPid === p.pid && hasSmaps;
+                    const isExpanded = expandedSmapsPid === p.pid;
+                    const isSmapsExpanded = isExpanded && hasSmaps;
+                    const isSmapsLoading = isExpanded && !hasSmaps && smapsFetchPid === p.pid;
                     const isDiff = diffMode && sortedDiffs !== null;
-                    const numValueCols = 1 + (hasRss ? 1 : 0) + (hasBreakdown ? 4 : 0);
-                    const colCount = 3 + (hasOomLabel ? 1 : 0) + numValueCols + (isDiff ? numValueCols : 0);
+                    const cols = hasRollup ? ROLLUP_COLUMNS : [["pssKb", "PSS"] as [SortField, string]];
+                    const colCount = 3 + (hasOomLabel ? 1 : 0) + cols.length;
+                    const rollup = smapsRollups.get(p.pid);
+                    const prevRollup = prevSmapsRollups.get(p.pid);
                     const rowKey = `${d.status}-${p.pid}`;
                     return (
                     <Fragment key={rowKey}>
@@ -1190,54 +1229,36 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                       }`}
                       onClick={() => {
                         if (d.status === "removed") return;
-                        if (hasSmaps) {
-                          if (expandedSmapsPid === p.pid) {
-                            setExpandedSmapsPid(null);
-                            setExpandedSmapsGroup(null);
-                          } else {
-                            setExpandedSmapsPid(p.pid);
-                            setExpandedSmapsGroup(null);
+                        setSelectedPid(p.pid);
+                        if (isExpanded) {
+                          setExpandedSmapsPid(null);
+                          setExpandedSmapsGroup(null);
+                        } else if (conn.isRoot) {
+                          setExpandedSmapsPid(p.pid);
+                          setExpandedSmapsGroup(null);
+                          if (!hasSmaps && !capturing && !vmaDumpStatus) {
+                            fetchSmapsOnDemand(p.pid);
                           }
                         }
-                        setSelectedPid(p.pid);
                       }}
                     >
                       <td className="py-1 px-2 text-center whitespace-nowrap">
-                        {p.javaHeapKb > 0 && d.status !== "removed" && (
-                          canCapture ? (
-                            <button
-                              className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
-                              disabled={!connected || capturing}
-                              title={!connected ? "Disconnected" : capturing ? "Dump in progress" : "Dump Java heap"}
-                              onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
-                            >
-                              {isCapturingThis ? "\u2026" : "Java dump"}
-                            </button>
-                          ) : (
-                            <span className="text-xs text-stone-400" title="Only debuggable apps can be dumped on non-rooted devices">locked</span>
-                          )
+                        {d.status !== "removed" && canCapture && (
+                          <button
+                            className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap"
+                            disabled={!connected || capturing}
+                            title={!connected ? "Disconnected" : capturing ? "Dump in progress" : "Dump Java heap"}
+                            onClick={e => { e.stopPropagation(); handleCapture(p.pid); }}
+                          >
+                            {isCapturingThis ? "\u2026" : "Java dump"}
+                          </button>
                         )}
                       </td>
                       <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">
-                        {hasSmaps && d.status !== "removed" ? (
-                          <span className="text-stone-400 mr-1">{isSmapsExpanded ? "\u25BC" : "\u25B6"}</span>
-                        ) : enrichProgress && d.status !== "removed" ? (
-                          <span className="text-stone-300 mr-1 text-[10px]">{"\u2026"}</span>
-                        ) : null}
+                        {conn.isRoot && d.status !== "removed" && (
+                          <span className="text-stone-400 mr-1">{isSmapsExpanded ? "\u25BC" : isSmapsLoading ? "\u2026" : "\u25B6"}</span>
+                        )}
                         {p.pid}
-                        {(() => {
-                          const sc = smapsDiffSummary?.get(p.pid);
-                          if (!sc) return null;
-                          const parts: string[] = [];
-                          if (sc.added) parts.push(`+${sc.added}`);
-                          if (sc.removed) parts.push(`-${sc.removed}`);
-                          if (sc.changed) parts.push(`${"\u0394"}${sc.changed}`);
-                          return (
-                            <span className="ml-1.5 text-[10px] text-stone-400" title={`VMA: ${parts.join(" ")} mappings${sc.deltaPssKb ? `, PSS ${fmtDelta(sc.deltaPssKb)}` : ""}`}>
-                              [{parts.join(" ")}]
-                            </span>
-                          );
-                        })()}
                       </td>
                       <td className={`py-1 px-2 text-stone-800 truncate max-w-[400px] ${d.status === "removed" ? "line-through" : ""}`} title={p.name}>
                         {p.name}
@@ -1257,39 +1278,28 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                           )}
                         </td>
                       )}
-                      {(() => {
-                        // Build the list of numeric columns with their current value and delta
-                        // Suppress breakdown deltas if prev wasn't enriched (all breakdown fields zero)
-                        const prevUnenriched = isDiff && d.prev != null &&
-                          d.prev.javaHeapKb === 0 && d.prev.nativeHeapKb === 0 && d.prev.graphicsKb === 0 && d.prev.codeKb === 0;
-                        const cols: { value: number; delta: number; key: string }[] = [];
-                        if (hasRss) cols.push({ value: p.rssKb, delta: d.deltaRssKb, key: "rss" });
-                        cols.push({ value: p.pssKb, delta: d.deltaPssKb, key: "pss" });
-                        if (hasBreakdown) {
-                          cols.push({ value: p.javaHeapKb, delta: d.deltaJavaHeapKb, key: "java" });
-                          cols.push({ value: p.nativeHeapKb, delta: d.deltaNativeHeapKb, key: "native" });
-                          cols.push({ value: p.graphicsKb, delta: d.deltaGraphicsKb, key: "graphics" });
-                          cols.push({ value: p.codeKb, delta: d.deltaCodeKb, key: "code" });
-                        }
-                        return cols.flatMap(({ value, delta, key }) => {
-                          const isBreakdownCol = key !== "rss" && key !== "pss";
-                          const skipDelta = isBreakdownCol && prevUnenriched;
-                          const effectiveDelta = skipDelta ? 0 : delta;
-                          const showDash = isBreakdownCol && value === 0 && (!isDiff || effectiveDelta === 0);
-                          const valTd = (
-                            <td key={key} className="py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem]">
-                              {showDash ? "\u2014" : fmtSize(value * 1024)}
-                            </td>
-                          );
-                          if (!isDiff) return [valTd];
-                          return [valTd, (
-                            <td key={`d-${key}`} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] text-xs ${deltaBgClass(effectiveDelta)} ${effectiveDelta > 0 ? "text-red-700" : effectiveDelta < 0 ? "text-green-700" : ""}`}>
-                              {effectiveDelta !== 0 ? fmtDelta(effectiveDelta) : ""}
-                            </td>
-                          )];
-                        });
-                      })()}
+                      {cols.map(([f]) => {
+                        const value = getFieldValue(p, f, rollup);
+                        const delta = isDiff && prevRollup && rollup ? rollup[f as keyof SmapsRollup] - prevRollup[f as keyof SmapsRollup] : 0;
+                        return (
+                          <td key={f} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] ${isDiff ? deltaBgClass(delta) : ""}`}>
+                            {value > 0 ? fmtSize(value * 1024) : "\u2014"}
+                            {isDiff && delta !== 0 && (
+                              <span className={`ml-1 text-[10px] ${delta > 0 ? "text-red-700" : "text-green-700"}`}>
+                                {fmtDelta(delta)}
+                              </span>
+                            )}
+                          </td>
+                        );
+                      })}
                     </tr>
+                    {isSmapsLoading && (
+                      <tr>
+                        <td colSpan={colCount} className="p-2 text-xs text-stone-400 animate-pulse border-t border-stone-200">
+                          Loading VMAs{"\u2026"}
+                        </td>
+                      </tr>
+                    )}
                     {isSmapsExpanded && d.status !== "removed" && (
                       <tr>
                         <td colSpan={colCount} className="p-0 border-t border-stone-200">
@@ -1321,13 +1331,30 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
             </div>
           )}
 
-          {sharedMappings && sharedMappings.length > 0 && (
-            <SharedMappingsTable
-              mappings={sharedMappings}
-              loadedCount={smapsData.size}
-              totalCount={processes?.length ?? 0}
-              diffs={sharedMappingDiffs}
-            />
+          {/* Scan All VMAs / Shared Mappings */}
+          {conn.isRoot && processes && processes.length > 0 && (
+            <div className="mt-4">
+              {smapsData.size < (processes?.length ?? 0) && (
+                <button
+                  className="text-xs text-sky-600 hover:text-sky-800 border border-sky-300 px-2 py-0.5 mb-2"
+                  onClick={scanStatus ? cancelSmapsFetch : scanAllSmaps}
+                  disabled={!connected || capturing || !!vmaDumpStatus}
+                >
+                  {scanStatus ? `Cancel Scan (${smapsData.size}/${processes?.length ?? 0})` : `Scan All VMAs (${smapsData.size}/${processes?.length ?? 0})`}
+                </button>
+              )}
+              {sharedMappings && sharedMappings.length > 0 && (
+                <SharedMappingsTable
+                  mappings={sharedMappings}
+                  loadedCount={smapsData.size}
+                  loading={scanStatus !== null}
+                  diffs={sharedMappingDiffs}
+                  smapsData={smapsData}
+                  onDump={handleVmaDump}
+                  dumpDisabled={!connected || !!vmaDumpStatus}
+                />
+              )}
+            </div>
           )}
 
         </div>

@@ -667,3 +667,67 @@ describe("AdbConnection.enrichPerProcess", () => {
     expect(mockDevice.shell).not.toHaveBeenCalled();
   });
 });
+
+// ─── Tests: getSmapsRollups ──────────────────────────────────────────────────
+
+describe("AdbConnection.getSmapsRollups", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fetches rollups for all PIDs in a single batch", async () => {
+    const { conn, mockDevice } = setupConnected();
+    (conn as any)._isRoot = true;
+    (conn as any)._suPrefix = "su 0";
+    mockDevice.shell.mockResolvedValueOnce(
+      `===PID:100===\nRss: 5000 kB\nPss: 3000 kB\nShared_Clean: 1000 kB\nShared_Dirty: 200 kB\nPrivate_Clean: 800 kB\nPrivate_Dirty: 1000 kB\nSwap: 50 kB\nSwapPss: 25 kB\n` +
+      `===PID:200===\nRss: 2000 kB\nPss: 1500 kB\nShared_Clean: 500 kB\nShared_Dirty: 0 kB\nPrivate_Clean: 500 kB\nPrivate_Dirty: 500 kB\nSwap: 0 kB\nSwapPss: 0 kB\n`
+    );
+
+    const result = await conn.getSmapsRollups([100, 200]);
+    expect(result.size).toBe(2);
+    expect(result.get(100)!.pssKb).toBe(3000);
+    expect(result.get(200)!.pssKb).toBe(1500);
+    expect(mockDevice.shell).toHaveBeenCalledTimes(1);
+    expect(mockDevice.shell.mock.calls[0][0]).toContain("for p in 100 200");
+  });
+
+  it("returns empty map when not root", async () => {
+    const { conn } = setupConnected();
+    (conn as any)._isRoot = false;
+    const result = await conn.getSmapsRollups([100, 200]);
+    expect(result.size).toBe(0);
+  });
+
+  it("returns empty map when device is null", async () => {
+    const conn = new AdbConnection();
+    const result = await conn.getSmapsRollups([100]);
+    expect(result.size).toBe(0);
+  });
+
+  it("returns empty map for empty pid list", async () => {
+    const { conn } = setupConnected();
+    (conn as any)._isRoot = true;
+    const result = await conn.getSmapsRollups([]);
+    expect(result.size).toBe(0);
+  });
+
+  it("throws AbortError when signal is pre-aborted", async () => {
+    const { conn } = setupConnected();
+    (conn as any)._isRoot = true;
+    (conn as any)._suPrefix = "su 0";
+    const ac = new AbortController();
+    ac.abort();
+    await expect(conn.getSmapsRollups([100], ac.signal)).rejects.toThrow("Aborted");
+  });
+
+  it("uses su -c variant when that prefix was detected", async () => {
+    const { conn, mockDevice } = setupConnected();
+    (conn as any)._isRoot = true;
+    (conn as any)._suPrefix = "su -c";
+    mockDevice.shell.mockResolvedValueOnce("===PID:1===\nRss: 100 kB\nPss: 50 kB\nShared_Clean: 0 kB\nShared_Dirty: 0 kB\nPrivate_Clean: 0 kB\nPrivate_Dirty: 50 kB\nSwap: 0 kB\nSwapPss: 0 kB\n");
+
+    await conn.getSmapsRollups([1]);
+    expect(mockDevice.shell.mock.calls[0][0]).toMatch(/^su -c '/);
+  });
+});

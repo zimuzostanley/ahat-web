@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSmaps, aggregateSmaps } from "./capture";
+import { parseSmaps, aggregateSmaps, parseSmapsRollups, parsePsOutput } from "./capture";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -248,5 +248,249 @@ describe("aggregateSmaps", () => {
 
   it("returns empty array for empty input", () => {
     expect(aggregateSmaps([])).toEqual([]);
+  });
+});
+
+// ─── parseSmapsRollups ────────────────────────────────────────────────────────
+
+const ROLLUP_SINGLE = `===PID:1234===
+Rss:               12000 kB
+Pss:                8000 kB
+Shared_Clean:       4000 kB
+Shared_Dirty:        500 kB
+Private_Clean:      2000 kB
+Private_Dirty:      1500 kB
+Swap:                100 kB
+SwapPss:              50 kB
+`;
+
+const ROLLUP_MULTI = `===PID:100===
+Rss:               50000 kB
+Pss:               30000 kB
+Shared_Clean:      20000 kB
+Shared_Dirty:       1000 kB
+Private_Clean:      5000 kB
+Private_Dirty:      4000 kB
+Swap:                200 kB
+SwapPss:             100 kB
+===PID:200===
+Rss:                8000 kB
+Pss:                6000 kB
+Shared_Clean:       2000 kB
+Shared_Dirty:          0 kB
+Private_Clean:      3000 kB
+Private_Dirty:      1000 kB
+Swap:                  0 kB
+SwapPss:               0 kB
+===PID:300===
+Rss:                1024 kB
+Pss:                 512 kB
+Shared_Clean:        256 kB
+Shared_Dirty:        128 kB
+Private_Clean:        64 kB
+Private_Dirty:        64 kB
+Swap:                 32 kB
+SwapPss:              16 kB
+`;
+
+describe("parseSmapsRollups", () => {
+  it("parses a single PID rollup", () => {
+    const result = parseSmapsRollups(ROLLUP_SINGLE);
+    expect(result.size).toBe(1);
+    const r = result.get(1234)!;
+    expect(r).toBeDefined();
+    expect(r.rssKb).toBe(12000);
+    expect(r.pssKb).toBe(8000);
+    expect(r.sharedCleanKb).toBe(4000);
+    expect(r.sharedDirtyKb).toBe(500);
+    expect(r.privateCleanKb).toBe(2000);
+    expect(r.privateDirtyKb).toBe(1500);
+    expect(r.swapKb).toBe(100);
+    expect(r.swapPssKb).toBe(50);
+  });
+
+  it("parses multiple PID rollups", () => {
+    const result = parseSmapsRollups(ROLLUP_MULTI);
+    expect(result.size).toBe(3);
+    expect(result.get(100)!.pssKb).toBe(30000);
+    expect(result.get(200)!.pssKb).toBe(6000);
+    expect(result.get(300)!.pssKb).toBe(512);
+  });
+
+  it("skips PIDs with no data (e.g. process exited)", () => {
+    const output = `===PID:100===
+Rss:  1000 kB
+Pss:   500 kB
+Shared_Clean: 200 kB
+Shared_Dirty: 0 kB
+Private_Clean: 100 kB
+Private_Dirty: 200 kB
+Swap: 0 kB
+SwapPss: 0 kB
+===PID:999===
+===PID:200===
+Rss:  2000 kB
+Pss:  1000 kB
+Shared_Clean: 500 kB
+Shared_Dirty: 100 kB
+Private_Clean: 200 kB
+Private_Dirty: 200 kB
+Swap: 0 kB
+SwapPss: 0 kB
+`;
+    const result = parseSmapsRollups(output);
+    expect(result.size).toBe(2);
+    expect(result.has(100)).toBe(true);
+    expect(result.has(200)).toBe(true);
+    expect(result.has(999)).toBe(false);
+  });
+
+  it("returns empty map for empty input", () => {
+    expect(parseSmapsRollups("").size).toBe(0);
+  });
+
+  it("returns empty map for garbage input", () => {
+    expect(parseSmapsRollups("hello\nworld\n").size).toBe(0);
+  });
+
+  it("handles output without trailing newline", () => {
+    const output = `===PID:42===
+Rss:  100 kB
+Pss:   80 kB
+Shared_Clean: 20 kB
+Shared_Dirty: 0 kB
+Private_Clean: 30 kB
+Private_Dirty: 30 kB
+Swap: 0 kB
+SwapPss: 0 kB`;
+    const result = parseSmapsRollups(output);
+    expect(result.size).toBe(1);
+    expect(result.get(42)!.pssKb).toBe(80);
+  });
+
+  it("ignores lines before first PID marker", () => {
+    const output = `Rss: 9999 kB
+Pss: 9999 kB
+===PID:1===
+Rss:  100 kB
+Pss:   50 kB
+Shared_Clean: 0 kB
+Shared_Dirty: 0 kB
+Private_Clean: 0 kB
+Private_Dirty: 50 kB
+Swap: 0 kB
+SwapPss: 0 kB
+`;
+    const result = parseSmapsRollups(output);
+    expect(result.size).toBe(1);
+    expect(result.get(1)!.pssKb).toBe(50);
+  });
+
+  it("ignores extra fields like Size and KernelPageSize", () => {
+    const output = `===PID:10===
+Size:              100000 kB
+KernelPageSize:         4 kB
+Rss:                 5000 kB
+Pss:                 3000 kB
+Shared_Clean:        1000 kB
+Shared_Dirty:         500 kB
+Private_Clean:        800 kB
+Private_Dirty:        700 kB
+Referenced:          5000 kB
+Anonymous:           1200 kB
+Swap:                  50 kB
+SwapPss:               25 kB
+Locked:                 0 kB
+`;
+    const result = parseSmapsRollups(output);
+    expect(result.size).toBe(1);
+    const r = result.get(10)!;
+    expect(r.rssKb).toBe(5000);
+    expect(r.pssKb).toBe(3000);
+    expect(r.swapPssKb).toBe(25);
+  });
+
+  it("handles header line from smaps_rollup (address range)", () => {
+    const output = `===PID:555===
+00400000-7fff0000 ---p 00000000 00:00 0                          [rollup]
+Rss:                 2048 kB
+Pss:                 1024 kB
+Shared_Clean:         512 kB
+Shared_Dirty:         256 kB
+Private_Clean:        128 kB
+Private_Dirty:        128 kB
+Swap:                   0 kB
+SwapPss:                0 kB
+`;
+    const result = parseSmapsRollups(output);
+    expect(result.size).toBe(1);
+    expect(result.get(555)!.pssKb).toBe(1024);
+  });
+
+  it("extracts process name from marker line", () => {
+    const output = `===PID:1234===com.android.systemui
+Rss:  5000 kB
+Pss:  3000 kB
+Shared_Clean: 1000 kB
+Shared_Dirty: 200 kB
+Private_Clean: 800 kB
+Private_Dirty: 1000 kB
+Swap: 0 kB
+SwapPss: 0 kB
+===PID:5===init
+Rss:  100 kB
+Pss:  100 kB
+Shared_Clean: 0 kB
+Shared_Dirty: 0 kB
+Private_Clean: 0 kB
+Private_Dirty: 100 kB
+Swap: 0 kB
+SwapPss: 0 kB
+`;
+    const result = parseSmapsRollups(output);
+    expect(result.size).toBe(2);
+    expect(result.get(1234)!.name).toBe("com.android.systemui");
+    expect(result.get(1234)!.pssKb).toBe(3000);
+    expect(result.get(5)!.name).toBe("init");
+    expect(result.get(5)!.pssKb).toBe(100);
+  });
+
+  it("name is undefined when marker has no name", () => {
+    const result = parseSmapsRollups(ROLLUP_SINGLE);
+    expect(result.get(1234)!.name).toBeUndefined();
+  });
+});
+
+// ─── parsePsOutput ────────────────────────────────────────────────────────────
+
+describe("parsePsOutput", () => {
+  it("parses typical ps -A output", () => {
+    const output = `  PID ARGS
+    1 init
+  123 com.android.systemui
+  456 /system/bin/logd
+  789 [kworker/0:1]
+`;
+    const result = parsePsOutput(output);
+    expect(result).toEqual([
+      { pid: 1, name: "init" },
+      { pid: 123, name: "com.android.systemui" },
+      { pid: 456, name: "/system/bin/logd" },
+      { pid: 789, name: "[kworker/0:1]" },
+    ]);
+  });
+
+  it("skips header line", () => {
+    const result = parsePsOutput("PID ARGS\n100 foo\n");
+    expect(result).toEqual([{ pid: 100, name: "foo" }]);
+  });
+
+  it("returns empty for empty input", () => {
+    expect(parsePsOutput("")).toEqual([]);
+  });
+
+  it("handles args with spaces", () => {
+    const result = parsePsOutput("  PID ARGS\n  42 /usr/bin/app --flag value\n");
+    expect(result).toEqual([{ pid: 42, name: "/usr/bin/app --flag value" }]);
   });
 });

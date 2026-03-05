@@ -67,6 +67,18 @@ export interface SmapsAggregated {
   entries: SmapsEntry[];
 }
 
+/** Per-process smaps rollup summary from /proc/<pid>/smaps_rollup. */
+export interface SmapsRollup {
+  rssKb: number;
+  pssKb: number;
+  sharedCleanKb: number;
+  sharedDirtyKb: number;
+  privateCleanKb: number;
+  privateDirtyKb: number;
+  swapKb: number;
+  swapPssKb: number;
+}
+
 /** Per-process contribution to a cross-process shared mapping. */
 export interface SharedMappingProcess {
   pid: number;
@@ -156,10 +168,16 @@ export type CapturePhase =
  */
 export function parseMemInfo(output: string): ProcessInfo[] {
   const compact = parseCompactFormat(output);
-  if (compact.length > 0) return compact;
+  if (compact.list.length > 0) return compact.list;
   const detailed = parseDetailedSections(output);
   if (detailed.length > 0) return detailed;
   return parseSummarySections(output);
+}
+
+/** Extract PIDs of Java/ART processes from compact meminfo output.
+ *  A process is Java if it has a "Dalvik Heap" category line. */
+export function parseJavaPids(output: string): Set<number> {
+  return parseCompactFormat(output).javaPids;
 }
 
 // ─── Compact format parser (`dumpsys meminfo -c`) ────────────────────────────
@@ -171,11 +189,12 @@ export function parseMemInfo(output: string): ProcessInfo[] {
 // Or on newer Android:
 //   cat,<category>,<pss>,...
 
-function parseCompactFormat(output: string): ProcessInfo[] {
+function parseCompactFormat(output: string): { list: ProcessInfo[]; javaPids: Set<number> } {
   // Quick check: compact format starts with "time," or has "proc," lines
-  if (!output.includes("proc,") && !output.includes(",proc,")) return [];
+  if (!output.includes("proc,") && !output.includes(",proc,")) return { list: [], javaPids: new Set() };
 
   const byPid = new Map<number, ProcessInfo>();
+  const javaPids = new Set<number>();
   let cur: ProcessInfo | null = null;
 
   for (const line of output.split("\n")) {
@@ -209,25 +228,30 @@ function parseCompactFormat(output: string): ProcessInfo[] {
     const pssIdx = tag === "cat" ? 2 : 1;
     const catPss = parseInt(parts[pssIdx], 10) || 0;
 
-    if (!catName || catPss === 0) continue;
+    if (!catName) continue;
 
     const cat = catName.toLowerCase().replace(/[_\s]/g, "");
-    if (cat === "nativeheap" || cat === "native") {
-      cur.nativeHeapKb = catPss;
-    } else if (cat === "dalvikheap" || cat === "dalvik") {
-      cur.javaHeapKb = catPss;
-    } else if (cat === "gfxdev" || cat === "eglmtrack" || cat === "glmtrack" || cat === "graphics") {
-      cur.graphicsKb += catPss;
-    } else if (cat === "code" || cat === ".dexmmap" || cat === ".oatmmap" || cat === ".artmmap" || cat === ".sommap") {
-      cur.codeKb += catPss;
+
+    // Detect Java processes by presence of Dalvik Heap line (even if 0)
+    if (cat === "dalvikheap" || cat === "dalvik") {
+      javaPids.add(cur.pid);
+      if (catPss > 0) cur.javaHeapKb = catPss;
+    } else if (catPss > 0) {
+      if (cat === "nativeheap" || cat === "native") {
+        cur.nativeHeapKb = catPss;
+      } else if (cat === "gfxdev" || cat === "eglmtrack" || cat === "glmtrack" || cat === "graphics") {
+        cur.graphicsKb += catPss;
+      } else if (cat === "code" || cat === ".dexmmap" || cat === ".oatmmap" || cat === ".artmmap" || cat === ".sommap") {
+        cur.codeKb += catPss;
+      }
     }
   }
 
   if (cur && cur.pssKb > 0) byPid.set(cur.pid, cur);
 
-  const results = [...byPid.values()];
-  results.sort((a, b) => b.pssKb - a.pssKb);
-  return results;
+  const list = [...byPid.values()];
+  list.sort((a, b) => b.pssKb - a.pssKb);
+  return { list, javaPids };
 }
 
 // ─── Detailed per-process section parser ─────────────────────────────────────
@@ -402,12 +426,13 @@ export class AdbConnection {
     }
   }
 
-  async getProcessList(signal?: AbortSignal): Promise<{ list: ProcessInfo[]; hasBreakdown: boolean; globalMemInfo: GlobalMemInfo | null }> {
+  async getProcessList(signal?: AbortSignal): Promise<{ list: ProcessInfo[]; javaPids: Set<number>; hasBreakdown: boolean; globalMemInfo: GlobalMemInfo | null }> {
     if (!this.device) throw new Error("Not connected");
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     // Try compact format first — includes per-process Java/Native/Graphics breakdown
     // on devices that support it, and always has OOM labels per process.
     let compactResults: ProcessInfo[] = [];
+    let compactJavaPids = new Set<number>();
     let globalMemInfo: GlobalMemInfo | null = null;
     try {
       const compact = await this.device.shell("dumpsys -t 60 meminfo -c", signal);
@@ -415,8 +440,9 @@ export class AdbConnection {
       // Only use compact as primary results if it has category breakdown lines
       const hasCategories = /^(?:cat,)?(?:Native Heap|Dalvik Heap),\d/m.test(compact);
       compactResults = parseMemInfo(compact);
+      compactJavaPids = parseJavaPids(compact);
       if (hasCategories && compactResults.length > 0) {
-        return { list: compactResults, hasBreakdown: true, globalMemInfo };
+        return { list: compactResults, javaPids: compactJavaPids, hasBreakdown: true, globalMemInfo };
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") throw e;
@@ -435,7 +461,9 @@ export class AdbConnection {
         }
       }
     }
-    return { list: results, hasBreakdown: false, globalMemInfo };
+    // For non-compact fallback, we can't distinguish Java from native — assume all are Java
+    const javaPids = compactJavaPids.size > 0 ? compactJavaPids : new Set(results.map(p => p.pid));
+    return { list: results, javaPids, hasBreakdown: false, globalMemInfo };
   }
 
   /**
@@ -643,6 +671,85 @@ export class AdbConnection {
     return parseSmaps(output);
   }
 
+  /** Batch fetch smaps_rollup for all processes in a single shell command. */
+  async getSmapsRollups(pids: number[], signal?: AbortSignal): Promise<Map<number, SmapsRollup>> {
+    if (!this.device || !this._isRoot || pids.length === 0) return new Map();
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    const result = new Map<number, SmapsRollup>();
+    const BATCH = 50;
+    for (let i = 0; i < pids.length; i += BATCH) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+      const pidList = pids.slice(i, i + BATCH).join(" ");
+      const inner = `for p in ${pidList}; do echo "===PID:$p==="; cat /proc/$p/smaps_rollup 2>/dev/null; done`;
+      const cmd = this._suPrefix === "su -c"
+        ? `su -c '${inner}'`
+        : `su 0 sh -c '${inner}'`;
+      try {
+        const output = await this.device.shell(cmd, signal);
+        for (const [pid, rollup] of parseSmapsRollups(output)) {
+          result.set(pid, rollup);
+        }
+      } catch (e) {
+        if (e instanceof DOMException && e.name === "AbortError") throw e;
+        console.warn("[adb] smaps_rollup batch failed, skipping", e);
+        break;
+      }
+    }
+    return result;
+  }
+
+  /** Get all PIDs + names from `ps -A`. Works without root. */
+  async getAllPids(signal?: AbortSignal): Promise<{ pid: number; name: string }[]> {
+    if (!this.device) return [];
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const output = await this.device.shell("ps -A -o PID,ARGS", signal);
+    return parsePsOutput(output);
+  }
+
+  /**
+   * Root fast path: single shell command iterates /proc, reads cmdline + smaps_rollup.
+   * Java detection: cmdline not starting with "/" or "[" is a Java/ART process.
+   */
+  async getProcessesFromProc(signal?: AbortSignal): Promise<{
+    list: ProcessInfo[];
+    rollups: Map<number, SmapsRollup>;
+    javaPids: Set<number>;
+  }> {
+    if (!this.device || !this._isRoot) return { list: [], rollups: new Map(), javaPids: new Set() };
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    // Shell vars can't hold nulls, so $(cat cmdline) yields just argv[0] — the process name.
+    // Fallback to comm (16-char truncated) if cmdline is empty (kernel threads).
+    const inner = 'for p in /proc/[0-9]*/smaps_rollup;do d=${p%/smaps_rollup};pid=${d##*/};name=$(cat /proc/$pid/cmdline 2>/dev/null);[ -z "$name" ]&&name=$(cat /proc/$pid/comm 2>/dev/null);echo "===PID:$pid===$name";cat $p 2>/dev/null;done';
+    const cmd = this._suPrefix === "su -c"
+      ? `su -c '${inner}'`
+      : `su 0 sh -c '${inner}'`;
+
+    const output = await this.device.shell(cmd, signal);
+    const parsed = parseSmapsRollups(output);
+
+    const javaPids = new Set<number>();
+    const rollups = new Map<number, SmapsRollup>();
+    const list: ProcessInfo[] = [];
+
+    for (const [pid, data] of parsed) {
+      const name = (data.name ?? "").trim();
+      if (!name) continue;
+      rollups.set(pid, data);
+      if (!name.startsWith("/") && !name.startsWith("[")) {
+        javaPids.add(pid);
+      }
+      list.push({
+        pid, name, oomLabel: "",
+        pssKb: data.pssKb, rssKb: data.rssKb,
+        javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
+      });
+    }
+    list.sort((a, b) => b.pssKb - a.pssKb);
+    return { list, rollups, javaPids };
+  }
+
   /** Fetch /proc/meminfo for extra global memory details (root-only). */
   async getProcMeminfo(signal?: AbortSignal): Promise<Partial<GlobalMemInfo>> {
     if (!this.device || !this._isRoot) return {};
@@ -840,6 +947,60 @@ export function aggregateSmaps(entries: SmapsEntry[]): SmapsAggregated[] {
 
   const result = [...groups.values()];
   result.sort((a, b) => b.pssKb - a.pssKb);
+  return result;
+}
+
+/** Parse batch smaps_rollup output delimited by ===PID:N===name markers.
+ *  Supports both `===PID:123===` (no name) and `===PID:123===com.foo` formats. */
+/** Parse `ps -A -o PID,ARGS` output. */
+export function parsePsOutput(output: string): { pid: number; name: string }[] {
+  const results: { pid: number; name: string }[] = [];
+  for (const line of output.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || /^PID\b/i.test(trimmed)) continue;
+    const m = trimmed.match(/^(\d+)\s+(.+)/);
+    if (m) {
+      const pid = parseInt(m[1], 10);
+      if (isFinite(pid)) results.push({ pid, name: m[2].trim() });
+    }
+  }
+  return results;
+}
+
+export function parseSmapsRollups(output: string): Map<number, SmapsRollup & { name?: string }> {
+  const result = new Map<number, SmapsRollup & { name?: string }>();
+  let pid = -1;
+  let name: string | undefined;
+  let r: SmapsRollup = { rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, swapPssKb: 0 };
+  let hasData = false;
+
+  for (const line of output.split("\n")) {
+    const m = line.match(/^===PID:(\d+)===(.*)$/);
+    if (m) {
+      if (pid >= 0 && hasData) result.set(pid, name ? { ...r, name } : r);
+      pid = parseInt(m[1], 10);
+      name = m[2] || undefined;
+      r = { rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, swapPssKb: 0 };
+      hasData = false;
+      continue;
+    }
+    if (pid < 0) continue;
+    const kv = SMAPS_KV_RE.exec(line.trim());
+    if (kv) {
+      const val = parseInt(kv[2], 10) || 0;
+      switch (kv[1]) {
+        case "Rss": r.rssKb = val; hasData = true; break;
+        case "Pss": r.pssKb = val; hasData = true; break;
+        case "Shared_Clean": r.sharedCleanKb = val; hasData = true; break;
+        case "Shared_Dirty": r.sharedDirtyKb = val; hasData = true; break;
+        case "Private_Clean": r.privateCleanKb = val; hasData = true; break;
+        case "Private_Dirty": r.privateDirtyKb = val; hasData = true; break;
+        case "Swap": r.swapKb = val; hasData = true; break;
+        case "SwapPss": r.swapPssKb = val; hasData = true; break;
+      }
+    }
+  }
+  if (pid >= 0 && hasData) result.set(pid, name ? { ...r, name } : r);
   return result;
 }
 
