@@ -1,474 +1,95 @@
 import { describe, it, expect } from "vitest";
-import { parseMemInfo, parseGlobalMemInfo, parseProcMeminfo } from "./capture";
+import { parseLruProcesses, parseProcMeminfo } from "./capture";
 
-// ─── Fixtures ────────────────────────────────────────────────────────────────
+// ─── parseLruProcesses ──────────────────────────────────────────────────────
 
-// Summary-only output from `dumpsys meminfo --sort-by-pss`
-const SUMMARY_OUTPUT = `Applications Memory Usage (in Kilobytes):
-Uptime: 1234567 Realtime: 1234567
-
-Total PSS by process:
-    305,477K: com.android.systemui (pid 1234)
-    204,891K: com.google.android.gms (pid 5678)
-    180,234K: system (pid 987)
-    95,123K: com.google.android.apps.nexuslauncher (pid 2345)
-    72,456K: com.android.phone (pid 3456)
-    45,678K: com.google.android.inputmethod.latin (pid 4567)
-    12,345K: com.android.providers.media (pid 6789)
-    8,901K: com.android.bluetooth (pid 7890)
-    5,432K: com.android.nfc (pid 8901)
-    1,234K: logd (pid 100)
-
-Total PSS by OOM adjustment:
-    305,477K: Foreground
-    204,891K: Visible
+describe("parseLruProcesses", () => {
+  const LRU_OUTPUT = `  ACTIVITY MANAGER LRU PROCESSES (dumpsys activity lru)
+    Activities:
+  #0: fg     TOP  LCM 1234:com.android.systemui/u0a45 act:activities
+  #1: fg     TOP  LCM 5678:com.google.android.apps.nexuslauncher/u0a67 act:activities
+  #2: vis    VIS  ---  987:system/1000
+  #3: vis    VIS  CEM 2345:com.android.phone/1001
+  #4: fgs    FGS  --- 3456:com.google.android.gms/u0a89
+  #5: fgs    FGS  CEM 4567:com.android.bluetooth/1002
+  #6: pers   PER  --- 6789:com.android.nfc/1027
+  #7: cch+75 CEM 7890:com.example.app1/u0a90
+  #8: cch+80 CEM 8901:com.example.app2/u0a91
+  #9: cch    CRE 9012:com.example.app3/u0a92
+  #10: bfgs   BFGS LCM 1100:com.example.bfgs/u0a93
+  #11: btop   BTOP CEM 1200:com.example.btop/u0a94
+  #12: prev   PRV  --- 1300:com.example.prev/u0a95
 `;
 
-const SUMMARY_SIMPLE = `Total PSS by process:
-    100K: simple_app (pid 42)
-    50K: another (pid 43)
-`;
-
-// Output with both RSS and PSS sections (like real `dumpsys meminfo` on Android 15)
-const SUMMARY_WITH_RSS = `Applications Memory Usage (in Kilobytes):
-Uptime: 141306560 Realtime: 251614499
-
-Total RSS by process:
-    855,640K: system (pid 15534)
-    643,760K: com.android.systemui (pid 16001)
-    642,912K: com.spotify.music (pid 14417 / activities)
-
-Total RSS by OOM adjustment:
-    855,640K: System
-    643,760K: Foreground
-
-Total PSS by process:
-    533,158K: system (pid 15534)
-    442,628K: com.android.systemui (pid 16001)
-    180,234K: com.spotify.music (pid 14417 / activities)
-
-Total PSS by OOM adjustment:
-    533,158K: System
-    442,628K: Foreground
-`;
-
-// Detailed per-process output from `dumpsys meminfo` (no --sort-by-pss)
-const DETAILED_OUTPUT = `Applications Memory Usage (in Kilobytes):
-Uptime: 1234567 Realtime: 1234567
-
-** MEMINFO in pid 1974 [com.android.systemui] **
-                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
-                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
-                ------   ------   ------   ------   ------   ------   ------   ------
-  Native Heap    16840    16804        0     6764    19428    34024    25037     5553
-  Dalvik Heap     9110     9032        0      136    13164    36444     9111    27333
- Dalvik Other     2345     2345        0        0     2345
-        Stack      456      456        0        0      600
-       Ashmem      123      123        0        0      123
-      Gfx dev     5502     5502        0        0     5502
-    Other dev       12       12        0        0       12
-     .so mmap     4321      123     4198        0     8765
-    .apk mmap     1234        0     1234        0     2345
-    .dex mmap     3456        0     3456        0     3456
-    .oat mmap      890        0      890        0      890
-    .art mmap     2345     2345        0        0     3456
-   Other mmap      234      234        0        0      234
-   EGL mtrack      800      800        0        0      800
-    GL mtrack     1200     1200        0        0     1200
-      Unknown     1234     1234        0        0     1234
-        TOTAL    50102    40210    9778     6900    63554    70468    34148    32886
-
-** MEMINFO in pid 5678 [com.google.android.gms] **
-                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
-                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
-                ------   ------   ------   ------   ------   ------   ------   ------
-  Native Heap    25000    24900        0     1234    28000    40000    30000     8000
-  Dalvik Heap    15000    14800        0      500    18000    50000    15000    35000
- Dalvik Other     3000     3000        0        0     3000
-        Stack      800      800        0        0     1000
-      Gfx dev        0        0        0        0        0
-   EGL mtrack        0        0        0        0        0
-    GL mtrack        0        0        0        0        0
-      Unknown     2000     2000        0        0     2000
-        TOTAL    45800    45500    0     1734    52000    90000    45000    43000
-
-Total PSS by process:
-    305,477K: com.android.systemui (pid 1974)
-    204,891K: com.google.android.gms (pid 5678)
-
-Total PSS by OOM adjustment:
-    305,477K: Foreground
-`;
-
-// Edge case: detailed section without trailing summary
-const DETAILED_NO_SUMMARY = `** MEMINFO in pid 100 [logd] **
-                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
-                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
-                ------   ------   ------   ------   ------   ------   ------   ------
-  Native Heap     1000     1000        0        0     1200     2000     1500      500
-  Dalvik Heap        0        0        0        0        0        0        0        0
-      Gfx dev        0        0        0        0        0
-        TOTAL     1234     1000        0        0     1500     2000     1500      500
-`;
-
-// ─── Tests ───────────────────────────────────────────────────────────────────
-
-describe("parseMemInfo", () => {
-  describe("summary-only output (--sort-by-pss)", () => {
-    it("parses process list from summary output", () => {
-      const result = parseMemInfo(SUMMARY_OUTPUT);
-      expect(result.length).toBe(10);
-      expect(result[0]).toMatchObject({ pid: 1234, name: "com.android.systemui", pssKb: 305477 });
-      expect(result[1]).toMatchObject({ pid: 5678, name: "com.google.android.gms", pssKb: 204891 });
-    });
-
-    it("returns results sorted by PSS descending", () => {
-      const result = parseMemInfo(SUMMARY_OUTPUT);
-      for (let i = 1; i < result.length; i++) {
-        expect(result[i - 1].pssKb).toBeGreaterThanOrEqual(result[i].pssKb);
-      }
-    });
-
-    it("handles comma-separated numbers correctly", () => {
-      const result = parseMemInfo(SUMMARY_OUTPUT);
-      const systemui = result.find(p => p.name === "com.android.systemui");
-      expect(systemui?.pssKb).toBe(305477);
-    });
-
-    it("handles simple output", () => {
-      const result = parseMemInfo(SUMMARY_SIMPLE);
-      expect(result.length).toBe(2);
-      expect(result[0]).toMatchObject({ pid: 42, name: "simple_app", pssKb: 100 });
-      expect(result[1]).toMatchObject({ pid: 43, name: "another", pssKb: 50 });
-    });
-
-    it("returns empty array for empty output", () => {
-      expect(parseMemInfo("")).toEqual([]);
-      expect(parseMemInfo("No processes found")).toEqual([]);
-    });
-
-    it("stops at empty line after process section", () => {
-      const result = parseMemInfo(SUMMARY_OUTPUT);
-      expect(result.every(p => typeof p.pid === "number" && p.pid > 0)).toBe(true);
-      expect(result.length).toBe(10);
-    });
-
-    it("parses processes without dots in name (like logd)", () => {
-      const result = parseMemInfo(SUMMARY_OUTPUT);
-      const logd = result.find(p => p.name === "logd");
-      expect(logd).toBeDefined();
-      expect(logd?.pid).toBe(100);
-      expect(logd?.pssKb).toBe(1234);
-    });
-
-    it("sets detailed fields to 0 when only summary is available", () => {
-      const result = parseMemInfo(SUMMARY_OUTPUT);
-      for (const p of result) {
-        expect(p.rssKb).toBe(0);
-        expect(p.javaHeapKb).toBe(0);
-        expect(p.nativeHeapKb).toBe(0);
-        expect(p.graphicsKb).toBe(0);
-      }
-    });
+  it("parses all processes from LRU output", () => {
+    const result = parseLruProcesses(LRU_OUTPUT);
+    expect(result.length).toBe(13);
   });
 
-  describe("detailed per-process output (dumpsys meminfo)", () => {
-    it("parses per-process MEMINFO sections", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      expect(result.length).toBe(2);
-    });
-
-    it("extracts PSS and RSS from TOTAL line", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      const systemui = result.find(p => p.name === "com.android.systemui")!;
-      expect(systemui.pssKb).toBe(50102);
-      expect(systemui.rssKb).toBe(63554);
-    });
-
-    it("extracts Java (Dalvik) heap PSS", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      const systemui = result.find(p => p.name === "com.android.systemui")!;
-      expect(systemui.javaHeapKb).toBe(9110);
-    });
-
-    it("extracts Native heap PSS", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      const systemui = result.find(p => p.name === "com.android.systemui")!;
-      expect(systemui.nativeHeapKb).toBe(16840);
-    });
-
-    it("sums graphics PSS from Gfx dev + EGL mtrack + GL mtrack", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      const systemui = result.find(p => p.name === "com.android.systemui")!;
-      // 5502 (Gfx dev) + 800 (EGL) + 1200 (GL) = 7502
-      expect(systemui.graphicsKb).toBe(7502);
-    });
-
-    it("sums code PSS from .so/.dex/.oat/.art mmap", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      const systemui = result.find(p => p.name === "com.android.systemui")!;
-      // 4321 (.so) + 3456 (.dex) + 890 (.oat) + 2345 (.art) = 11012
-      expect(systemui.codeKb).toBe(11012);
-    });
-
-    it("handles zero graphics correctly", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      const gms = result.find(p => p.name === "com.google.android.gms")!;
-      expect(gms.graphicsKb).toBe(0);
-    });
-
-    it("handles zero code correctly", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      const gms = result.find(p => p.name === "com.google.android.gms")!;
-      expect(gms.codeKb).toBe(0);
-    });
-
-    it("sorts results by PSS descending", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      expect(result[0].name).toBe("com.android.systemui");
-      expect(result[1].name).toBe("com.google.android.gms");
-    });
-
-    it("prefers detailed sections over summary when both present", () => {
-      const result = parseMemInfo(DETAILED_OUTPUT);
-      // Detailed sections have different PSS values than the summary
-      // (summary says 305,477K but detailed TOTAL says 50102)
-      const systemui = result.find(p => p.name === "com.android.systemui")!;
-      expect(systemui.pssKb).toBe(50102);
-      expect(systemui.nativeHeapKb).toBe(16840); // detail only
-    });
-
-    it("handles trailing section without summary", () => {
-      const result = parseMemInfo(DETAILED_NO_SUMMARY);
-      expect(result.length).toBe(1);
-      expect(result[0]).toMatchObject({
-        pid: 100,
-        name: "logd",
-        pssKb: 1234,
-        rssKb: 1500,
-        nativeHeapKb: 1000,
-        javaHeapKb: 0,
-        graphicsKb: 0,
-        codeKb: 0,
-      });
-    });
+  it("extracts PID and name correctly", () => {
+    const result = parseLruProcesses(LRU_OUTPUT);
+    expect(result[0]).toMatchObject({ pid: 1234, name: "com.android.systemui" });
+    expect(result[1]).toMatchObject({ pid: 5678, name: "com.google.android.apps.nexuslauncher" });
+    expect(result[2]).toMatchObject({ pid: 987, name: "system" });
   });
 
-  describe("summary with RSS + PSS sections (Android 15)", () => {
-    it("merges PSS and RSS by PID", () => {
-      const result = parseMemInfo(SUMMARY_WITH_RSS);
-      expect(result.length).toBe(3);
-      const system = result.find(p => p.name === "system")!;
-      expect(system.pssKb).toBe(533158);
-      expect(system.rssKb).toBe(855640);
-    });
-
-    it("matches RSS to correct PID even when section order differs", () => {
-      const result = parseMemInfo(SUMMARY_WITH_RSS);
-      const systemui = result.find(p => p.pid === 16001)!;
-      expect(systemui.pssKb).toBe(442628);
-      expect(systemui.rssKb).toBe(643760);
-    });
-
-    it("sorts by PSS descending", () => {
-      const result = parseMemInfo(SUMMARY_WITH_RSS);
-      expect(result[0].pssKb).toBeGreaterThanOrEqual(result[1].pssKb);
-      expect(result[1].pssKb).toBeGreaterThanOrEqual(result[2].pssKb);
-    });
-
-    it("skips OOM adjustment sections", () => {
-      const result = parseMemInfo(SUMMARY_WITH_RSS);
-      // Should only have real processes, not OOM categories
-      expect(result.every(p => p.pid > 0)).toBe(true);
-      expect(result.length).toBe(3);
-    });
+  it("maps OOM labels to human-readable names", () => {
+    const result = parseLruProcesses(LRU_OUTPUT);
+    const byPid = new Map(result.map(p => [p.pid, p]));
+    expect(byPid.get(1234)!.oomLabel).toBe("Foreground"); // fg
+    expect(byPid.get(987)!.oomLabel).toBe("Visible"); // vis
+    expect(byPid.get(3456)!.oomLabel).toBe("FG Service"); // fgs
+    expect(byPid.get(6789)!.oomLabel).toBe("Persistent"); // pers
+    expect(byPid.get(7890)!.oomLabel).toBe("Cached"); // cch+75
+    expect(byPid.get(8901)!.oomLabel).toBe("Cached"); // cch+80
+    expect(byPid.get(9012)!.oomLabel).toBe("Cached"); // cch
+    expect(byPid.get(1100)!.oomLabel).toBe("Bound FG Service"); // bfgs
+    expect(byPid.get(1200)!.oomLabel).toBe("Bound Top"); // btop
+    expect(byPid.get(1300)!.oomLabel).toBe("Previous"); // prev
   });
 
-  describe("compact format (dumpsys meminfo -c)", () => {
-    // Real Android 15 compact format: native procs have N/A for some fields
-    const COMPACT_NATIVE_ONLY = `version,1
-time,141881998,252189938
-oom,native,2007272,N/A
-proc,native,init,1,6656,N/A,e
-proc,native,logd,614,8792,N/A,e
-proc,native,surfaceflinger,815,45000,N/A,e
-`;
-
-    // Compact with app processes and category breakdowns
-    const COMPACT_WITH_BREAKDOWN = `version,1
-time,141881998,252189938
-oom,native,2007272,N/A
-proc,native,init,1,6656,N/A,e
-oom,fore,500000,N/A
-proc,fore,com.android.systemui,1974,305477,250000,400000
-Native Heap,16840,16804,0,6764,19428
-Dalvik Heap,9110,9032,0,136,13164
-Gfx dev,5502,5502,0,0,5502
-EGL mtrack,800,800,0,0,800
-GL mtrack,1200,1200,0,0,1200
-.dex mmap,3456,0,3456,0,3456
-.so mmap,4321,123,4198,0,8765
-proc,fore,com.spotify.music,14417,180234,150000,250000
-Native Heap,25000,24900,0,1234,28000
-Dalvik Heap,15000,14800,0,500,18000
-`;
-
-    // Compact with "cat," prefix (newer format)
-    const COMPACT_CAT_PREFIX = `version,1
-time,100,200
-proc,fore,com.example.app,999,50000,40000,60000
-cat,Native Heap,12000,11000,0,500,14000
-cat,Dalvik Heap,8000,7500,0,200,10000
-cat,Gfx dev,3000,3000,0,0,3000
-cat,.dex mmap,5000,0,5000,0,5000
-`;
-
-    it("parses native-only compact format (N/A fields)", () => {
-      const result = parseMemInfo(COMPACT_NATIVE_ONLY);
-      expect(result.length).toBe(3);
-      expect(result[0]).toMatchObject({ pid: 815, name: "surfaceflinger", pssKb: 45000, oomLabel: "Native" });
-      expect(result[0].rssKb).toBe(0); // N/A becomes 0
-    });
-
-    it("parses compact format with category breakdowns", () => {
-      const result = parseMemInfo(COMPACT_WITH_BREAKDOWN);
-      expect(result.length).toBe(3); // init + systemui + spotify
-      const sysui = result.find(p => p.name === "com.android.systemui")!;
-      expect(sysui.pssKb).toBe(305477);
-      expect(sysui.oomLabel).toBe("Foreground");
-      expect(sysui.nativeHeapKb).toBe(16840);
-      expect(sysui.javaHeapKb).toBe(9110);
-      expect(sysui.graphicsKb).toBe(7502); // 5502 + 800 + 1200
-      expect(sysui.codeKb).toBe(7777); // 3456 + 4321
-    });
-
-    it("parses compact format with cat prefix", () => {
-      const result = parseMemInfo(COMPACT_CAT_PREFIX);
-      expect(result.length).toBe(1);
-      expect(result[0]).toMatchObject({
-        pid: 999,
-        name: "com.example.app",
-        pssKb: 50000,
-        rssKb: 60000,
-        nativeHeapKb: 12000,
-        javaHeapKb: 8000,
-        graphicsKb: 3000,
-        codeKb: 5000,
-      });
-    });
-
-    it("sorts by PSS descending", () => {
-      const result = parseMemInfo(COMPACT_WITH_BREAKDOWN);
-      for (let i = 1; i < result.length; i++) {
-        expect(result[i - 1].pssKb).toBeGreaterThanOrEqual(result[i].pssKb);
-      }
-    });
-
-    it("maps OOM labels to human-readable names", () => {
-      const COMPACT_OOM_LABELS = `version,1
-proc,pers,com.android.phone,100,50000,N/A,e
-proc,vis,com.google.android.gms,200,40000,N/A,e
-proc,fgs,com.example.service,300,30000,N/A,e
-proc,cch3,com.example.cached,400,5000,N/A,e
-proc,btop,com.example.btop,500,20000,N/A,e
-proc,bfgs,com.example.bfgs,600,15000,N/A,e
-proc,top,com.example.top,700,60000,N/A,e
-proc,impfg,com.example.impfg,800,10000,N/A,e
-proc,impbg,com.example.impbg,900,8000,N/A,e
-proc,service,com.example.svc,1000,12000,N/A,e
-proc,service-rs,com.example.svcrst,1100,6000,N/A,e
-proc,receiver,com.example.recv,1200,4000,N/A,e
-proc,frzn,com.example.frozen,1300,3000,N/A,e
-proc,lastact,com.example.lastact,1400,2000,N/A,e
-`;
-      const result = parseMemInfo(COMPACT_OOM_LABELS);
-      expect(result.find(p => p.pid === 100)!.oomLabel).toBe("Persistent");
-      expect(result.find(p => p.pid === 200)!.oomLabel).toBe("Visible");
-      expect(result.find(p => p.pid === 300)!.oomLabel).toBe("FG Service");
-      expect(result.find(p => p.pid === 400)!.oomLabel).toBe("Cached");
-      expect(result.find(p => p.pid === 500)!.oomLabel).toBe("Bound Top");
-      expect(result.find(p => p.pid === 600)!.oomLabel).toBe("Bound FG Service");
-      expect(result.find(p => p.pid === 700)!.oomLabel).toBe("Top");
-      expect(result.find(p => p.pid === 800)!.oomLabel).toBe("Important Foreground");
-      expect(result.find(p => p.pid === 900)!.oomLabel).toBe("Important Background");
-      expect(result.find(p => p.pid === 1000)!.oomLabel).toBe("Service");
-      expect(result.find(p => p.pid === 1100)!.oomLabel).toBe("Service Restarting");
-      expect(result.find(p => p.pid === 1200)!.oomLabel).toBe("Receiver");
-      expect(result.find(p => p.pid === 1300)!.oomLabel).toBe("Frozen");
-      expect(result.find(p => p.pid === 1400)!.oomLabel).toBe("Last Activity");
-    });
-
-    it("skips oom lines as category data", () => {
-      // oom lines should not be parsed as category breakdowns
-      const COMPACT_WITH_OOM = `version,1
-oom,native,2007272,N/A
-proc,native,init,1,6656,N/A,e
-oom,pers,3036456,N/A
-proc,pers,com.android.phone,100,50000,N/A,e
-`;
-      const result = parseMemInfo(COMPACT_WITH_OOM);
-      expect(result.length).toBe(2);
-      // No category data should have leaked from oom lines
-      expect(result.every(p => p.nativeHeapKb === 0 && p.javaHeapKb === 0 && p.graphicsKb === 0)).toBe(true);
-    });
-  });
-});
-
-// ─── parseGlobalMemInfo ─────────────────────────────────────────────────────
-
-describe("parseGlobalMemInfo", () => {
-  it("parses ram, lostram, and zram lines", () => {
-    const input = `version,1
-time,187036613,187036613
-proc,fore,com.example,100,5000,N/A,e
-ram,7890000,3456000,2345000
-lostram,123456
-zram,50000,200000,150000
-`;
-    const g = parseGlobalMemInfo(input);
-    expect(g).not.toBeNull();
-    expect(g!.totalRamKb).toBe(7890000);
-    expect(g!.freeRamKb).toBe(3456000);
-    expect(g!.usedPssKb).toBe(2345000);
-    expect(g!.lostRamKb).toBe(123456);
-    expect(g!.zramPhysicalKb).toBe(50000);
-    expect(g!.swapTotalKb).toBe(200000);
-    expect(g!.swapFreeKb).toBe(150000);
+  it("strips +N suffix from OOM labels", () => {
+    const result = parseLruProcesses(LRU_OUTPUT);
+    const app1 = result.find(p => p.pid === 7890);
+    expect(app1!.oomLabel).toBe("Cached"); // cch+75 → cch → Cached
   });
 
-  it("returns null when no ram line present", () => {
-    const input = `version,1
-proc,fore,com.example,100,5000,N/A,e
-lostram,100
+  it("deduplicates by PID", () => {
+    const dupeOutput = `  #0: fg     TOP  LCM 1234:com.android.systemui/u0a45
+  #1: cch    CEM 1234:com.android.systemui/u0a45
 `;
-    expect(parseGlobalMemInfo(input)).toBeNull();
+    const result = parseLruProcesses(dupeOutput);
+    expect(result.length).toBe(1);
   });
 
-  it("handles missing zram line (zeros)", () => {
-    const input = `ram,4000000,2000000,1500000
-lostram,50000
-`;
-    const g = parseGlobalMemInfo(input)!;
-    expect(g.totalRamKb).toBe(4000000);
-    expect(g.zramPhysicalKb).toBe(0);
-    expect(g.swapTotalKb).toBe(0);
-    expect(g.swapFreeKb).toBe(0);
+  it("sets memory fields to zero", () => {
+    const result = parseLruProcesses(LRU_OUTPUT);
+    for (const p of result) {
+      expect(p.pssKb).toBe(0);
+      expect(p.rssKb).toBe(0);
+      expect(p.javaHeapKb).toBe(0);
+      expect(p.nativeHeapKb).toBe(0);
+      expect(p.graphicsKb).toBe(0);
+      expect(p.codeKb).toBe(0);
+    }
   });
 
-  it("handles negative lostram", () => {
-    const input = `ram,4000000,2000000,1500000
-lostram,-5000
-`;
-    const g = parseGlobalMemInfo(input)!;
-    expect(g.lostRamKb).toBe(-5000);
+  it("returns empty array for empty output", () => {
+    expect(parseLruProcesses("")).toEqual([]);
+    expect(parseLruProcesses("No processes found")).toEqual([]);
   });
 
-  it("returns empty /proc/meminfo fields as zero", () => {
-    const input = `ram,4000000,2000000,1500000\n`;
-    const g = parseGlobalMemInfo(input)!;
-    expect(g.memAvailableKb).toBe(0);
-    expect(g.buffersKb).toBe(0);
-    expect(g.cachedKb).toBe(0);
+  it("skips header lines", () => {
+    const result = parseLruProcesses(LRU_OUTPUT);
+    // Should not include "ACTIVITY MANAGER" or "Activities:" lines
+    expect(result.every(p => p.pid > 0 && p.name.length > 0)).toBe(true);
+  });
+
+  it("handles single process", () => {
+    const single = "  #0: top    TOP  LCM 42:com.example.app/u0a10";
+    const result = parseLruProcesses(single);
+    expect(result.length).toBe(1);
+    expect(result[0]).toMatchObject({ pid: 42, name: "com.example.app", oomLabel: "Top" });
   });
 });
 

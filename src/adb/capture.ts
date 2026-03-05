@@ -119,6 +119,7 @@ const OOM_LABEL_MAP: Record<string, string> = {
   bfgs: "Bound FG Service",
   btop: "Bound Top",
   fgs: "FG Service",
+  fg: "Foreground",
   impfg: "Important Foreground",
   impbg: "Important Background",
   backup: "Backup",
@@ -159,205 +160,32 @@ export type CapturePhase =
   | { step: "cleaning" }
   | { step: "done"; buffer: ArrayBuffer };
 
-// ─── Parse `dumpsys meminfo` output ──────────────────────────────────────────
+// ─── Parse `dumpsys activity lru` ────────────────────────────────────────────
 
-/**
- * Parse `dumpsys meminfo` output. Tries detailed per-process sections first
- * (** MEMINFO in pid N [name] **), falling back to the summary "Total PSS by
- * process:" section when detailed sections aren't present.
- */
-export function parseMemInfo(output: string): ProcessInfo[] {
-  const compact = parseCompactFormat(output);
-  if (compact.list.length > 0) return compact.list;
-  const detailed = parseDetailedSections(output);
-  if (detailed.length > 0) return detailed;
-  return parseSummarySections(output);
-}
+// Matches: "  #0: fg     TOP  LCM 1234:com.android.systemui/u0a45 act:activities"
+// Also:    "  #15: cch+75 CEM 9012:com.google.android.gms/u0a67"
+const LRU_LINE = /^\s*#\d+:\s+(\S+)\s+.*?\s(\d+):([^\s/]+)/;
 
-/** Extract PIDs of Java/ART processes from compact meminfo output.
- *  A process is Java if it has a "Dalvik Heap" category line. */
-export function parseJavaPids(output: string): Set<number> {
-  return parseCompactFormat(output).javaPids;
-}
-
-// ─── Compact format parser (`dumpsys meminfo -c`) ────────────────────────────
-//
-// Compact output has comma-separated lines per process:
-//   proc,<oom_label>,<name>,<pid>,<pss>,<uss>,<rss>,<swap_pss>
-// Followed by category lines:
-//   <category>,<pss>,<shared_clean>,<shared_dirty>,<private_clean>,<private_dirty>,<swap_dirty>
-// Or on newer Android:
-//   cat,<category>,<pss>,...
-
-function parseCompactFormat(output: string): { list: ProcessInfo[]; javaPids: Set<number> } {
-  // Quick check: compact format starts with "time," or has "proc," lines
-  if (!output.includes("proc,") && !output.includes(",proc,")) return { list: [], javaPids: new Set() };
-
-  const byPid = new Map<number, ProcessInfo>();
-  const javaPids = new Set<number>();
-  let cur: ProcessInfo | null = null;
-
-  for (const line of output.split("\n")) {
-    const parts = line.split(",");
-
-    // Process header: proc,<oom>,<name>,<pid>,<pss>,...
-    if (parts[0] === "proc") {
-      if (cur && cur.pssKb > 0) byPid.set(cur.pid, cur);
-      const pid = parseInt(parts[3], 10);
-      if (!isFinite(pid)) { cur = null; continue; }
-      const name = parts[2] ?? "";
-      const oomLabel = mapOomLabel(parts[1] ?? "");
-      const pssKb = parseInt(parts[4], 10) || 0;
-      const rssKb = parts.length >= 7 ? (parseInt(parts[6], 10) || 0) : 0;
-      cur = { pid, name, oomLabel, pssKb, rssKb, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0 };
-      continue;
-    }
-
-    if (!cur) continue;
-
-    // Skip known non-category lines
-    const tag = parts[0];
-    if (tag === "oom" || tag === "time" || tag === "version" ||
-        tag === "total" || tag === "ram" || tag === "zram" ||
-        tag === "lostram" || tag === "") continue;
-
-    // Category lines vary by Android version. Common patterns:
-    //   <category>,<pss>,...
-    //   cat,<category>,<pss>,...
-    const catName = tag === "cat" ? parts[1] : tag;
-    const pssIdx = tag === "cat" ? 2 : 1;
-    const catPss = parseInt(parts[pssIdx], 10) || 0;
-
-    if (!catName) continue;
-
-    const cat = catName.toLowerCase().replace(/[_\s]/g, "");
-
-    // Detect Java processes by presence of Dalvik Heap line (even if 0)
-    if (cat === "dalvikheap" || cat === "dalvik") {
-      javaPids.add(cur.pid);
-      if (catPss > 0) cur.javaHeapKb = catPss;
-    } else if (catPss > 0) {
-      if (cat === "nativeheap" || cat === "native") {
-        cur.nativeHeapKb = catPss;
-      } else if (cat === "gfxdev" || cat === "eglmtrack" || cat === "glmtrack" || cat === "graphics") {
-        cur.graphicsKb += catPss;
-      } else if (cat === "code" || cat === ".dexmmap" || cat === ".oatmmap" || cat === ".artmmap" || cat === ".sommap") {
-        cur.codeKb += catPss;
-      }
-    }
-  }
-
-  if (cur && cur.pssKb > 0) byPid.set(cur.pid, cur);
-
-  const list = [...byPid.values()];
-  list.sort((a, b) => b.pssKb - a.pssKb);
-  return { list, javaPids };
-}
-
-// ─── Detailed per-process section parser ─────────────────────────────────────
-
-function parseDetailedSections(output: string): ProcessInfo[] {
+/** Parse `dumpsys activity lru` output into Java process list with OOM labels. */
+export function parseLruProcesses(output: string): ProcessInfo[] {
   const results: ProcessInfo[] = [];
-  let cur: ProcessInfo | null = null;
+  const seen = new Set<number>();
 
   for (const line of output.split("\n")) {
-    // New process section header
-    const hdr = line.match(/^\*\* MEMINFO in pid (\d+) \[(.+?)\]/);
-    if (hdr) {
-      if (cur && cur.pssKb > 0) results.push(cur);
-      const pid = parseInt(hdr[1], 10);
-      cur = isFinite(pid)
-        ? { pid, name: hdr[2], oomLabel: "", pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0 }
-        : null;
-      continue;
-    }
-
-    // End of per-process sections
-    if (line.includes("Total PSS by process:") || line.includes("Total PSS by OOM")) {
-      if (cur && cur.pssKb > 0) results.push(cur);
-      cur = null;
-      break;
-    }
-
-    if (!cur) continue;
-    const trimmed = line.trim();
-
-    // Category PSS values (first number is PSS Total)
-    if (trimmed.startsWith("Native Heap")) {
-      const m = trimmed.match(/^Native Heap\s+(\d+)/);
-      if (m) cur.nativeHeapKb = parseInt(m[1], 10);
-    } else if (trimmed.startsWith("Dalvik Heap")) {
-      const m = trimmed.match(/^Dalvik Heap\s+(\d+)/);
-      if (m) cur.javaHeapKb = parseInt(m[1], 10);
-    } else if (/^(Gfx dev|EGL mtrack|GL mtrack)\s/.test(trimmed)) {
-      const m = trimmed.match(/^(?:Gfx dev|EGL mtrack|GL mtrack)\s+(\d+)/);
-      if (m) cur.graphicsKb += parseInt(m[1], 10);
-    } else if (/^(\.dex mmap|\.oat mmap|\.art mmap|\.so mmap)\s/.test(trimmed)) {
-      const m = trimmed.match(/^(?:\.dex mmap|\.oat mmap|\.art mmap|\.so mmap)\s+(\d+)/);
-      if (m) cur.codeKb += parseInt(m[1], 10);
-    } else if (/^TOTAL\s+\d/.test(trimmed) && !trimmed.startsWith("TOTAL PSS") && !trimmed.startsWith("TOTAL SWAP")) {
-      // TOTAL row: columns are PSS, PrivDirty, PrivClean, SwapPss, RSS, ...
-      const nums = trimmed.replace(/^TOTAL\s+/, "").split(/\s+/).filter(s => /^\d+$/.test(s)).map(Number);
-      if (nums.length >= 1) cur.pssKb = nums[0];
-      if (nums.length >= 5) cur.rssKb = nums[4];
-    }
+    const m = LRU_LINE.exec(line);
+    if (!m) continue;
+    const pid = parseInt(m[2], 10);
+    if (!isFinite(pid) || seen.has(pid)) continue;
+    seen.add(pid);
+    const oomRaw = m[1].replace(/\+\d+$/, ""); // strip "+75" suffix from "cch+75"
+    results.push({
+      pid,
+      name: m[3],
+      oomLabel: mapOomLabel(oomRaw),
+      pssKb: 0, rssKb: 0,
+      javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0,
+    });
   }
-
-  // Handle trailing section (no summary after it)
-  if (cur && cur.pssKb > 0) results.push(cur);
-
-  results.sort((a, b) => b.pssKb - a.pssKb);
-  return results;
-}
-
-// ─── Summary section parser ──────────────────────────────────────────────────
-//
-// Parses "Total <X> by process:" sections from `dumpsys meminfo` output.
-// Multiple sections (PSS, RSS, Swap, etc.) are merged by PID.
-
-// Matches: "  442,628K: com.android.systemui (pid 1234 / activities) (user 10)"
-const SUMMARY_LINE = /^\s*([\d,]+)K:\s+(.+?)\s+\(pid\s+(\d+)[^)]*\)/;
-const SECTION_HEADER = /^(Total .+?) by (process|OOM)/;
-
-type SummarySection = "pss" | "rss" | "swap" | null;
-
-function classifySection(header: string): SummarySection {
-  if (/Total PSS by process/i.test(header)) return "pss";
-  if (/Total RSS by process/i.test(header)) return "rss";
-  if (/Total Swap/i.test(header) && /by process/i.test(header)) return "swap";
-  return null; // OOM adjustment or other grouping — skip
-}
-
-function parseSummarySections(output: string): ProcessInfo[] {
-  const byPid = new Map<number, ProcessInfo>();
-  let section: SummarySection = null;
-
-  for (const line of output.split("\n")) {
-    // Detect section transitions
-    const hdr = SECTION_HEADER.exec(line.trim());
-    if (hdr) {
-      section = classifySection(line);
-      continue;
-    }
-    if (!section) continue;
-
-    const m = SUMMARY_LINE.exec(line);
-    if (m) {
-      const pid = parseInt(m[3], 10);
-      if (!isFinite(pid)) continue;
-      const val = parseInt(m[1].replace(/,/g, ""), 10) || 0;
-      let info = byPid.get(pid);
-      if (!info) {
-        info = { pid, name: m[2], oomLabel: "", pssKb: 0, rssKb: 0, javaHeapKb: 0, nativeHeapKb: 0, graphicsKb: 0, codeKb: 0 };
-        byPid.set(pid, info);
-      }
-      if (section === "pss") info.pssKb = val;
-      else if (section === "rss") info.rssKb = val;
-    }
-  }
-
-  const results = [...byPid.values()];
-  results.sort((a, b) => b.pssKb - a.pssKb);
   return results;
 }
 
@@ -426,77 +254,12 @@ export class AdbConnection {
     }
   }
 
-  async getProcessList(signal?: AbortSignal): Promise<{ list: ProcessInfo[]; javaPids: Set<number>; hasBreakdown: boolean; globalMemInfo: GlobalMemInfo | null }> {
+  /** Fast Java process list from `dumpsys activity lru`. */
+  async getLruProcesses(signal?: AbortSignal): Promise<ProcessInfo[]> {
     if (!this.device) throw new Error("Not connected");
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    // Try compact format first — includes per-process Java/Native/Graphics breakdown
-    // on devices that support it, and always has OOM labels per process.
-    let compactResults: ProcessInfo[] = [];
-    let compactJavaPids = new Set<number>();
-    let globalMemInfo: GlobalMemInfo | null = null;
-    try {
-      const compact = await this.device.shell("dumpsys -t 60 meminfo -c", signal);
-      globalMemInfo = parseGlobalMemInfo(compact);
-      // Only use compact as primary results if it has category breakdown lines
-      const hasCategories = /^(?:cat,)?(?:Native Heap|Dalvik Heap),\d/m.test(compact);
-      compactResults = parseMemInfo(compact);
-      compactJavaPids = parseJavaPids(compact);
-      if (hasCategories && compactResults.length > 0) {
-        return { list: compactResults, javaPids: compactJavaPids, hasBreakdown: true, globalMemInfo };
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") throw e;
-      // compact format failed, fall through
-    }
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    // Fallback: regular format (PSS + RSS summary sections)
-    const output = await this.device.shell("dumpsys -t 60 meminfo", signal);
-    const results = parseMemInfo(output);
-    // Merge OOM labels from compact results into regular results
-    if (compactResults.length > 0) {
-      const labelByPid = new Map(compactResults.map(p => [p.pid, p.oomLabel]));
-      for (const p of results) {
-        if (!p.oomLabel && labelByPid.has(p.pid)) {
-          p.oomLabel = labelByPid.get(p.pid)!;
-        }
-      }
-    }
-    // For non-compact fallback, we can't distinguish Java from native — assume all are Java
-    const javaPids = compactJavaPids.size > 0 ? compactJavaPids : new Set(results.map(p => p.pid));
-    return { list: results, javaPids, hasBreakdown: false, globalMemInfo };
-  }
-
-  /**
-   * Fetch detailed memory breakdown (Java/Native/Graphics) per process.
-   * Runs `dumpsys meminfo <pid>` for each process and updates in place.
-   */
-  async enrichProcessDetails(
-    processes: ProcessInfo[],
-    onProgress?: (completed: number, total: number, current: string) => void,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (!this.device) return;
-    for (let i = 0; i < processes.length; i++) {
-      if (signal?.aborted || !this.device?.connected) break;
-      onProgress?.(i, processes.length, processes[i].name);
-      try {
-        const output = await this.device.shell(`dumpsys -t 30 meminfo ${processes[i].pid}`, signal);
-        const details = parseDetailedSections(output);
-        if (details.length > 0) {
-          const d = details[0];
-          processes[i].javaHeapKb = d.javaHeapKb;
-          processes[i].nativeHeapKb = d.nativeHeapKb;
-          processes[i].graphicsKb = d.graphicsKb;
-          processes[i].codeKb = d.codeKb;
-          if (d.pssKb > 0) processes[i].pssKb = d.pssKb;
-          if (d.rssKb > 0) processes[i].rssKb = d.rssKb;
-        }
-      } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") break;
-        // Process may have died, skip
-      }
-    }
-    onProgress?.(processes.length, processes.length, "");
+    const output = await this.device.shell("dumpsys activity lru", signal);
+    return parseLruProcesses(output);
   }
 
   /**
@@ -595,69 +358,6 @@ export class AdbConnection {
     new Uint8Array(buffer).set(data);
     onProgress?.({ step: "done", buffer });
     return buffer;
-  }
-
-  /**
-   * Single per-process pass: enrich meminfo + fetch smaps together.
-   * Each process is fully ready (breakdown + memory maps) before moving to the next.
-   */
-  async enrichPerProcess(
-    processes: ProcessInfo[],
-    options: { meminfo?: boolean; smaps?: boolean },
-    onProgress?: (done: number, total: number, name: string) => void,
-    onMeminfo?: () => void,
-    onSmaps?: (pid: number, data: SmapsAggregated[]) => void,
-    signal?: AbortSignal,
-  ): Promise<void> {
-    if (!this.device) return;
-    const needsMeminfo = options.meminfo ?? false;
-    const needsSmaps = (options.smaps ?? false) && this._isRoot;
-    if (!needsMeminfo && !needsSmaps) return;
-
-    // Process in PSS-descending order (biggest first = most interesting)
-    const sorted = [...processes].sort((a, b) => b.pssKb - a.pssKb);
-
-    for (let i = 0; i < sorted.length; i++) {
-      if (signal?.aborted || !this.device?.connected) break;
-      const proc = sorted[i];
-      onProgress?.(i, sorted.length, proc.name);
-
-      // 1. Enrich with per-process meminfo breakdown
-      if (needsMeminfo) {
-        try {
-          const output = await this.device.shell(`dumpsys -t 30 meminfo ${proc.pid}`, signal);
-          const details = parseDetailedSections(output);
-          if (details.length > 0) {
-            const d = details[0];
-            proc.javaHeapKb = d.javaHeapKb;
-            proc.nativeHeapKb = d.nativeHeapKb;
-            proc.graphicsKb = d.graphicsKb;
-            proc.codeKb = d.codeKb;
-            if (d.pssKb > 0) proc.pssKb = d.pssKb;
-            if (d.rssKb > 0) proc.rssKb = d.rssKb;
-          }
-          onMeminfo?.();
-        } catch (e) {
-          if (e instanceof DOMException && e.name === "AbortError") break;
-          // Process may have died — skip
-        }
-      }
-
-      // 2. Fetch smaps (root-only)
-      if (needsSmaps) {
-        try {
-          const entries = await this.getSmapsForPid(proc.pid, signal);
-          if (entries.length > 0) {
-            onSmaps?.(proc.pid, aggregateSmaps(entries));
-          }
-        } catch (e) {
-          if (e instanceof DOMException && e.name === "AbortError") break;
-          // Process may have died — skip
-        }
-      }
-    }
-
-    onProgress?.(sorted.length, sorted.length, "");
   }
 
   /** Fetch parsed smaps data for a single process (requires root). */
@@ -1124,32 +824,6 @@ export function diffSharedMappings(prev: SharedMapping[], current: SharedMapping
 }
 
 // ─── Global memory info parsers ─────────────────────────────────────────────
-
-/** Parse global memory stats from `dumpsys meminfo -c` compact output. */
-export function parseGlobalMemInfo(output: string): GlobalMemInfo | null {
-  const info: GlobalMemInfo = {
-    totalRamKb: 0, freeRamKb: 0, usedPssKb: 0, lostRamKb: 0,
-    zramPhysicalKb: 0, swapTotalKb: 0, swapFreeKb: 0,
-    memAvailableKb: 0, buffersKb: 0, cachedKb: 0,
-  };
-  let found = false;
-  for (const line of output.split("\n")) {
-    const parts = line.split(",");
-    if (parts[0] === "ram" && parts.length >= 4) {
-      info.totalRamKb = parseInt(parts[1], 10) || 0;
-      info.freeRamKb = parseInt(parts[2], 10) || 0;
-      info.usedPssKb = parseInt(parts[3], 10) || 0;
-      found = true;
-    } else if (parts[0] === "lostram" && parts.length >= 2) {
-      info.lostRamKb = parseInt(parts[1], 10) || 0;
-    } else if (parts[0] === "zram" && parts.length >= 4) {
-      info.zramPhysicalKb = parseInt(parts[1], 10) || 0;
-      info.swapTotalKb = parseInt(parts[2], 10) || 0;
-      info.swapFreeKb = parseInt(parts[3], 10) || 0;
-    }
-  }
-  return found ? info : null;
-}
 
 /** Parse /proc/meminfo kernel output. */
 export function parseProcMeminfo(output: string): Partial<GlobalMemInfo> {

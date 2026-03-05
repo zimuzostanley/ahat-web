@@ -650,55 +650,64 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     setJavaPids(new Set());
     setError(null);
     try {
-      if (conn.isRoot) {
-        // Root fast path: ps + smaps_rollup (two commands, no dumpsys)
-        const { list, rollups, javaPids: jp } = await conn.getProcessesFromProc(ac.signal);
-        if (ac.signal.aborted) return;
-        setProcesses(list);
-        setSmapsRollups(rollups);
-        setJavaPids(jp);
+      // Step 1: Fast Java process list from `dumpsys activity lru` (works without root)
+      const lruList = await conn.getLruProcesses(ac.signal);
+      if (ac.signal.aborted) return;
+      const lruJavaPids = new Set(lruList.map(p => p.pid));
+      setProcesses(lruList);
+      setJavaPids(lruJavaPids);
 
-        // Background: dumpsys meminfo -c for OOM labels + global mem info
-        if (!ac.signal.aborted) {
-          try {
-            const memResult = await conn.getProcessList(ac.signal);
-            if (!ac.signal.aborted) {
-              if (memResult.globalMemInfo) setGlobalMemInfo(memResult.globalMemInfo);
-              const memByPid = new Map(memResult.list.map(p => [p.pid, p]));
-              setProcesses(prev => (prev ?? []).map(p => {
-                const mp = memByPid.get(p.pid);
-                return mp ? { ...p, oomLabel: mp.oomLabel } : p;
-              }));
-            }
-          } catch {}
-        }
-
-        // /proc/meminfo for detailed global stats
-        if (!ac.signal.aborted) {
-          try {
-            const procInfo = await conn.getProcMeminfo(ac.signal);
-            if (!ac.signal.aborted) {
-              setGlobalMemInfo(gmi => gmi ? { ...gmi, memAvailableKb: procInfo.memAvailableKb ?? 0, buffersKb: procInfo.buffersKb ?? 0, cachedKb: procInfo.cachedKb ?? 0 } : gmi);
-            }
-          } catch {}
-        }
-      } else {
-        // Non-root: dumpsys meminfo only
-        const result = await conn.getProcessList(ac.signal);
-        if (ac.signal.aborted) return;
-        setProcesses(result.list);
-        setJavaPids(result.javaPids);
-        if (result.globalMemInfo) setGlobalMemInfo(result.globalMemInfo);
-
+      if (!conn.isRoot) {
+        // Non-root: check debuggable packages, then stop
         if (!ac.signal.aborted) {
           try {
             const debuggable = await conn.getDebuggablePackages(ac.signal);
             if (!ac.signal.aborted) {
-              for (const p of result.list) p.debuggable = debuggable.has(p.name);
-              setProcesses([...result.list]);
+              for (const p of lruList) p.debuggable = debuggable.has(p.name);
+              setProcesses([...lruList]);
             }
           } catch {}
         }
+        return;
+      }
+
+      // Step 2 (root, bg): Get ALL processes + smaps_rollup from /proc
+      if (!ac.signal.aborted) {
+        const { list: procList, rollups, javaPids: procJavaPids } = await conn.getProcessesFromProc(ac.signal);
+        if (ac.signal.aborted) return;
+
+        // Merge: keep OOM labels from LRU, add all /proc processes
+        const oomByPid = new Map(lruList.map(p => [p.pid, p.oomLabel]));
+        for (const p of procList) {
+          const oom = oomByPid.get(p.pid);
+          if (oom) p.oomLabel = oom;
+        }
+        // Java PIDs: union of LRU (authoritative) + /proc heuristic
+        const mergedJavaPids = new Set([...lruJavaPids, ...procJavaPids]);
+        setProcesses(procList);
+        setSmapsRollups(rollups);
+        setJavaPids(mergedJavaPids);
+      }
+
+      // Step 3 (root, bg): /proc/meminfo for global memory stats
+      if (!ac.signal.aborted) {
+        try {
+          const procInfo = await conn.getProcMeminfo(ac.signal);
+          if (!ac.signal.aborted && procInfo.totalRamKb) {
+            setGlobalMemInfo({
+              totalRamKb: procInfo.totalRamKb ?? 0,
+              freeRamKb: procInfo.freeRamKb ?? 0,
+              usedPssKb: 0,
+              lostRamKb: 0,
+              zramPhysicalKb: 0,
+              swapTotalKb: procInfo.swapTotalKb ?? 0,
+              swapFreeKb: procInfo.swapFreeKb ?? 0,
+              memAvailableKb: procInfo.memAvailableKb ?? 0,
+              buffersKb: procInfo.buffersKb ?? 0,
+              cachedKb: procInfo.cachedKb ?? 0,
+            });
+          }
+        } catch {}
       }
     } catch (e) {
       if (ac.signal.aborted) return;
