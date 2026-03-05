@@ -9,8 +9,12 @@ export interface SiteParams { id: number }
 function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerProxy; heaps: HeapInfo[]; navigate: NavFn; params: SiteParams; isDiffed: boolean }) {
   const [data, setData] = useState<SiteData | null>(null);
   useEffect(() => {
+    let cancelled = false;
     setData(null);
-    proxy.query<SiteData>("getSite", { id: params.id ?? 0 }).then(setData).catch(console.error);
+    proxy.query<SiteData>("getSite", { id: params.id ?? 0 })
+      .then(d => { if (!cancelled) setData(d); })
+      .catch(console.error);
+    return () => { cancelled = true; };
   }, [proxy, params.id]);
 
   if (!data) return <div className="text-stone-400 p-4">Loading&hellip;</div>;

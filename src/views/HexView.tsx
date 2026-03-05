@@ -412,7 +412,8 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
   })();
 
   const handleCopy = () => {
-    const text = formatHexDump(data, undefined, regionMap, addrWidth);
+    const maxCopyRows = 65_536; // ~1 MB of data
+    const text = formatHexDump(data, maxCopyRows, regionMap, addrWidth);
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);

@@ -610,7 +610,7 @@ function handleSearch(query: string): InstanceRow[] {
     if (cn.toLowerCase().includes(q) || deobClass(cn).toLowerCase().includes(q)) matches.push(inst);
   }
   matches.sort((a, b) => b.getTotalRetainedSize().total - a.getTotalRetainedSize().total);
-  return matches.map(i => rowOf(i, snap!));
+  return matches.slice(0, 1000).map(i => rowOf(i, snap!));
 }
 
 function handleGetObjects(params: { siteId: number; className: string; heap: string | null }): InstanceRow[] {
@@ -687,6 +687,7 @@ addEventListener("message", (e: MessageEvent) => {
 
   if (msg.type === "parse") {
     try {
+      baselineSnap = null;
       rawBuffer = msg.buffer;
       snap = parseHprof(msg.buffer, (m: string, pct: number) => {
         console.log(`[hprof] ${m} (${pct.toFixed(1)}%)`);

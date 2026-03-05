@@ -320,6 +320,7 @@ export class ProguardMap {
     for (let i = 0; i < obfuscatedSig.length; i++) {
       if (obfuscatedSig[i] === "L") {
         const e = obfuscatedSig.indexOf(";", i);
+        if (e === -1) break;
         result += "L";
         const cls = obfuscatedSig.substring(i + 1, e).replace(/\//g, ".");
         result += this.getClassName(cls).replace(/\./g, "/");

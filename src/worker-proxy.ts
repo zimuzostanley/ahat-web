@@ -36,7 +36,9 @@ export function makeWorkerProxy(
     let diffResolve: ((ov: OverviewData) => void) | null = null;
     let diffReject: ((e: Error) => void) | null = null;
     let clearResolve: ((ov: OverviewData) => void) | null = null;
+    let clearReject: ((e: Error) => void) | null = null;
     let mapResolve: ((ok: boolean) => void) | null = null;
+    let mapReject: ((e: Error) => void) | null = null;
 
     worker.onmessage = (e: MessageEvent) => {
       const msg = e.data as WorkerInMessage;
@@ -62,14 +64,16 @@ export function makeWorkerProxy(
             });
           },
           clearBaseline(): Promise<OverviewData> {
-            return new Promise<OverviewData>((res) => {
+            return new Promise<OverviewData>((res, rej) => {
               clearResolve = res;
+              clearReject = rej;
               worker.postMessage({ type: "clearBaseline" });
             });
           },
           loadProguardMap(text: string): Promise<boolean> {
-            return new Promise<boolean>((res) => {
+            return new Promise<boolean>((res, rej) => {
               mapResolve = res;
+              mapReject = rej;
               worker.postMessage({ type: "loadProguardMap", text });
             });
           },
@@ -79,6 +83,8 @@ export function makeWorkerProxy(
       } else if (msg.type === "error") {
         if (!ready) reject(new Error(msg.message));
         if (diffReject) { diffReject(new Error(msg.message)); diffReject = null; diffResolve = null; diffProgressCb = null; }
+        if (clearReject) { clearReject(new Error(msg.message)); clearReject = null; clearResolve = null; }
+        if (mapReject) { mapReject(new Error(msg.message)); mapReject = null; mapResolve = null; }
       } else if (msg.type === "result") {
         const p = pending.get(msg.id);
         if (p) { pending.delete(msg.id); p.resolve(msg.data); }
@@ -96,7 +102,14 @@ export function makeWorkerProxy(
       }
     };
     worker.onerror = (err) => {
-      if (!ready) reject(new Error(err.message ?? "Worker error"));
+      const error = new Error(err.message ?? "Worker error");
+      if (!ready) { reject(error); return; }
+      // Worker crashed post-ready: reject all pending promises
+      for (const [, p] of pending) p.reject(error);
+      pending.clear();
+      if (diffReject) { diffReject(error); diffReject = null; diffResolve = null; diffProgressCb = null; }
+      if (clearReject) { clearReject(error); clearReject = null; clearResolve = null; }
+      if (mapReject) { mapReject(error); mapReject = null; mapResolve = null; }
     };
 
     const forWorker = buffer.slice(0);

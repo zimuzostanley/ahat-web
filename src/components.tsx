@@ -62,6 +62,7 @@ export function Section({ title, children, defaultOpen = true }: {
       <button
         className="w-full px-4 py-2 flex justify-between items-center text-left hover:bg-stone-50"
         onClick={() => setOpen(!open)}
+        aria-expanded={open}
       >
         <span className="text-sm font-semibold text-stone-700">{title}</span>
         <span className="text-stone-400 text-xs">{open ? "\u25BC" : "\u25B6"}</span>

@@ -148,6 +148,12 @@ export class AdbDevice {
     this.rxLoop().catch(err => {
       if (this._connected) console.error("[adb] RX loop error:", err);
       this._connected = false;
+      // Reject pending stream opens and close active streams
+      const disconnectErr = new Error("USB disconnected");
+      for (const [, ps] of this.pendingStreams) ps.promise.reject(disconnectErr);
+      this.pendingStreams.clear();
+      for (const [, s] of this.streams) s.onClose?.();
+      this.streams.clear();
     });
   }
 

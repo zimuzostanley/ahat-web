@@ -23,6 +23,9 @@ function SearchView({ proxy, navigate, initialQuery }: { proxy: WorkerProxy; nav
     }
   }, [initialQuery, doSearch]);
 
+  // Cleanup debounce timer on unmount
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+
   const handleChange = useCallback((q: string) => {
     setQuery(q);
     if (timerRef.current) clearTimeout(timerRef.current);

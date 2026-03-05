@@ -134,6 +134,7 @@ export default function App() {
       );
     } catch (err: unknown) {
       console.error(err);
+      worker.terminate();
       setSessions(prev => {
         if (!prev.find(s => s.id === sessionId)) return prev;
         return prev.map(s => s.id === sessionId

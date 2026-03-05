@@ -13,10 +13,12 @@ function ObjectView({ proxy, heaps, navigate, params }: {
   const [detail, setDetail] = useState<InstanceDetail | null | "loading">("loading");
 
   useEffect(() => {
+    let cancelled = false;
     setDetail("loading");
     proxy.query<InstanceDetail | null>("getInstance", { id: params.id })
-      .then(setDetail)
-      .catch(err => { console.error(err); setDetail(null); });
+      .then(d => { if (!cancelled) setDetail(d); })
+      .catch(err => { console.error(err); if (!cancelled) setDetail(null); });
+    return () => { cancelled = true; };
   }, [proxy, params.id]);
 
   if (detail === "loading") return <div className="text-stone-400 p-4">Loading&hellip;</div>;

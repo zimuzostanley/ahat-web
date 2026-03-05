@@ -85,11 +85,11 @@ function OverviewView({ overview, name, navigate }: {
                 <tr key={h.name} className="border-t border-stone-100 hover:bg-stone-50">
                   <td className="py-1 px-2">{h.name}</td>
                   <td className="py-1 px-2 text-right font-mono">{fmtSize(h.java)}</td>
-                  {diffed && bh && <DeltaCell current={h.java} baseline={bh.java} />}
+                  {diffed && <DeltaCell current={h.java} baseline={bh ? bh.java : 0} />}
                   <td className="py-1 px-2 text-right font-mono">{fmtSize(h.native_)}</td>
-                  {diffed && bh && <DeltaCell current={h.native_} baseline={bh.native_} />}
+                  {diffed && <DeltaCell current={h.native_} baseline={bh ? bh.native_ : 0} />}
                   <td className="py-1 px-2 text-right font-mono font-semibold">{fmtSize(h.java + h.native_)}</td>
-                  {diffed && bh && <DeltaCell current={h.java + h.native_} baseline={bh.java + bh.native_} />}
+                  {diffed && <DeltaCell current={h.java + h.native_} baseline={bh ? bh.java + bh.native_ : 0} />}
                 </tr>
               );
             })}
