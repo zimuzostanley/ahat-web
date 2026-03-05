@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseSmaps, aggregateSmaps, parseSmapsRollups, parsePsOutput } from "./capture";
+import { parseSmaps, aggregateSmaps, parseSmapsRollups } from "./capture";
 
 // ─── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -461,36 +461,3 @@ SwapPss: 0 kB
   });
 });
 
-// ─── parsePsOutput ────────────────────────────────────────────────────────────
-
-describe("parsePsOutput", () => {
-  it("parses typical ps -A output", () => {
-    const output = `  PID ARGS
-    1 init
-  123 com.android.systemui
-  456 /system/bin/logd
-  789 [kworker/0:1]
-`;
-    const result = parsePsOutput(output);
-    expect(result).toEqual([
-      { pid: 1, name: "init" },
-      { pid: 123, name: "com.android.systemui" },
-      { pid: 456, name: "/system/bin/logd" },
-      { pid: 789, name: "[kworker/0:1]" },
-    ]);
-  });
-
-  it("skips header line", () => {
-    const result = parsePsOutput("PID ARGS\n100 foo\n");
-    expect(result).toEqual([{ pid: 100, name: "foo" }]);
-  });
-
-  it("returns empty for empty input", () => {
-    expect(parsePsOutput("")).toEqual([]);
-  });
-
-  it("handles args with spaces", () => {
-    const result = parsePsOutput("  PID ARGS\n  42 /usr/bin/app --flag value\n");
-    expect(result).toEqual([{ pid: 42, name: "/usr/bin/app --flag value" }]);
-  });
-});

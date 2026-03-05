@@ -226,11 +226,6 @@ export class AdbConnection {
     }
   }
 
-  /** Reconnect to a previously paired device. */
-  async reconnect(usbDev: USBDevice): Promise<void> {
-    this.device = await AdbDevice.connect(usbDev, this.keyMgr);
-  }
-
   /** Find debuggable packages on the device. */
   async getDebuggablePackages(signal?: AbortSignal): Promise<Set<string>> {
     if (!this.device) return new Set();
@@ -369,42 +364,6 @@ export class AdbConnection {
       : `su 0 cat /proc/${pid}/smaps`;
     const output = await this.device.shell(cmd, signal);
     return parseSmaps(output);
-  }
-
-  /** Batch fetch smaps_rollup for all processes in a single shell command. */
-  async getSmapsRollups(pids: number[], signal?: AbortSignal): Promise<Map<number, SmapsRollup>> {
-    if (!this.device || !this._isRoot || pids.length === 0) return new Map();
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-
-    const result = new Map<number, SmapsRollup>();
-    const BATCH = 50;
-    for (let i = 0; i < pids.length; i += BATCH) {
-      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-      const pidList = pids.slice(i, i + BATCH).join(" ");
-      const inner = `for p in ${pidList}; do echo "===PID:$p==="; cat /proc/$p/smaps_rollup 2>/dev/null; done`;
-      const cmd = this._suPrefix === "su -c"
-        ? `su -c '${inner}'`
-        : `su 0 sh -c '${inner}'`;
-      try {
-        const output = await this.device.shell(cmd, signal);
-        for (const [pid, rollup] of parseSmapsRollups(output)) {
-          result.set(pid, rollup);
-        }
-      } catch (e) {
-        if (e instanceof DOMException && e.name === "AbortError") throw e;
-        console.warn("[adb] smaps_rollup batch failed, skipping", e);
-        break;
-      }
-    }
-    return result;
-  }
-
-  /** Get all PIDs + names from `ps -A`. Works without root. */
-  async getAllPids(signal?: AbortSignal): Promise<{ pid: number; name: string }[]> {
-    if (!this.device) return [];
-    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const output = await this.device.shell("ps -A -o PID,ARGS", signal);
-    return parsePsOutput(output);
   }
 
   /**
@@ -652,21 +611,6 @@ export function aggregateSmaps(entries: SmapsEntry[]): SmapsAggregated[] {
 
 /** Parse batch smaps_rollup output delimited by ===PID:N===name markers.
  *  Supports both `===PID:123===` (no name) and `===PID:123===com.foo` formats. */
-/** Parse `ps -A -o PID,ARGS` output. */
-export function parsePsOutput(output: string): { pid: number; name: string }[] {
-  const results: { pid: number; name: string }[] = [];
-  for (const line of output.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || /^PID\b/i.test(trimmed)) continue;
-    const m = trimmed.match(/^(\d+)\s+(.+)/);
-    if (m) {
-      const pid = parseInt(m[1], 10);
-      if (isFinite(pid)) results.push({ pid, name: m[2].trim() });
-    }
-  }
-  return results;
-}
-
 export function parseSmapsRollups(output: string): Map<number, SmapsRollup & { name?: string }> {
   const result = new Map<number, SmapsRollup & { name?: string }>();
   let pid = -1;
