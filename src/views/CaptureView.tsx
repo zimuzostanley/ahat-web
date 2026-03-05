@@ -2,10 +2,11 @@ import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "rea
 import { AdbConnection, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
 
-type SmapsSortFieldType = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
-type VmaSortFieldType = SmapsSortFieldType | "addrStart";
+type SmapsNumericField = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
+type SmapsSortFieldType = SmapsNumericField | "count";
+type VmaSortFieldType = SmapsNumericField | "addrStart";
 
-const SMAPS_COLUMNS: [SmapsSortFieldType, string][] = [
+const SMAPS_COLUMNS: [SmapsNumericField, string][] = [
   ["rssKb", "RSS"], ["pssKb", "PSS"],
   ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
   ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
@@ -116,7 +117,7 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
   );
 }
 
-const SMAPS_DELTA_KEY: Record<SmapsSortFieldType, keyof SmapsDiff> = {
+const SMAPS_DELTA_KEY: Record<SmapsNumericField, keyof SmapsDiff> = {
   pssKb: "deltaPssKb", rssKb: "deltaRssKb", sizeKb: "deltaSizeKb",
   sharedCleanKb: "deltaSharedCleanKb", sharedDirtyKb: "deltaSharedDirtyKb",
   privateCleanKb: "deltaPrivateCleanKb", privateDirtyKb: "deltaPrivateDirtyKb",
@@ -152,18 +153,22 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
   }, [prevAggregated]);
 
   const sorted = useMemo(() => {
+    const cmp = (a: SmapsAggregated, b: SmapsAggregated) => {
+      const av = a[sortField], bv = b[sortField];
+      return sortAsc ? av - bv : bv - av;
+    };
     if (smapsDiffs) {
       const copy = [...smapsDiffs];
       copy.sort((a, b) => {
         const aPin = a.status !== "matched" ? 1 : 0;
         const bPin = b.status !== "matched" ? 1 : 0;
         if (aPin !== bPin) return bPin - aPin;
-        return sortAsc ? a.current[sortField] - b.current[sortField] : b.current[sortField] - a.current[sortField];
+        return cmp(a.current, b.current);
       });
       return copy.map(d => d.current);
     }
     const copy = [...aggregated];
-    copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
+    copy.sort(cmp);
     return copy;
   }, [aggregated, smapsDiffs, sortField, sortAsc]);
 
@@ -196,8 +201,11 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
         <td colSpan={leadingColCount - 1} className="text-left py-1 px-2 pl-6 text-stone-500 text-xs font-medium">
           Mapping
         </td>
-        <td className="text-right py-1 px-1 text-stone-400 text-xs font-medium">
-          #
+        <td
+          className="text-right py-1 px-1 text-stone-400 text-xs font-medium cursor-pointer select-none hover:text-stone-700"
+          onClick={() => onToggleSort("count")}
+        >
+          # {sortField === "count" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
         </td>
         {SMAPS_COLUMNS.map(([f, label]) => (
           <td
@@ -304,11 +312,11 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
   onDump: (pid: number, processName: string, label: string, regions: { addrStart: string; addrEnd: string }[]) => void;
   dumpDisabled: boolean;
 }) {
-  const [sortField, setSortField] = useState<SmapsSortFieldType | "processCount">("pssKb");
+  const [sortField, setSortField] = useState<SmapsNumericField | "processCount">("pssKb");
   const [sortAsc, setSortAsc] = useState(false);
   const [expandedMapping, setExpandedMapping] = useState<string | null>(null);
 
-  const toggleSort = useCallback((f: SmapsSortFieldType | "processCount") => {
+  const toggleSort = useCallback((f: SmapsNumericField | "processCount") => {
     if (sortField === f) setSortAsc(!sortAsc);
     else { setSortField(f); setSortAsc(false); }
   }, [sortField, sortAsc]);
@@ -559,10 +567,9 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   // Smaps expansion / sort state
   const [expandedSmapsPid, setExpandedSmapsPid] = useState<number | null>(null);
   const [expandedSmapsGroup, setExpandedSmapsGroup] = useState<string | null>(null);
-  type SmapsSortField = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
-  const [smapsSortField, setSmapsSortField] = useState<SmapsSortField>("pssKb");
+  const [smapsSortField, setSmapsSortField] = useState<SmapsSortFieldType>("pssKb");
   const [smapsSortAsc, setSmapsSortAsc] = useState(false);
-  type VmaSortField = SmapsSortField | "addrStart";
+  type VmaSortField = SmapsNumericField | "addrStart";
   const [vmaSortField, setVmaSortField] = useState<VmaSortField>("pssKb");
   const [vmaSortAsc, setVmaSortAsc] = useState(false);
 
@@ -968,7 +975,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     else { setSortField(field); setSortAsc(false); }
   }, [sortField, sortAsc]);
 
-  const toggleSmapsSort = useCallback((field: SmapsSortField) => {
+  const toggleSmapsSort = useCallback((field: SmapsSortFieldType) => {
     if (smapsSortField === field) setSmapsSortAsc(!smapsSortAsc);
     else { setSmapsSortField(field); setSmapsSortAsc(false); }
   }, [smapsSortField, smapsSortAsc]);
