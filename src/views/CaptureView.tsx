@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "rea
 import { AdbConnection, PINNED_PROCESSES, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
 
-type SmapsNumericField = "pssKb" | "rssKb" | "sizeKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
+type SmapsNumericField = "pssKb" | "rssKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
 type SmapsSortFieldType = SmapsNumericField | "count";
 type VmaSortFieldType = SmapsNumericField | "addrStart";
 
@@ -10,7 +10,7 @@ const SMAPS_COLUMNS: [SmapsNumericField, string][] = [
   ["rssKb", "RSS"], ["pssKb", "PSS"],
   ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
   ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
-  ["swapKb", "Swap"], ["sizeKb", "VSize"],
+  ["swapKb", "Swap"],
 ];
 
 function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, onDump, dumpDisabled, entryDiffs, leadingColCount }: {
@@ -118,7 +118,7 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
 }
 
 const SMAPS_DELTA_KEY: Record<SmapsNumericField, keyof SmapsDiff> = {
-  pssKb: "deltaPssKb", rssKb: "deltaRssKb", sizeKb: "deltaSizeKb",
+  pssKb: "deltaPssKb", rssKb: "deltaRssKb",
   sharedCleanKb: "deltaSharedCleanKb", sharedDirtyKb: "deltaSharedDirtyKb",
   privateCleanKb: "deltaPrivateCleanKb", privateDirtyKb: "deltaPrivateDirtyKb",
   swapKb: "deltaSwapKb",
@@ -174,8 +174,8 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
 
   // Totals row
   const totals = useMemo(() => {
-    const t = { rssKb: 0, pssKb: 0, sizeKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
-      deltaRssKb: 0, deltaPssKb: 0, deltaSizeKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0, deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0 };
+    const t = { rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
+      deltaRssKb: 0, deltaPssKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0, deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0 };
     if (smapsDiffs) {
       for (const d of smapsDiffs) {
         if (d.status !== "removed") {
@@ -343,8 +343,8 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
   }, [mappings, diffs, sortField, sortAsc]);
 
   const totals = useMemo(() => {
-    const t = { pssKb: 0, rssKb: 0, sizeKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
-      deltaPssKb: 0, deltaRssKb: 0, deltaSizeKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0, deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0 };
+    const t = { pssKb: 0, rssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
+      deltaPssKb: 0, deltaRssKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0, deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0 };
     if (diffs) {
       for (const d of diffs) {
         if (d.status !== "removed") {
@@ -503,14 +503,14 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
 
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
-type SortField = "pid" | "name" | "pssKb" | "rssKb" | "privateDirtyKb" | "privateCleanKb" | "sharedDirtyKb" | "sharedCleanKb" | "swapKb" | "sizeKb" | "oomLabel";
+type SortField = "pid" | "name" | "pssKb" | "rssKb" | "privateDirtyKb" | "privateCleanKb" | "sharedDirtyKb" | "sharedCleanKb" | "swapKb" | "oomLabel";
 
 // Process table columns shown when rollup data is available
 const ROLLUP_COLUMNS: [SortField, string][] = [
   ["rssKb", "RSS"], ["pssKb", "PSS"],
   ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
   ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
-  ["swapKb", "Swap"], ["sizeKb", "VSize"],
+  ["swapKb", "Swap"],
 ];
 
 /** Get a sortable value from either rollup data or ProcessInfo fallback. */
