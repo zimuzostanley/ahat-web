@@ -330,8 +330,8 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
     return strings.filter(s => s.str.toLowerCase().includes(lower));
   }, [strings, stringFilter]);
 
-  const displayStrings = filteredStrings.length > MAX_DISPLAYED_STRINGS
-    ? filteredStrings.slice(0, MAX_DISPLAYED_STRINGS) : filteredStrings;
+  const [stringShowCount, setStringShowCount] = useState(MAX_DISPLAYED_STRINGS);
+  const displayStrings = filteredStrings.slice(0, stringShowCount);
 
   const measuredRef = useCallback((node: HTMLDivElement | null) => {
     scrollNodeRef.current = node;
@@ -499,7 +499,7 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
           <button
             className="text-xs text-stone-500 hover:text-stone-700 px-2 py-0.5 border border-stone-200 hover:border-stone-400"
             onClick={handleCopy}
-          >{copied ? "Copied" : "Copy hex"}</button>
+          >{copied ? "Copied" : "Copy"}</button>
           <button
             className="text-xs text-stone-500 hover:text-stone-700 px-2 py-0.5 border border-stone-200 hover:border-stone-400"
             onClick={() => downloadBlob(name + ".bin", buffer)}
@@ -643,9 +643,13 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
                   </div>
                 );
               })}
-              {filteredStrings.length > MAX_DISPLAYED_STRINGS && (
+              {filteredStrings.length > stringShowCount && (
                 <div className="px-2 py-2 text-[10px] text-stone-400 text-center">
-                  Showing first {MAX_DISPLAYED_STRINGS.toLocaleString()} of {filteredStrings.length.toLocaleString()}
+                  Showing {stringShowCount.toLocaleString()} of {filteredStrings.length.toLocaleString()}
+                  {" \u2014 "}
+                  <button className="text-sky-600 hover:underline" onClick={() => setStringShowCount(Math.min(stringShowCount + 5_000, filteredStrings.length))}>show more</button>
+                  {" "}
+                  <button className="text-sky-600 ml-1 hover:underline" onClick={() => setStringShowCount(filteredStrings.length)}>show all</button>
                 </div>
               )}
             </div>
