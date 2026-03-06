@@ -116,9 +116,13 @@ function StringsView({ proxy, navigate, initialQuery }: {
                 { label: "Wasted", align: "right", sortKey: r => r.wastedBytes, render: r => <span className="font-mono">{fmtSize(r.wastedBytes)}</span> },
                 { label: "Count", align: "right", sortKey: r => r.count, render: r => <span className="font-mono">{r.count}</span> },
                 { label: "Value", render: r => (
-                  <span className="font-mono text-emerald-700 dark:text-emerald-400 break-all">
+                  <button
+                    className="text-left font-mono text-emerald-700 dark:text-emerald-400 break-all hover:text-emerald-500 dark:hover:text-emerald-300"
+                    onClick={() => handleChange(r.value)}
+                    title="Click to filter by this value"
+                  >
                     "{r.value.length > 200 ? r.value.slice(0, 200) + "\u2026" : r.value}"
-                  </span>
+                  </button>
                 )},
               ]}
               data={duplicates}
