@@ -155,7 +155,7 @@ function StringsView({ proxy, navigate, initialQuery }: {
                 <span>
                   <button
                     className="text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300 underline decoration-sky-300 hover:decoration-sky-500 dark:decoration-sky-600 dark:hover:decoration-sky-400"
-                    onClick={() => navigate("object", { id: r.id })}
+                    onClick={() => navigate("object", { id: r.id, label: `"${r.value.length > 40 ? r.value.slice(0, 40) + "\u2026" : r.value}"` })}
                   >
                     <span className="font-mono text-emerald-700 dark:text-emerald-400 break-all">
                       "{r.value.length > 300 ? r.value.slice(0, 300) + "\u2026" : r.value}"

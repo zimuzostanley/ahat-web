@@ -64,7 +64,7 @@ function BitmapCard({ row, proxy, navigate, density, deviceScale }: {
         </div>
         <button
           className="text-xs text-sky-700 dark:text-sky-400 underline decoration-sky-300 dark:decoration-sky-600 hover:decoration-sky-500 dark:hover:decoration-sky-400"
-          onClick={() => navigate("object", { id: row.row.id })}
+          onClick={() => navigate("object", { id: row.row.id, label: `Bitmap ${row.width}\u00d7${row.height}` })}
         >Details</button>
       </div>
     </div>

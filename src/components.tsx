@@ -24,7 +24,7 @@ export function InstanceLink({ row, navigate }: { row: InstanceRow | ObjLinkRef 
       {full?.isRoot && <span className="text-rose-500 dark:text-rose-400 text-xs mr-1">root</span>}
       <button
         className="text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300 underline decoration-sky-300 hover:decoration-sky-500 dark:decoration-sky-600 dark:hover:decoration-sky-400"
-        onClick={() => navigate("object", { id: row.id })}
+        onClick={() => navigate("object", { id: row.id, label: row.display })}
       >
         {row.display}
       </button>

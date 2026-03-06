@@ -1,7 +1,7 @@
 export type NavState =
   | { view: "overview"; params: Record<string, never> }
   | { view: "rooted"; params: Record<string, never> }
-  | { view: "object"; params: { id: number } }
+  | { view: "object"; params: { id: number; label?: string } }
   | { view: "objects"; params: { siteId: number; className: string; heap: string | null } }
   | { view: "site"; params: { id: number } }
   | { view: "search"; params: { q: string } }
@@ -13,7 +13,7 @@ export function navLabel(state: NavState): string {
   switch (state.view) {
     case "overview": return "Overview";
     case "rooted": return "Rooted";
-    case "object": return `Object 0x${state.params.id.toString(16)}`;
+    case "object": return state.params.label ?? `Object 0x${state.params.id.toString(16)}`;
     case "objects": {
       const cls = state.params.className;
       const short = cls.includes(".") ? cls.slice(cls.lastIndexOf(".") + 1) : cls;

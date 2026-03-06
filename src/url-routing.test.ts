@@ -259,6 +259,14 @@ describe('URL routing', () => {
       expect(navLabel({ view: "object", params: { id: 0xDEAD } })).toBe("Object 0xdead");
     });
 
+    it('returns custom label for object when provided', () => {
+      expect(navLabel({ view: "object", params: { id: 0xDEAD, label: "Bitmap@0000dead" } })).toBe("Bitmap@0000dead");
+    });
+
+    it('falls back to hex id when label is undefined', () => {
+      expect(navLabel({ view: "object", params: { id: 0x1234, label: undefined } })).toBe("Object 0x1234");
+    });
+
     it('returns short class name for objects view', () => {
       expect(navLabel({ view: "objects", params: { siteId: 1, className: "android.view.View", heap: null } })).toBe("View");
     });
