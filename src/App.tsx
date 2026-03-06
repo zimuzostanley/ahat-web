@@ -3,11 +3,11 @@ import type { OverviewData } from "./hprof.worker";
 import { AdbConnection } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
-import { type NavState, stateToUrl, urlToState } from "./routing";
-import type { NavFn } from "./components";
-import { type BreadcrumbEntry, makeCrumb, Breadcrumbs } from "./components";
+import type { NavState } from "./routing";
+import { Breadcrumbs } from "./components";
 import { downloadBuffer, downloadBlob } from "./utils";
 import { useTheme } from "./use-theme";
+import { useNavigation } from "./use-navigation";
 import CaptureView from "./views/CaptureView";
 import HexView from "./views/HexView";
 import OverviewView from "./views/OverviewView";
@@ -52,29 +52,18 @@ const MoonIcon = <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentC
   <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
 </svg>;
 
-// ─── Theme toggle (header) ──────────────────────────────────────────────────
+// ─── Theme toggle ────────────────────────────────────────────────────────────
 
-function ThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onToggle: () => void }) {
+function ThemeToggle({ theme, onToggle, variant = "header" }: {
+  theme: "light" | "dark"; onToggle: () => void; variant?: "header" | "landing";
+}) {
+  const cls = variant === "header"
+    ? "flex items-center gap-1.5 text-stone-400 hover:text-white text-xs h-6 px-2 border border-stone-600 transition-colors"
+    : "flex items-center gap-1.5 text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 text-xs h-6 px-2 border border-stone-300 dark:border-stone-600 transition-colors";
   return (
     <button
       onClick={onToggle}
-      className="flex items-center gap-1.5 text-stone-400 hover:text-white text-xs h-6 px-2 border border-stone-600 transition-colors"
-      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-      title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-    >
-      {theme === "dark" ? SunIcon : MoonIcon}
-      <span>{theme === "dark" ? "Light" : "Dark"}</span>
-    </button>
-  );
-}
-
-// ─── Theme toggle (landing page) ────────────────────────────────────────────
-
-function LandingThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onToggle: () => void }) {
-  return (
-    <button
-      onClick={onToggle}
-      className="flex items-center gap-1.5 text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 text-xs h-6 px-2 border border-stone-300 dark:border-stone-600 transition-colors"
+      className={cls}
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
     >
@@ -89,13 +78,7 @@ function LandingThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onTo
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeTab, setActiveTab] = useState<"device" | string>("device");
-  const [nav, setNav] = useState<NavState>({ view: "overview", params: {} });
-  const [navStack, setNavStack] = useState<BreadcrumbEntry[]>([makeCrumb({ view: "overview", params: {} })]);
-  const [navStackIndex, setNavStackIndex] = useState(0);
-  const navStackRef = useRef(navStack);
-  const navStackIndexRef = useRef(navStackIndex);
-  navStackRef.current = navStack;
-  navStackIndexRef.current = navStackIndex;
+  const { nav, trail, trailIndex, navigate, navigateTop, onBreadcrumbNavigate, resetToUrl, resetToOverview } = useNavigation();
   const [error, setError] = useState<string | null>(null);
   const [captureUsed, setCaptureUsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -116,29 +99,6 @@ export default function App() {
   const showDeviceTab = captureUsed;
   const showTabs = sessions.length > 1 || showDeviceTab;
 
-  // Navigate from within a view — truncate trail after current position, append new crumb
-  const navigate: NavFn = useCallback((v, p = {}) => {
-    const state = { view: v, params: p } as NavState;
-    const trail = [...navStackRef.current.slice(0, navStackIndexRef.current + 1), makeCrumb(state)];
-    const idx = trail.length - 1;
-    setNav(state);
-    setNavStack(trail);
-    setNavStackIndex(idx);
-    window.history.pushState({ ...state, trail, trailIndex: idx }, "", stateToUrl(state));
-    window.scrollTo(0, 0);
-  }, []);
-
-  // Navigate from top-level nav bar — resets breadcrumb trail
-  const navigateTop: NavFn = useCallback((v, p = {}) => {
-    const state = { view: v, params: p } as NavState;
-    const trail = [makeCrumb(state)];
-    setNav(state);
-    setNavStack(trail);
-    setNavStackIndex(0);
-    window.history.pushState({ ...state, trail, trailIndex: 0 }, "", stateToUrl(state));
-    window.scrollTo(0, 0);
-  }, []);
-
   // Close menu on outside click
   useEffect(() => {
     if (!menuOpen) return;
@@ -147,22 +107,6 @@ export default function App() {
     const id = requestAnimationFrame(() => document.addEventListener("click", handler));
     return () => { cancelAnimationFrame(id); document.removeEventListener("click", handler); };
   }, [menuOpen]);
-
-  // Listen for browser back/forward — restore trail and active index from history state
-  useEffect(() => {
-    const handler = (e: PopStateEvent) => {
-      if (e.state && e.state.view) {
-        const state = e.state as NavState;
-        const trail = Array.isArray(e.state.trail) ? e.state.trail : [makeCrumb(state)];
-        const idx = typeof e.state.trailIndex === "number" ? e.state.trailIndex : trail.length - 1;
-        setNav(state);
-        setNavStack(trail);
-        setNavStackIndex(idx);
-      }
-    };
-    window.addEventListener("popstate", handler);
-    return () => window.removeEventListener("popstate", handler);
-  }, []);
 
   // Non-blocking per-tab loading — creates session immediately, parses in background
   const loadBuffer = useCallback(async (name: string, buffer: ArrayBuffer) => {
@@ -194,12 +138,7 @@ export default function App() {
           ? { ...s, status: "ready" as const, buffer: null, proxy: p, overview: ov, worker: null }
           : s);
       });
-      const initial = urlToState(new URL(window.location.href));
-      const trail = [makeCrumb(initial)];
-      setNav(initial);
-      setNavStack(trail);
-      setNavStackIndex(0);
-      window.history.replaceState({ ...initial, trail, trailIndex: 0 }, "", stateToUrl(initial));
+      resetToUrl();
     } catch (err: unknown) {
       console.error(err);
       worker.terminate();
@@ -210,7 +149,7 @@ export default function App() {
           : s);
       });
     }
-  }, []);
+  }, [resetToUrl]);
 
   // Accept hprof buffers from window.opener / parent via postMessage.
   // Protocol: opener sends { type: "open-hprof", name: string, buffer: ArrayBuffer }.
@@ -269,15 +208,8 @@ export default function App() {
   const switchToTab = useCallback((tabId: string) => {
     if (tabId === activeTab) return;
     setActiveTab(tabId);
-    if (tabId !== "device") {
-      const overviewState: NavState = { view: "overview", params: {} };
-      const trail = [makeCrumb(overviewState)];
-      setNav(overviewState);
-      setNavStack(trail);
-      setNavStackIndex(0);
-      window.history.replaceState({ ...overviewState, trail, trailIndex: 0 }, "", stateToUrl(overviewState));
-    }
-  }, [activeTab]);
+    if (tabId !== "device") resetToOverview();
+  }, [activeTab, resetToOverview]);
 
   const closeTab = useCallback((id: string) => {
     const session = sessions.find(s => s.id === id);
@@ -345,10 +277,6 @@ export default function App() {
     }
   }, [activeProxy, activeSession, readySessions]);
 
-  const handleCaptured = useCallback((name: string, buffer: ArrayBuffer) => {
-    loadBuffer(name, buffer);
-  }, [loadBuffer]);
-
   const loadVmaDump = useCallback((name: string, buffer: ArrayBuffer, regions?: VmaRegion[]) => {
     const sessionId = `session-${nextSessionId++}`;
     const newSession: Session = {
@@ -411,7 +339,7 @@ export default function App() {
               className="flex items-center gap-2 flex-shrink-0"
               onClick={() => {
                 if (captureUsed) switchToTab("device");
-                else if (activeSession) { setNav({ view: "overview", params: {} }); }
+                else if (activeSession) { navigateTop("overview"); }
               }}
             >
               <div className="w-6 h-6 bg-sky-600 flex items-center justify-center text-white font-bold text-xs">A</div>
@@ -560,7 +488,7 @@ export default function App() {
       {isLanding && activeTab === "device" && (
         <div className="relative flex items-center justify-center p-8 min-h-screen">
           <div className="absolute top-4 right-4">
-            <LandingThemeToggle theme={theme} onToggle={toggleTheme} />
+            <ThemeToggle theme={theme} onToggle={toggleTheme} variant="landing" />
           </div>
           <div className="max-w-lg w-full">
             <div className="text-center mb-8">
@@ -611,12 +539,12 @@ export default function App() {
             <div className="p-8 pb-0 max-w-[95%] mx-auto">
               <div className="flex items-center justify-between mb-6">
                 <h1 className="text-lg font-semibold text-stone-800 dark:text-stone-100">Capture from device</h1>
-                <LandingThemeToggle theme={theme} onToggle={toggleTheme} />
+                <ThemeToggle theme={theme} onToggle={toggleTheme} variant="landing" />
               </div>
             </div>
           )}
           <div className={sessions.length > 0 ? "flex-1 p-4 max-w-[95%] mx-auto w-full text-sm" : "max-w-[95%] mx-auto px-8"}>
-            <CaptureView onCaptured={handleCaptured} onVmaDump={loadVmaDump} conn={adbConnRef.current} />
+            <CaptureView onCaptured={loadBuffer} onVmaDump={loadVmaDump} conn={adbConnRef.current} />
           </div>
         </div>
       )}
@@ -675,13 +603,7 @@ export default function App() {
           {/* Ready — hprof content views */}
           {activeSession.status === "ready" && activeSession.kind === "hprof" && activeProxy && activeOverview && (
             <main className="flex-1 p-4 max-w-[95%] mx-auto w-full text-sm">
-              <Breadcrumbs trail={navStack} activeIndex={navStackIndex} onNavigate={i => {
-                const crumb = navStack[i];
-                setNav(crumb.state);
-                setNavStackIndex(i);
-                window.history.pushState({ ...crumb.state, trail: navStack, trailIndex: i }, "", stateToUrl(crumb.state));
-                window.scrollTo(0, 0);
-              }} />
+              <Breadcrumbs trail={trail} activeIndex={trailIndex} onNavigate={onBreadcrumbNavigate} />
               {nav.view === "overview" && <OverviewView overview={activeOverview} name={activeSession.name} navigate={navigate} />}
               {nav.view === "rooted"   && <RootedView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} isDiffed={isDiffed} />}
               {nav.view === "object"   && <ObjectView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} params={nav.params} />}
