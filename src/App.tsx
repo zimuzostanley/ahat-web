@@ -57,7 +57,7 @@ function ThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onToggle: (
   return (
     <button
       onClick={onToggle}
-      className="flex items-center gap-1.5 text-stone-400 hover:text-white text-xs px-2 py-0.5 border border-stone-600 transition-colors"
+      className="flex items-center gap-1.5 text-stone-400 hover:text-white text-xs h-6 px-2 border border-stone-600 transition-colors"
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
     >
@@ -73,7 +73,7 @@ function LandingThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onTo
   return (
     <button
       onClick={onToggle}
-      className="flex items-center gap-1.5 text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 text-xs px-2 py-0.5 border border-stone-300 dark:border-stone-600 transition-colors"
+      className="flex items-center gap-1.5 text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 text-xs h-6 px-2 border border-stone-300 dark:border-stone-600 transition-colors"
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
     >
@@ -458,7 +458,7 @@ export default function App() {
               <ThemeToggle theme={theme} onToggle={toggleTheme} />
               <div className="relative">
                 <button
-                  className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
+                  className="text-stone-400 hover:text-white text-xs border border-stone-600 h-6 px-2"
                   onClick={() => setMenuOpen(!menuOpen)}
                   aria-label="Menu"
                 >{"\u22EF"}</button>
