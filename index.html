@@ -4,8 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ahat.web — Android Heap Analysis Tool</title>
+    <style>
+      /* Inline critical bg so there's no white flash before Tailwind loads */
+      html { background-color: #fafaf9; }
+      html.dark { background-color: #0c0a09; color-scheme: dark; }
+    </style>
     <script>
-      // Apply dark mode before first paint to prevent flash
+      // Apply dark mode class before first paint
       try {
         var t = localStorage.getItem("theme");
         if (t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches)) {

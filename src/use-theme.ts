@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useLayoutEffect } from "react";
 
 export type Theme = "light" | "dark";
 
@@ -10,19 +10,19 @@ function getInitial(): Theme {
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 
-function apply(theme: Theme): void {
-  document.documentElement.classList.toggle("dark", theme === "dark");
-  try { localStorage.setItem("theme", theme); } catch {}
-}
-
 export function useTheme(): [Theme, () => void] {
   const [theme, setTheme] = useState<Theme>(getInitial);
+
+  // Sync DOM + localStorage whenever theme state changes.
+  // useLayoutEffect runs before paint, preventing a visible flash on toggle.
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+    try { localStorage.setItem("theme", theme); } catch {}
+  }, [theme]);
+
   const toggle = useCallback(() => {
-    setTheme(prev => {
-      const next = prev === "dark" ? "light" : "dark";
-      apply(next);
-      return next;
-    });
+    setTheme(prev => prev === "dark" ? "light" : "dark");
   }, []);
+
   return [theme, toggle];
 }
