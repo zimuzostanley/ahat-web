@@ -65,7 +65,9 @@ export function Section({ title, children, defaultOpen = true }: {
         aria-expanded={open}
       >
         <span className="text-sm font-semibold text-stone-700 dark:text-stone-200">{title}</span>
-        <span className="text-stone-400 dark:text-stone-500 text-xs">{open ? "\u25BC" : "\u25B6"}</span>
+        <svg className={`w-3 h-3 text-stone-400 dark:text-stone-500 transition-transform ${open ? "rotate-90" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
+        </svg>
       </button>
       {open && <div className="px-4 pb-3 border-t border-stone-100 dark:border-stone-800 pt-3 overflow-x-auto">{children}</div>}
     </div>
