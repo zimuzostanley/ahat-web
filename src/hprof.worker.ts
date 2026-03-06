@@ -159,6 +159,17 @@ export interface BitmapListRow {
   density: number;
 }
 
+export interface StringListRow {
+  id: number;
+  value: string;
+  length: number;
+  retainedSize: number;
+  shallowSize: number;
+  heap: string;
+  className: string;
+  display: string;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 let snap: AhatSnapshot | null = null;
@@ -667,6 +678,30 @@ function handleGetBitmapList(): BitmapListRow[] {
   }));
 }
 
+function handleGetStringList(): StringListRow[] {
+  if (!snap) throw new Error("no snapshot");
+  const results: StringListRow[] = [];
+  for (const [, inst] of snap.instances) {
+    const ci = inst.asClassInstance?.();
+    if (!ci || !ci.isInstanceOfClass("java.lang.String")) continue;
+    const str = ci.asString(1000);
+    if (str === null) continue;
+    const [className, display] = deobRow(ci);
+    results.push({
+      id: ci.id,
+      value: str,
+      length: str.length,
+      retainedSize: ci.getTotalRetainedSize().total,
+      shallowSize: ci.getSize().java + ci.getSize().native_,
+      heap: ci.heap?.name ?? "?",
+      className,
+      display,
+    });
+  }
+  results.sort((a, b) => b.retainedSize - a.retainedSize);
+  return results;
+}
+
 function handleGetByteArray(id: number): ArrayBuffer | null {
   if (!snap) throw new Error("no snapshot");
   const inst = snap.findInstance(id);
@@ -765,7 +800,7 @@ addEventListener("message", (e: MessageEvent) => {
         }
         return;
       }
-      let data: OverviewData | InstanceRow[] | InstanceDetail | null | SiteData | BitmapListRow[];
+      let data: unknown;
       switch (name) {
         case "getOverview":   data = handleGetOverview(); break;
         case "getRooted":     data = handleGetRooted(); break;
@@ -774,6 +809,7 @@ addEventListener("message", (e: MessageEvent) => {
         case "search":        data = handleSearch(String(params.query)); break;
         case "getObjects":    data = handleGetObjects({ siteId: Number(params.siteId), className: String(params.className), heap: params.heap ? String(params.heap) : null }); break;
         case "getBitmapList": data = handleGetBitmapList(); break;
+        case "getStringList": data = handleGetStringList(); break;
         default: throw new Error("Unknown query: " + name);
       }
       postMessage({ type: "result", id, data });

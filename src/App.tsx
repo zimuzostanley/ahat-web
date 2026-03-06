@@ -16,6 +16,7 @@ import SiteView from "./views/SiteView";
 import SearchView from "./views/SearchView";
 import ObjectsView from "./views/ObjectsView";
 import BitmapGalleryView from "./views/BitmapGalleryView";
+import StringsView from "./views/StringsView";
 
 // ─── Session type ─────────────────────────────────────────────────────────────
 
@@ -336,6 +337,7 @@ export default function App() {
     { view: "rooted", label: "Rooted", params: {} },
     { view: "site", label: "Allocations", params: { id: 0 } },
     { view: "bitmaps", label: "Bitmaps", params: {} },
+    { view: "strings", label: "Strings", params: {} },
     { view: "search", label: "Search", params: {} },
   ];
 
@@ -648,6 +650,7 @@ export default function App() {
               {nav.view === "site"     && <SiteView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} params={nav.params} isDiffed={isDiffed} />}
               {nav.view === "search"   && <SearchView proxy={activeProxy} navigate={navigate} initialQuery={nav.params.q} />}
               {nav.view === "bitmaps"  && <BitmapGalleryView proxy={activeProxy} navigate={navigate} />}
+              {nav.view === "strings" && <StringsView proxy={activeProxy} navigate={navigate} initialQuery={nav.params.q} />}
             </main>
           )}
         </>

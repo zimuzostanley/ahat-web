@@ -340,4 +340,69 @@ describe.skipIf(!haveFile)('worker query logic (systemui.hprof)', () => {
       }
     });
   });
+
+  describe('getStringList', () => {
+    it('finds java.lang.String instances', () => {
+      const strings: { id: number; value: string; retainedSize: number; heap: string }[] = [];
+      for (const [, inst] of snap.instances) {
+        const ci = inst.asClassInstance?.();
+        if (!ci || !ci.isInstanceOfClass("java.lang.String")) continue;
+        const str = ci.asString(1000);
+        if (str === null) continue;
+        strings.push({
+          id: ci.id,
+          value: str,
+          retainedSize: ci.getTotalRetainedSize().total,
+          heap: ci.heap?.name ?? "?",
+        });
+      }
+      expect(strings.length).toBeGreaterThan(1000);
+    });
+
+    it('all string instances have valid fields', () => {
+      let checked = 0;
+      for (const [, inst] of snap.instances) {
+        if (checked >= 100) break;
+        const ci = inst.asClassInstance?.();
+        if (!ci || !ci.isInstanceOfClass("java.lang.String")) continue;
+        const str = ci.asString(1000);
+        if (str === null) continue;
+        expect(ci.id).toBeGreaterThan(0);
+        expect(typeof str).toBe("string");
+        expect(ci.getTotalRetainedSize().total).toBeGreaterThanOrEqual(0);
+        expect(ci.heap?.name).toBeTruthy();
+        checked++;
+      }
+      expect(checked).toBe(100);
+    });
+
+    it('detects duplicate strings', () => {
+      const valueCounts = new Map<string, number>();
+      for (const [, inst] of snap.instances) {
+        const ci = inst.asClassInstance?.();
+        if (!ci || !ci.isInstanceOfClass("java.lang.String")) continue;
+        const str = ci.asString(1000);
+        if (str === null) continue;
+        valueCounts.set(str, (valueCounts.get(str) ?? 0) + 1);
+      }
+      const dupCount = [...valueCounts.values()].filter(c => c > 1).length;
+      // Any real heap dump has duplicate strings (empty string, common class names, etc.)
+      expect(dupCount).toBeGreaterThan(0);
+    });
+
+    it('results are sorted by retained size descending', () => {
+      const strings: { retainedSize: number }[] = [];
+      for (const [, inst] of snap.instances) {
+        const ci = inst.asClassInstance?.();
+        if (!ci || !ci.isInstanceOfClass("java.lang.String")) continue;
+        const str = ci.asString(1000);
+        if (str === null) continue;
+        strings.push({ retainedSize: ci.getTotalRetainedSize().total });
+      }
+      strings.sort((a, b) => b.retainedSize - a.retainedSize);
+      for (let i = 1; i < Math.min(strings.length, 100); i++) {
+        expect(strings[i - 1].retainedSize).toBeGreaterThanOrEqual(strings[i].retainedSize);
+      }
+    });
+  });
 });

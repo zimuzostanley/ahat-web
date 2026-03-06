@@ -53,6 +53,18 @@ describe('URL routing', () => {
     it('generates /bitmaps?id=0x... with selected bitmap', () => {
       expect(stateToUrl({ view: "bitmaps", params: { id: 0xABC } })).toBe("/bitmaps?id=0xabc");
     });
+
+    it('generates /strings', () => {
+      expect(stateToUrl({ view: "strings", params: {} })).toBe("/strings");
+    });
+
+    it('generates /strings?q=... with query', () => {
+      expect(stateToUrl({ view: "strings", params: { q: "hello" } })).toBe("/strings?q=hello");
+    });
+
+    it('generates /strings without query when empty', () => {
+      expect(stateToUrl({ view: "strings", params: {} })).toBe("/strings");
+    });
   });
 
   describe('urlToState', () => {
@@ -150,6 +162,22 @@ describe('URL routing', () => {
       expect(state.view).toBe("bitmaps");
       expect(state.params).toEqual({});
     });
+
+    it('parses /strings', () => {
+      expect(urlToState(u("/strings"))).toEqual({ view: "strings", params: {} });
+    });
+
+    it('parses /strings?q=hello', () => {
+      const state = urlToState(u("/strings?q=hello"));
+      expect(state.view).toBe("strings");
+      expect(state.params).toEqual({ q: "hello" });
+    });
+
+    it('parses /strings without query param as empty params', () => {
+      const state = urlToState(u("/strings"));
+      expect(state.view).toBe("strings");
+      expect(state.params).toEqual({});
+    });
   });
 
   describe('roundtrip', () => {
@@ -201,6 +229,19 @@ describe('URL routing', () => {
       const state = urlToState(new URL(url, "http://localhost"));
       expect(state.view).toBe("bitmaps");
       expect(state.params).toEqual({ id });
+    });
+
+    it('strings roundtrips', () => {
+      const url = stateToUrl({ view: "strings", params: {} });
+      const state = urlToState(new URL(url, "http://localhost"));
+      expect(state.view).toBe("strings");
+    });
+
+    it('strings with query roundtrips', () => {
+      const url = stateToUrl({ view: "strings", params: { q: "android.view" } });
+      const state = urlToState(new URL(url, "http://localhost"));
+      expect(state.view).toBe("strings");
+      expect(state.params).toEqual({ q: "android.view" });
     });
   });
 });

@@ -5,7 +5,8 @@ export type NavState =
   | { view: "objects"; params: { siteId: number; className: string; heap: string | null } }
   | { view: "site"; params: { id: number } }
   | { view: "search"; params: { q: string } }
-  | { view: "bitmaps"; params: { id?: number } };
+  | { view: "bitmaps"; params: { id?: number } }
+  | { view: "strings"; params: { q?: string } };
 
 export function stateToUrl(state: NavState): string {
   switch (state.view) {
@@ -27,6 +28,10 @@ export function stateToUrl(state: NavState): string {
     case "bitmaps": {
       const id = state.params.id;
       return id ? `/bitmaps?id=0x${id.toString(16)}` : "/bitmaps";
+    }
+    case "strings": {
+      const q = state.params.q;
+      return q ? `/strings?q=${encodeURIComponent(q)}` : "/strings";
     }
   }
 }
@@ -63,6 +68,10 @@ export function urlToState(url: URL): NavState {
       const raw = sp.get("id") ?? "";
       const selectedId = raw.startsWith("0x") ? parseInt(raw.slice(2), 16) : (raw ? parseInt(raw, 10) : 0);
       return { view: "bitmaps", params: selectedId ? { id: selectedId } : {} };
+    }
+    case "/strings": {
+      const q = sp.get("q") ?? "";
+      return { view: "strings", params: q ? { q } : {} };
     }
     default:
       return { view: "overview", params: {} };
