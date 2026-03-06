@@ -615,7 +615,7 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
             <div className="p-2 border-b border-stone-100 dark:border-stone-800">
               <input
                 className="w-full text-xs border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-2 py-1 placeholder:text-stone-300 dark:placeholder:text-stone-600 focus:outline-none focus:border-sky-400"
-                placeholder="Filter strings\u2026"
+                placeholder={"Filter strings\u2026"}
                 value={stringFilter}
                 onChange={e => setStringFilter(e.target.value)}
                 autoFocus

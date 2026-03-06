@@ -100,7 +100,7 @@ function StringsView({ proxy, navigate, initialQuery }: {
       {/* Search */}
       <input
         type="text" value={query} onChange={e => handleChange(e.target.value)}
-        placeholder="Filter strings\u2026"
+        placeholder={"Filter strings\u2026"}
         className="w-full px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 mb-3 focus:outline-none focus:ring-2 focus:ring-sky-400"
       />
 

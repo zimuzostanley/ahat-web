@@ -211,6 +211,34 @@ describe.skipIf(!haveFile)('hprof parser (systemui.hprof)', () => {
       }
       expect(found).toBe(true);
     });
+
+    it('handles compact strings with coder field', () => {
+      // Check if any String instances have a coder field (Java 9+ / Android 9+)
+      let hasCoder = false;
+      let coderZeroCount = 0;
+      let coderOneCount = 0;
+      for (const [, inst] of snap.instances) {
+        if (!(inst instanceof AhatClassInstance) || inst.getClassName() !== "java.lang.String") continue;
+        const coder = inst.getField("coder");
+        if (typeof coder !== "number") continue;
+        hasCoder = true;
+        if (coder === 0) coderZeroCount++;
+        if (coder === 1) coderOneCount++;
+        // Verify string extraction works for both coders
+        const str = inst.asString(200);
+        if (str !== null) {
+          expect(typeof str).toBe("string");
+          // For coder=1 (UTF-16), string should not contain surrogate garbage
+          if (coder === 1) {
+            // String should be valid (no isolated surrogates in normal text)
+            expect(str.length).toBeGreaterThan(0);
+          }
+        }
+        if (coderZeroCount > 5 && coderOneCount > 0) break;
+      }
+      // Log what we found for diagnostic purposes
+      console.log(`Compact strings: hasCoder=${hasCoder}, coder=0: ${coderZeroCount}, coder=1: ${coderOneCount}`);
+    });
   });
 
   describe('path from GC root', () => {

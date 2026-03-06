@@ -348,6 +348,11 @@ export class AhatClassInstance extends AhatInstance {
     const arr = val.asArrayInstance()!;
     const count = (() => { const v = this.getField("count"); return typeof v === "number" ? v : arr.length; })();
     const offset = (() => { const v = this.getField("offset"); return typeof v === "number" ? v : 0; })();
+    // Java 9+ compact strings: byte[] with coder field (0=LATIN1, 1=UTF16LE)
+    const coder = this.getField("coder");
+    if (arr.elemType === Type.BYTE && typeof coder === "number" && coder === 1) {
+      return arr.asUtf16LeString(offset, maxChars);
+    }
     return arr.asStringSlice(offset, count, maxChars);
   }
 
@@ -475,6 +480,7 @@ export class AhatArrayInstance extends AhatInstance {
       return s;
     }
     if (this.elemType === Type.BYTE) {
+      // Latin-1 (coder=0 or pre-compact): each byte is one char
       if (maxChars >= 0 && maxChars < count) count = maxChars;
       let s = "";
       for (let i = offset; i < offset + count && i < this.values.length; i++)
@@ -482,6 +488,24 @@ export class AhatArrayInstance extends AhatInstance {
       return s;
     }
     return null;
+  }
+
+  /** Decode a byte[] as UTF-16LE (Java 9+ compact strings with coder=1). */
+  asUtf16LeString(charOffset: number, maxChars: number): string | null {
+    if (this.elemType !== Type.BYTE) return null;
+    const byteLen = this.values.length;
+    const totalChars = byteLen >> 1;
+    let count = totalChars - charOffset;
+    if (count <= 0) return "";
+    if (maxChars >= 0 && maxChars < count) count = maxChars;
+    const codes = new Uint16Array(count);
+    for (let i = 0; i < count; i++) {
+      const bi = (charOffset + i) * 2;
+      const lo = (this.values[bi] as number) & 0xFF;
+      const hi = (this.values[bi + 1] as number) & 0xFF;
+      codes[i] = lo | (hi << 8);
+    }
+    return String.fromCharCode(...codes);
   }
 
   toString(): string {
