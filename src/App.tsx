@@ -40,50 +40,44 @@ interface Session {
 
 let nextSessionId = 1;
 
-// ─── Theme toggle icon ───────────────────────────────────────────────────────
+// ─── Sun / Moon SVG icons ────────────────────────────────────────────────────
+
+const SunIcon = <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+  <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+</svg>;
+
+const MoonIcon = <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+  <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+</svg>;
+
+// ─── Theme toggle (header) ──────────────────────────────────────────────────
 
 function ThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onToggle: () => void }) {
   return (
     <button
       onClick={onToggle}
-      className="text-stone-400 hover:text-white p-1 transition-colors"
+      className="flex items-center gap-1.5 text-stone-400 hover:text-white text-xs px-2 py-1 border border-stone-600 transition-colors"
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
     >
-      {theme === "dark" ? (
-        // Sun icon
-        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-          <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-        </svg>
-      ) : (
-        // Moon icon
-        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-        </svg>
-      )}
+      {theme === "dark" ? SunIcon : MoonIcon}
+      <span>{theme === "dark" ? "Light" : "Dark"}</span>
     </button>
   );
 }
 
-// ─── Landing page theme toggle ───────────────────────────────────────────────
+// ─── Theme toggle (landing page) ────────────────────────────────────────────
 
 function LandingThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onToggle: () => void }) {
   return (
     <button
       onClick={onToggle}
-      className="text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 p-1.5 transition-colors"
+      className="flex items-center gap-1.5 text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 text-xs px-2 py-1 border border-stone-300 dark:border-stone-600 transition-colors"
       aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
       title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
     >
-      {theme === "dark" ? (
-        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-          <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-        </svg>
-      ) : (
-        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
-        </svg>
-      )}
+      {theme === "dark" ? SunIcon : MoonIcon}
+      <span>{theme === "dark" ? "Light" : "Dark"}</span>
     </button>
   );
 }
@@ -440,13 +434,8 @@ export default function App() {
               </>
             )}
 
-            {/* Right side: back + theme + menu */}
+            {/* Right side: theme + menu */}
             <div className="ml-auto flex items-center gap-2">
-              {activeSession?.status === "ready" && (
-                <button className="text-stone-400 hover:text-white text-sm" onClick={() => window.history.back()} aria-label="Go back">
-                  &larr; Back
-                </button>
-              )}
               <ThemeToggle theme={theme} onToggle={toggleTheme} />
               <div className="relative">
                 <button
@@ -510,11 +499,6 @@ export default function App() {
                 ))}
               </nav>
               {diffControls}
-              <button
-                className="text-stone-400 hover:text-white text-sm ml-auto"
-                onClick={() => window.history.back()}
-                aria-label="Go back"
-              >&larr; Back</button>
             </div>
           )}
         </header>
@@ -522,7 +506,10 @@ export default function App() {
 
       {/* Landing page — no sessions, no capture */}
       {isLanding && activeTab === "device" && (
-        <div className="flex items-center justify-center p-8 min-h-screen">
+        <div className="relative flex items-center justify-center p-8 min-h-screen">
+          <div className="absolute top-4 right-4">
+            <LandingThemeToggle theme={theme} onToggle={toggleTheme} />
+          </div>
           <div className="max-w-lg w-full">
             <div className="text-center mb-8">
               <div className="inline-flex items-center gap-2 mb-3">
@@ -545,7 +532,7 @@ export default function App() {
               <p className="text-stone-700 dark:text-stone-200 font-medium mb-1">Drop an .hprof file here or click to browse</p>
               <p className="text-stone-400 dark:text-stone-500 text-sm">Supports J2SE HPROF format with Android extensions</p>
             </div>
-            <div className="mt-4 flex items-center justify-center gap-3">
+            <div className="mt-4 flex items-center justify-center">
               <button
                 className="px-5 py-2.5 border border-stone-300 dark:border-stone-600 text-stone-700 dark:text-stone-300 hover:border-stone-400 dark:hover:border-stone-500 hover:bg-white dark:hover:bg-stone-800 transition-colors"
                 onClick={() => setCaptureUsed(true)}
@@ -557,7 +544,6 @@ export default function App() {
                   Capture from device
                 </span>
               </button>
-              <LandingThemeToggle theme={theme} onToggle={toggleTheme} />
             </div>
             {error && (
               <div className="mt-4 p-3 bg-rose-50 dark:bg-rose-950 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 text-sm">{error}</div>
@@ -571,11 +557,9 @@ export default function App() {
         <div className={activeTab === "device" ? "" : "hidden"}>
           {sessions.length === 0 && (
             <div className="p-8 pb-0 max-w-[95%] mx-auto">
-              <div className="flex items-center gap-4 mb-6">
-                <button className="text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300" onClick={() => setCaptureUsed(false)}>
-                  &larr; Back
-                </button>
+              <div className="flex items-center justify-between mb-6">
                 <h1 className="text-lg font-semibold text-stone-800 dark:text-stone-100">Capture from device</h1>
+                <LandingThemeToggle theme={theme} onToggle={toggleTheme} />
               </div>
             </div>
           )}

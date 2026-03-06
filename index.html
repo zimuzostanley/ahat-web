@@ -13,9 +13,8 @@
       // Apply dark mode class before first paint
       try {
         var t = localStorage.getItem("theme");
-        if (t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches)) {
-          document.documentElement.classList.add("dark");
-        }
+        var dark = t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.classList.toggle("dark", dark);
       } catch(e) {}
     </script>
   </head>
