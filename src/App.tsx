@@ -117,24 +117,6 @@ export default function App() {
     window.scrollTo(0, 0);
   }, []);
 
-  // Accept hprof buffers from window.opener / parent via postMessage.
-  // Protocol: opener sends { type: "open-hprof", name: string, buffer: ArrayBuffer }.
-  // We post { type: "ahat-ready" } back to opener on mount so it knows when to send.
-  useEffect(() => {
-    const handler = (e: MessageEvent) => {
-      const d = e.data;
-      if (d && typeof d === "object" && d.type === "open-hprof" && d.buffer instanceof ArrayBuffer) {
-        const name = typeof d.name === "string" ? d.name : "untitled";
-        loadBuffer(name, d.buffer);
-      }
-    };
-    window.addEventListener("message", handler);
-    // Signal readiness to opener/parent
-    try { window.opener?.postMessage({ type: "ahat-ready" }, "*"); } catch {}
-    try { window.parent !== window && window.parent.postMessage({ type: "ahat-ready" }, "*"); } catch {}
-    return () => window.removeEventListener("message", handler);
-  }, [loadBuffer]);
-
   // Close menu on outside click
   useEffect(() => {
     if (!menuOpen) return;
@@ -199,6 +181,23 @@ export default function App() {
       });
     }
   }, []);
+
+  // Accept hprof buffers from window.opener / parent via postMessage.
+  // Protocol: opener sends { type: "open-hprof", name: string, buffer: ArrayBuffer }.
+  // We post { type: "ahat-ready" } back to opener on mount so it knows when to send.
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      const d = e.data;
+      if (d && typeof d === "object" && d.type === "open-hprof" && d.buffer instanceof ArrayBuffer) {
+        const name = typeof d.name === "string" ? d.name : "untitled";
+        loadBuffer(name, d.buffer);
+      }
+    };
+    window.addEventListener("message", handler);
+    try { window.opener?.postMessage({ type: "ahat-ready" }, "*"); } catch {}
+    try { window.parent !== window && window.parent.postMessage({ type: "ahat-ready" }, "*"); } catch {}
+    return () => window.removeEventListener("message", handler);
+  }, [loadBuffer]);
 
   const loadFile = useCallback(async (file: File) => {
     setError(null);
