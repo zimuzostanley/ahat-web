@@ -3,17 +3,17 @@ import type { OverviewData } from "./hprof.worker";
 import { AdbConnection } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
-import { stateToUrl, urlToState } from "./routing";
+import { type NavState, stateToUrl, urlToState } from "./routing";
 import type { NavFn } from "./components";
 import { downloadBuffer, downloadBlob } from "./utils";
 import CaptureView from "./views/CaptureView";
 import HexView from "./views/HexView";
 import OverviewView from "./views/OverviewView";
 import RootedView from "./views/RootedView";
-import ObjectView, { type ObjectParams } from "./views/ObjectView";
-import SiteView, { type SiteParams } from "./views/SiteView";
+import ObjectView from "./views/ObjectView";
+import SiteView from "./views/SiteView";
 import SearchView from "./views/SearchView";
-import ObjectsView, { type ObjectsParams } from "./views/ObjectsView";
+import ObjectsView from "./views/ObjectsView";
 import BitmapGalleryView from "./views/BitmapGalleryView";
 
 // ─── Session type ─────────────────────────────────────────────────────────────
@@ -44,8 +44,7 @@ let nextSessionId = 1;
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeTab, setActiveTab] = useState<"device" | string>("device");
-  const [view, setView] = useState("overview");
-  const [params, setParams] = useState<Record<string, unknown>>({});
+  const [nav, setNav] = useState<NavState>({ view: "overview", params: {} });
   const [error, setError] = useState<string | null>(null);
   const [captureUsed, setCaptureUsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -67,10 +66,9 @@ export default function App() {
 
   // Navigate: push new state to browser history
   const navigate: NavFn = useCallback((v, p = {}) => {
-    setView(v);
-    setParams(p);
-    const url = stateToUrl(v, p);
-    window.history.pushState({ view: v, params: p }, "", url);
+    const state = { view: v, params: p } as NavState;
+    setNav(state);
+    window.history.pushState(state, "", stateToUrl(state));
     window.scrollTo(0, 0);
   }, []);
 
@@ -87,8 +85,7 @@ export default function App() {
   useEffect(() => {
     const handler = (e: PopStateEvent) => {
       if (e.state && e.state.view) {
-        setView(e.state.view);
-        setParams(e.state.params ?? {});
+        setNav(e.state as NavState);
       }
     };
     window.addEventListener("popstate", handler);
@@ -126,12 +123,8 @@ export default function App() {
           : s);
       });
       const initial = urlToState(new URL(window.location.href));
-      setView(initial.view);
-      setParams(initial.params);
-      window.history.replaceState(
-        { view: initial.view, params: initial.params }, "",
-        stateToUrl(initial.view, initial.params),
-      );
+      setNav(initial);
+      window.history.replaceState(initial, "", stateToUrl(initial));
     } catch (err: unknown) {
       console.error(err);
       worker.terminate();
@@ -185,9 +178,9 @@ export default function App() {
     if (tabId === activeTab) return;
     setActiveTab(tabId);
     if (tabId !== "device") {
-      setView("overview");
-      setParams({});
-      window.history.replaceState({ view: "overview", params: {} }, "", stateToUrl("overview", {}));
+      const overviewState: NavState = { view: "overview", params: {} };
+      setNav(overviewState);
+      window.history.replaceState(overviewState, "", stateToUrl(overviewState));
     }
   }, [activeTab]);
 
@@ -322,7 +315,7 @@ export default function App() {
               className="flex items-center gap-2 flex-shrink-0"
               onClick={() => {
                 if (captureUsed) switchToTab("device");
-                else if (activeSession) { setView("overview"); setParams({}); }
+                else if (activeSession) { setNav({ view: "overview", params: {} }); }
               }}
             >
               <div className="w-6 h-6 bg-sky-600 flex items-center justify-center text-white font-bold text-xs">A</div>
@@ -386,7 +379,7 @@ export default function App() {
                       <button
                         key={n.view}
                         className={`px-3 py-1 text-sm transition-colors ${
-                          view === n.view ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
+                          nav.view === n.view ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
                         }`}
                         onClick={() => navigate(n.view, n.params)}
                       >{n.label}</button>
@@ -459,7 +452,7 @@ export default function App() {
                   <button
                     key={n.view}
                     className={`px-3 py-1 text-sm transition-colors ${
-                      view === n.view ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
+                      nav.view === n.view ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
                     }`}
                     onClick={() => navigate(n.view, n.params)}
                   >{n.label}</button>
@@ -594,13 +587,13 @@ export default function App() {
           {/* Ready — hprof content views */}
           {activeSession.status === "ready" && activeSession.kind === "hprof" && activeProxy && activeOverview && (
             <main className="flex-1 p-4 max-w-[95%] mx-auto w-full text-sm">
-              {view === "overview" && <OverviewView overview={activeOverview} name={activeSession.name} navigate={navigate} />}
-              {view === "rooted"   && <RootedView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} isDiffed={isDiffed} />}
-              {view === "object"   && <ObjectView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} params={params as unknown as ObjectParams} />}
-              {view === "objects"  && <ObjectsView proxy={activeProxy} navigate={navigate} params={params as unknown as ObjectsParams} />}
-              {view === "site"     && <SiteView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} params={params as unknown as SiteParams} isDiffed={isDiffed} />}
-              {view === "search"   && <SearchView proxy={activeProxy} navigate={navigate} initialQuery={params.q as string | undefined} />}
-              {view === "bitmaps"  && <BitmapGalleryView proxy={activeProxy} navigate={navigate} />}
+              {nav.view === "overview" && <OverviewView overview={activeOverview} name={activeSession.name} navigate={navigate} />}
+              {nav.view === "rooted"   && <RootedView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} isDiffed={isDiffed} />}
+              {nav.view === "object"   && <ObjectView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} params={nav.params} />}
+              {nav.view === "objects"  && <ObjectsView proxy={activeProxy} navigate={navigate} params={nav.params} />}
+              {nav.view === "site"     && <SiteView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} params={nav.params} isDiffed={isDiffed} />}
+              {nav.view === "search"   && <SearchView proxy={activeProxy} navigate={navigate} initialQuery={nav.params.q} />}
+              {nav.view === "bitmaps"  && <BitmapGalleryView proxy={activeProxy} navigate={navigate} />}
             </main>
           )}
         </>

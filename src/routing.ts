@@ -1,27 +1,33 @@
-export interface NavState { view: string; params: Record<string, unknown> }
+export type NavState =
+  | { view: "overview"; params: Record<string, never> }
+  | { view: "rooted"; params: Record<string, never> }
+  | { view: "object"; params: { id: number } }
+  | { view: "objects"; params: { siteId: number; className: string; heap: string | null } }
+  | { view: "site"; params: { id: number } }
+  | { view: "search"; params: { q: string } }
+  | { view: "bitmaps"; params: { id?: number } };
 
-export function stateToUrl(view: string, params: Record<string, unknown>): string {
-  switch (view) {
+export function stateToUrl(state: NavState): string {
+  switch (state.view) {
     case "overview": return "/";
     case "rooted": return "/rooted";
-    case "object": return `/object?id=0x${Number(params.id ?? 0).toString(16)}`;
+    case "object": return `/object?id=0x${state.params.id.toString(16)}`;
     case "objects": {
       const sp = new URLSearchParams();
-      sp.set("id", String(params.siteId ?? 0));
-      sp.set("class", String(params.className ?? ""));
-      if (params.heap) sp.set("heap", String(params.heap));
+      sp.set("id", String(state.params.siteId));
+      sp.set("class", state.params.className);
+      if (state.params.heap) sp.set("heap", state.params.heap);
       return `/objects?${sp.toString()}`;
     }
-    case "site": return `/site?id=${params.id ?? 0}`;
+    case "site": return `/site?id=${state.params.id}`;
     case "search": {
-      const q = String(params.q ?? "");
+      const q = state.params.q;
       return q ? `/search?q=${encodeURIComponent(q)}` : "/search";
     }
     case "bitmaps": {
-      const bid = params.id ? `0x${Number(params.id).toString(16)}` : null;
-      return bid ? `/bitmaps?id=${bid}` : "/bitmaps";
+      const id = state.params.id;
+      return id ? `/bitmaps?id=0x${id.toString(16)}` : "/bitmaps";
     }
-    default: return "/";
   }
 }
 

@@ -239,9 +239,9 @@ export class AhatInstance {
     return false;
   }
 
-  isClassObj(): boolean { return false; }
-  isArrayInstance(): boolean { return false; }
-  isClassInstance(): boolean { return false; }
+  isClassObj(): this is AhatClassObj { return false; }
+  isArrayInstance(): this is AhatArrayInstance { return false; }
+  isClassInstance(): this is AhatClassInstance { return false; }
   asClassObj(): AhatClassObj | null { return null; }
   asArrayInstance(): AhatArrayInstance | null { return null; }
   asClassInstance(): AhatClassInstance | null { return null; }
@@ -282,7 +282,7 @@ export class AhatInstance {
 export class AhatClassInstance extends AhatInstance {
   private fields: FieldVal[] = [];
 
-  isClassInstance() { return true; }
+  isClassInstance(): this is AhatClassInstance { return true; }
   asClassInstance() { return this; }
   getExtraJavaSize() { return 0; }
 
@@ -439,7 +439,7 @@ export class AhatArrayInstance extends AhatInstance {
 
   constructor(id: number, public refSize: number) { super(id); }
 
-  isArrayInstance() { return true; }
+  isArrayInstance(): this is AhatArrayInstance { return true; }
   asArrayInstance() { return this; }
   get length() { return this.values.length; }
 
@@ -501,7 +501,7 @@ export class AhatClassObj extends AhatInstance {
 
   constructor(id: number, public className: string) { super(id); }
 
-  isClassObj() { return true; }
+  isClassObj(): this is AhatClassObj { return true; }
   asClassObj() { return this; }
   getExtraJavaSize() { return this.staticFieldsSize; }
   getName() { return this.className; }
@@ -727,7 +727,7 @@ function instanceDiffKey(inst: AhatInstance): string {
   const cls = inst.getClassName();
   const heap = inst.heap?.name ?? "";
   const str = inst.asString?.() ?? "";
-  const classObjName = inst.isClassObj() ? (inst as AhatClassObj).className : "";
+  const classObjName = inst.isClassObj() ? inst.className : "";
   const arrLen = inst.isArrayInstance() ? inst.asArrayInstance()!.length : 0;
   return `${cls}\0${heap}\0${str}\0${classObjName}\0${arrLen}`;
 }

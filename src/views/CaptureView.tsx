@@ -1,17 +1,19 @@
 import { useState, useCallback, useRef, useMemo, useEffect, Fragment } from "react";
 import { AdbConnection, PINNED_PROCESSES, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
+import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, type SmapsNumericField } from "./capture-helpers";
 
-type SmapsNumericField = "pssKb" | "rssKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
 type SmapsSortFieldType = SmapsNumericField | "count";
 type VmaSortFieldType = SmapsNumericField | "addrStart";
 
-const SMAPS_COLUMNS: [SmapsNumericField, string][] = [
-  ["rssKb", "RSS"], ["pssKb", "PSS"],
-  ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
-  ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
-  ["swapKb", "Swap"],
-];
+/** Stable sort toggle hook — callback has no deps, never changes identity. */
+function useSort<F extends string>(initial: F): [F, boolean, (f: F) => void] {
+  const [state, setState] = useState({ field: initial, asc: false });
+  const toggle = useCallback((f: F) => {
+    setState(prev => prev.field === f ? { ...prev, asc: !prev.asc } : { field: f, asc: false });
+  }, []);
+  return [state.field, state.asc, toggle];
+}
 
 function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, onDump, dumpDisabled, entryDiffs, leadingColCount }: {
   entries: SmapsEntry[];
@@ -32,26 +34,13 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
   }, [entryDiffs]);
 
   const sorted = useMemo(() => {
-    if (entryDiffs) {
-      const copy = [...entryDiffs];
-      copy.sort((a, b) => {
-        const aPin = a.status !== "matched" ? 1 : 0;
-        const bPin = b.status !== "matched" ? 1 : 0;
-        if (aPin !== bPin) return bPin - aPin;
-        if (sortField === "addrStart") {
-          return sortAsc ? a.current.addrStart.localeCompare(b.current.addrStart) : b.current.addrStart.localeCompare(a.current.addrStart);
-        }
-        return sortAsc ? a.current[sortField] - b.current[sortField] : b.current[sortField] - a.current[sortField];
-      });
-      return copy.map(d => d.current);
-    }
-    const copy = [...entries];
-    if (sortField === "addrStart") {
-      copy.sort((a, b) => sortAsc ? a.addrStart.localeCompare(b.addrStart) : b.addrStart.localeCompare(a.addrStart));
-    } else {
-      copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
-    }
-    return copy;
+    const cmp = (a: SmapsEntry, b: SmapsEntry) => {
+      if (sortField === "addrStart") {
+        return sortAsc ? a.addrStart.localeCompare(b.addrStart) : b.addrStart.localeCompare(a.addrStart);
+      }
+      return sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField];
+    };
+    return sortWithDiffPinning(entries, entryDiffs, cmp);
   }, [entries, entryDiffs, sortField, sortAsc]);
 
   return (
@@ -98,7 +87,7 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
             >dump</button>
           </td>
           {SMAPS_COLUMNS.map(([f]) => {
-            const delta = ed ? ed[SMAPS_DELTA_KEY[f]] as number : 0;
+            const delta = ed ? ed[SMAPS_DELTA_KEY[f]] : 0;
             return (
             <td key={f} className={`py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap ${ed ? deltaBgClass(delta) : ""}`}>
               {e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014"}
@@ -116,13 +105,6 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
     </>
   );
 }
-
-const SMAPS_DELTA_KEY: Record<SmapsNumericField, keyof SmapsDiff> = {
-  pssKb: "deltaPssKb", rssKb: "deltaRssKb",
-  sharedCleanKb: "deltaSharedCleanKb", sharedDirtyKb: "deltaSharedDirtyKb",
-  privateCleanKb: "deltaPrivateCleanKb", privateDirtyKb: "deltaPrivateDirtyKb",
-  swapKb: "deltaSwapKb",
-};
 
 function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated, leadingColCount }: {
   pid: number;
@@ -154,45 +136,15 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
 
   const sorted = useMemo(() => {
     const cmp = (a: SmapsAggregated, b: SmapsAggregated) => {
-      const av = a[sortField], bv = b[sortField];
-      return sortAsc ? av - bv : bv - av;
+      return sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField];
     };
-    if (smapsDiffs) {
-      const copy = [...smapsDiffs];
-      copy.sort((a, b) => {
-        const aPin = a.status !== "matched" ? 1 : 0;
-        const bPin = b.status !== "matched" ? 1 : 0;
-        if (aPin !== bPin) return bPin - aPin;
-        return cmp(a.current, b.current);
-      });
-      return copy.map(d => d.current);
-    }
-    const copy = [...aggregated];
-    copy.sort(cmp);
-    return copy;
+    return sortWithDiffPinning(aggregated, smapsDiffs, cmp);
   }, [aggregated, smapsDiffs, sortField, sortAsc]);
 
-  // Totals row
-  const totals = useMemo(() => {
-    const t = { rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
-      deltaRssKb: 0, deltaPssKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0, deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0 };
-    if (smapsDiffs) {
-      for (const d of smapsDiffs) {
-        if (d.status !== "removed") {
-          for (const [f] of SMAPS_COLUMNS) t[f] += d.current[f];
-        }
-        for (const [f] of SMAPS_COLUMNS) {
-          const dk = SMAPS_DELTA_KEY[f];
-          (t as Record<string, number>)[dk] += d[dk] as number;
-        }
-      }
-    } else {
-      for (const g of aggregated) {
-        for (const [f] of SMAPS_COLUMNS) t[f] += g[f];
-      }
-    }
-    return t;
-  }, [aggregated, smapsDiffs]);
+  const totals = useMemo(
+    () => computeSmapsTotals(aggregated, smapsDiffs),
+    [aggregated, smapsDiffs],
+  );
 
   return (
     <>
@@ -221,8 +173,7 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
       <tr className="border-b-2 border-stone-300 font-semibold bg-stone-50">
         <td colSpan={leadingColCount} className="py-0.5 px-2 pl-6 text-stone-600 text-xs">Total</td>
         {SMAPS_COLUMNS.map(([f]) => {
-          const dk = SMAPS_DELTA_KEY[f];
-          const delta = (totals as Record<string, number>)[dk];
+          const delta = totals[SMAPS_DELTA_KEY[f]];
           return (
             <td key={f} className={`py-0.5 px-2 text-right font-mono text-xs whitespace-nowrap ${smapsDiffs ? deltaBgClass(delta) : ""}`}>
               {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
@@ -266,7 +217,7 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
             </td>
             <td className="py-0.5 px-1 text-right font-mono text-stone-400">{g.count}</td>
             {SMAPS_COLUMNS.map(([f]) => {
-              const delta = sd ? sd[SMAPS_DELTA_KEY[f]] as number : 0;
+              const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
               return (
                 <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
                   {g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"}
@@ -312,14 +263,8 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
   onDump: (pid: number, processName: string, label: string, regions: { addrStart: string; addrEnd: string }[]) => void;
   dumpDisabled: boolean;
 }) {
-  const [sortField, setSortField] = useState<SmapsNumericField | "processCount">("pssKb");
-  const [sortAsc, setSortAsc] = useState(false);
+  const [sortField, sortAsc, toggleSort] = useSort<SmapsNumericField | "processCount">("pssKb");
   const [expandedMapping, setExpandedMapping] = useState<string | null>(null);
-
-  const toggleSort = useCallback((f: SmapsNumericField | "processCount") => {
-    if (sortField === f) setSortAsc(!sortAsc);
-    else { setSortField(f); setSortAsc(false); }
-  }, [sortField, sortAsc]);
 
   const diffByName = useMemo(() => {
     if (!diffs) return null;
@@ -327,41 +272,16 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
   }, [diffs]);
 
   const sorted = useMemo(() => {
-    if (diffs) {
-      const copy = [...diffs];
-      copy.sort((a, b) => {
-        const aPin = a.status !== "matched" ? 1 : 0;
-        const bPin = b.status !== "matched" ? 1 : 0;
-        if (aPin !== bPin) return bPin - aPin;
-        return sortAsc ? a.current[sortField] - b.current[sortField] : b.current[sortField] - a.current[sortField];
-      });
-      return copy.map(d => d.current);
-    }
-    const copy = [...mappings];
-    copy.sort((a, b) => sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField]);
-    return copy;
+    const cmp = (a: SharedMapping, b: SharedMapping) => {
+      return sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField];
+    };
+    return sortWithDiffPinning(mappings, diffs, cmp);
   }, [mappings, diffs, sortField, sortAsc]);
 
-  const totals = useMemo(() => {
-    const t = { pssKb: 0, rssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
-      deltaPssKb: 0, deltaRssKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0, deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0 };
-    if (diffs) {
-      for (const d of diffs) {
-        if (d.status !== "removed") {
-          for (const [f] of SMAPS_COLUMNS) t[f] += d.current[f];
-        }
-        for (const [f] of SMAPS_COLUMNS) {
-          const dk = SMAPS_DELTA_KEY[f];
-          (t as Record<string, number>)[dk] += (d as unknown as Record<string, number>)[dk];
-        }
-      }
-    } else {
-      for (const m of mappings) {
-        for (const [f] of SMAPS_COLUMNS) t[f] += m[f];
-      }
-    }
-    return t;
-  }, [mappings, diffs]);
+  const totals = useMemo(
+    () => computeSmapsTotals(mappings, diffs),
+    [mappings, diffs],
+  );
 
   return (
     <div className="mt-4">
@@ -399,8 +319,7 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
               <td className="py-0.5 px-2 text-stone-600">Total</td>
               <td />
               {SMAPS_COLUMNS.map(([f]) => {
-                const dk = SMAPS_DELTA_KEY[f];
-                const delta = (totals as Record<string, number>)[dk];
+                const delta = totals[SMAPS_DELTA_KEY[f]];
                 return (
                   <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${diffs ? deltaBgClass(delta) : ""}`}>
                     {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
@@ -437,7 +356,7 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
                   </td>
                   <td className="py-0.5 px-1 text-right font-mono text-stone-400">{m.processCount}</td>
                   {SMAPS_COLUMNS.map(([f]) => {
-                    const delta = sd ? (sd as unknown as Record<string, number>)[SMAPS_DELTA_KEY[f]] : 0;
+                    const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
                     return (
                       <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
                         {m[f] > 0 ? fmtSize(m[f] * 1024) : "\u2014"}
@@ -600,10 +519,10 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
 
 // ─── Capture View ─────────────────────────────────────────────────────────────
 
-type SortField = "pid" | "name" | "pssKb" | "rssKb" | "privateDirtyKb" | "privateCleanKb" | "sharedDirtyKb" | "sharedCleanKb" | "swapKb" | "oomLabel";
+type SortField = "pid" | "name" | "oomLabel" | SmapsNumericField;
 
 // Process table columns shown when rollup data is available
-const ROLLUP_COLUMNS: [SortField, string][] = [
+const ROLLUP_COLUMNS: [SmapsNumericField, string][] = [
   ["rssKb", "RSS"], ["pssKb", "PSS"],
   ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
   ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
@@ -611,13 +530,12 @@ const ROLLUP_COLUMNS: [SortField, string][] = [
 ];
 
 /** Get a sortable value from either rollup data or ProcessInfo fallback. */
-function getFieldValue(p: ProcessInfo, field: SortField, rollup?: SmapsRollup): number {
-  if (rollup) return rollup[field as keyof SmapsRollup] as number;
+function getFieldValue(p: ProcessInfo, field: SmapsNumericField, rollup?: SmapsRollup): number {
+  if (rollup) return rollup[field];
   if (field === "pssKb") return p.pssKb;
   if (field === "rssKb") return p.rssKb;
   return 0;
 }
-
 
 function CaptureView({ onCaptured, onVmaDump, conn }: {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
@@ -627,8 +545,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   const [connected, setConnected] = useState(false);
   const [connectStatus, setConnectStatus] = useState<string | null>(null);
   const [processes, setProcesses] = useState<ProcessInfo[] | null>(null);
-  const [sortField, setSortField] = useState<SortField>("pssKb");
-  const [sortAsc, setSortAsc] = useState(false);
+  const [sortField, sortAsc, toggleSort] = useSort<SortField>("pssKb");
   const [error, setError] = useState<string | null>(null);
 
   // Enrichment runs in the background — independent of captures
@@ -652,6 +569,8 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
 
   // Full smaps — fetched on demand per process or via "Scan All"
   const [smapsData, setSmapsData] = useState<Map<number, SmapsAggregated[]>>(new Map());
+  const smapsDataRef = useRef(smapsData);
+  smapsDataRef.current = smapsData;
   const smapsFetchAbortRef = useRef<AbortController | null>(null);
   const [smapsFetchPid, setSmapsFetchPid] = useState<number | null>(null);
   const [scanStatus, setScanStatus] = useState<string | null>(null);
@@ -660,11 +579,8 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   // Smaps expansion / sort state
   const [expandedSmapsPid, setExpandedSmapsPid] = useState<number | null>(null);
   const [expandedSmapsGroup, setExpandedSmapsGroup] = useState<string | null>(null);
-  const [smapsSortField, setSmapsSortField] = useState<SmapsSortFieldType>("pssKb");
-  const [smapsSortAsc, setSmapsSortAsc] = useState(false);
-  type VmaSortField = SmapsNumericField | "addrStart";
-  const [vmaSortField, setVmaSortField] = useState<VmaSortField>("pssKb");
-  const [vmaSortAsc, setVmaSortAsc] = useState(false);
+  const [smapsSortField, smapsSortAsc, toggleSmapsSort] = useSort<SmapsSortFieldType>("pssKb");
+  const [vmaSortField, vmaSortAsc, toggleVmaSort] = useSort<VmaSortFieldType>("pssKb");
 
   // Diff state
   const [diffMode, setDiffMode] = useState(false);
@@ -832,7 +748,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
 
   // On-demand smaps fetch for a single process
   const fetchSmapsOnDemand = useCallback(async (pid: number) => {
-    if (smapsData.has(pid) || !conn.connected || !conn.isRoot) return;
+    if (smapsDataRef.current.has(pid) || !conn.connected || !conn.isRoot) return;
     cancelSmapsFetch();
     const ac = new AbortController();
     smapsFetchAbortRef.current = ac;
@@ -851,7 +767,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
         setSmapsFetchPid(null);
       }
     }
-  }, [conn, smapsData, cancelSmapsFetch]);
+  }, [conn, cancelSmapsFetch]);
 
   // Scan all processes for full smaps data (populates shared mappings table)
   const scanAllSmaps = useCallback(async () => {
@@ -1016,7 +932,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
 
   useEffect(() => {
     return () => { cancelEnrichment(); cancelSmapsFetch(); cancelAllCaptures(); cancelVmaDump(); conn.disconnect(); };
-  }, [cancelEnrichment, cancelAllCaptures, cancelVmaDump]);
+  }, [cancelEnrichment, cancelSmapsFetch, cancelAllCaptures, cancelVmaDump]);
 
   const sorted = useMemo(() => {
     if (!processes) return null;
@@ -1081,23 +997,18 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
     return diffSharedMappings(prevSharedMappings, sharedMappings);
   }, [diffMode, sharedMappings, prevSharedMappings]);
 
-  const hasRollup = true;
   const hasOomLabel = processes ? processes.some(p => p.oomLabel !== "") : false;
 
-  const toggleSort = useCallback((field: SortField) => {
-    if (sortField === field) setSortAsc(!sortAsc);
-    else { setSortField(field); setSortAsc(false); }
-  }, [sortField, sortAsc]);
-
-  const toggleSmapsSort = useCallback((field: SmapsSortFieldType) => {
-    if (smapsSortField === field) setSmapsSortAsc(!smapsSortAsc);
-    else { setSmapsSortField(field); setSmapsSortAsc(false); }
-  }, [smapsSortField, smapsSortAsc]);
-
-  const toggleVmaSort = useCallback((field: VmaSortField) => {
-    if (vmaSortField === field) setVmaSortAsc(!vmaSortAsc);
-    else { setVmaSortField(field); setVmaSortAsc(false); }
-  }, [vmaSortField, vmaSortAsc]);
+  const processTotals = useMemo(() => {
+    const activeProcs = (sorted ?? []).filter(p => !(diffMode && sortedDiffs?.find(d => d.current.pid === p.pid && d.status === "removed")));
+    const totals: Record<string, number> = {};
+    for (const [f] of ROLLUP_COLUMNS) totals[f] = 0;
+    for (const p of activeProcs) {
+      const r = smapsRollups.get(p.pid);
+      for (const [f] of ROLLUP_COLUMNS) totals[f] += getFieldValue(p, f, r);
+    }
+    return { count: activeProcs.length, values: totals };
+  }, [sorted, sortedDiffs, diffMode, smapsRollups]);
 
   const hasWebUsb = typeof navigator !== "undefined" && "usb" in navigator;
 
@@ -1290,7 +1201,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                         State {sortField === "oomLabel" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
                       </th>
                     )}
-                    {(hasRollup ? ROLLUP_COLUMNS : [["pssKb", "PSS"] as [SortField, string]]).map(([field, label]) => (
+                    {ROLLUP_COLUMNS.map(([field, label]) => (
                       <th
                         key={field}
                         className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
@@ -1303,26 +1214,14 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                 </thead>
                 <tbody>
                   {/* Totals row */}
-                  {(() => {
-                    const activeProcs = (sorted ?? []).filter(p => !(diffMode && sortedDiffs?.find(d => d.current.pid === p.pid && d.status === "removed")));
-                    const cols = hasRollup ? ROLLUP_COLUMNS : [["pssKb", "PSS"] as [SortField, string]];
-                    const totals: Record<string, number> = {};
-                    for (const [f] of cols) totals[f] = 0;
-                    for (const p of activeProcs) {
-                      const r = smapsRollups.get(p.pid);
-                      for (const [f] of cols) totals[f] += getFieldValue(p, f, r);
-                    }
-                    return (
-                      <tr className="border-b-2 border-stone-300 font-semibold bg-stone-50">
-                        <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 4 : 3}>Total ({activeProcs.length})</td>
-                        {cols.map(([f]) => (
-                          <td key={f} className="py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem]">
-                            {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
-                          </td>
-                        ))}
-                      </tr>
-                    );
-                  })()}
+                  <tr className="border-b-2 border-stone-300 font-semibold bg-stone-50">
+                    <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 4 : 3}>Total ({processTotals.count})</td>
+                    {ROLLUP_COLUMNS.map(([f]) => (
+                      <td key={f} className="py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem]">
+                        {processTotals.values[f] > 0 ? fmtSize(processTotals.values[f] * 1024) : "\u2014"}
+                      </td>
+                    ))}
+                  </tr>
                   {(diffMode && sortedDiffs ? sortedDiffs : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }))).map(d => {
                     const p = d.current;
                     const isJava = javaPids.has(p.pid);
@@ -1332,8 +1231,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                     const isSmapsExpanded = isExpanded && hasSmaps;
                     const isSmapsLoading = isExpanded && !hasSmaps && smapsFetchPid === p.pid;
                     const isDiff = diffMode && sortedDiffs !== null;
-                    const cols = hasRollup ? ROLLUP_COLUMNS : [["pssKb", "PSS"] as [SortField, string]];
-                    const colCount = 3 + (hasOomLabel ? 1 : 0) + cols.length;
+                    const colCount = 3 + (hasOomLabel ? 1 : 0) + ROLLUP_COLUMNS.length;
                     const rollup = smapsRollups.get(p.pid);
                     const prevRollup = prevSmapsRollups.get(p.pid);
                     const rowKey = `${d.status}-${p.pid}`;
@@ -1392,9 +1290,9 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                           )}
                         </td>
                       )}
-                      {cols.map(([f]) => {
+                      {ROLLUP_COLUMNS.map(([f]) => {
                         const value = getFieldValue(p, f, rollup);
-                        const delta = isDiff && prevRollup && rollup ? rollup[f as keyof SmapsRollup] - prevRollup[f as keyof SmapsRollup] : 0;
+                        const delta = isDiff && prevRollup && rollup ? rollup[f] - prevRollup[f] : 0;
                         return (
                           <td key={f} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] ${isDiff ? deltaBgClass(delta) : ""}`}>
                             {value > 0 ? fmtSize(value * 1024) : "\u2014"}

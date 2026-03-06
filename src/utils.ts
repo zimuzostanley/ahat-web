@@ -1,4 +1,3 @@
-
 export function downloadBlob(name: string, buffer: ArrayBuffer): void {
   const blob = new Blob([buffer], { type: "application/octet-stream" });
   const url = URL.createObjectURL(blob);

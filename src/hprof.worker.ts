@@ -757,7 +757,7 @@ addEventListener("message", (e: MessageEvent) => {
       }
       // getByteArray returns an ArrayBuffer that must be transferred
       if (name === "getByteArray") {
-        const buf = handleGetByteArray(params.id as number);
+        const buf = handleGetByteArray(Number(params.id));
         if (buf) {
           postMessage({ type: "result", id, data: buf }, { transfer: [buf] });
         } else {
@@ -769,10 +769,10 @@ addEventListener("message", (e: MessageEvent) => {
       switch (name) {
         case "getOverview":   data = handleGetOverview(); break;
         case "getRooted":     data = handleGetRooted(); break;
-        case "getInstance":   data = handleGetInstance(params.id as number); break;
-        case "getSite":       data = handleGetSite(params.id as number); break;
-        case "search":        data = handleSearch(params.query as string); break;
-        case "getObjects":    data = handleGetObjects(params as unknown as { siteId: number; className: string; heap: string | null }); break;
+        case "getInstance":   data = handleGetInstance(Number(params.id)); break;
+        case "getSite":       data = handleGetSite(Number(params.id)); break;
+        case "search":        data = handleSearch(String(params.query)); break;
+        case "getObjects":    data = handleGetObjects({ siteId: Number(params.siteId), className: String(params.className), heap: params.heap ? String(params.heap) : null }); break;
         case "getBitmapList": data = handleGetBitmapList(); break;
         default: throw new Error("Unknown query: " + name);
       }

@@ -14,7 +14,7 @@ export type ObjLinkRef = { id: number; display: string; str?: string | null };
 
 export function InstanceLink({ row, navigate }: { row: InstanceRow | ObjLinkRef | null; navigate: NavFn }) {
   if (!row || row.id === 0) return <span className="text-stone-500">ROOT</span>;
-  const full = "className" in row ? row as InstanceRow : null;
+  const full = "className" in row ? row : null;
   return (
     <span>
       {full && full.reachabilityName !== "unreachable" && full.reachabilityName !== "strong" && (
