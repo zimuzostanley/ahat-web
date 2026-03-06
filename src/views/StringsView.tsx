@@ -23,7 +23,8 @@ function StringsView({ proxy, navigate, initialQuery }: {
   // Update URL on query change (debounced)
   const updateUrl = useCallback((q: string) => {
     const url = q ? `/strings?q=${encodeURIComponent(q)}` : "/strings";
-    window.history.replaceState({ view: "strings", params: q ? { q } : {} }, "", url);
+    const prev = window.history.state;
+    window.history.replaceState({ view: "strings", params: q ? { q } : {}, trail: prev?.trail }, "", url);
   }, []);
 
   const handleChange = useCallback((q: string) => {

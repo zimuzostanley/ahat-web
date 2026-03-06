@@ -77,7 +77,6 @@ interface DupBitmapGroup {
   height: number;
   count: number;
   wastedBytes: number;
-  instances: BitmapListRow[];
 }
 
 function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: NavFn }) {
@@ -108,7 +107,6 @@ function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: 
       height: items[0].height,
       count: items.length,
       wastedBytes: items.reduce((s, i) => s + i.row.retainedTotal, 0) - minRetained,
-      instances: items,
     });
   }
   dupGroups.sort((a, b) => b.wastedBytes - a.wastedBytes);

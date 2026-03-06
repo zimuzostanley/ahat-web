@@ -1,7 +1,6 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import type { InstanceRow, PrimOrRef } from "./hprof.worker";
-import type { NavState } from "./routing";
-import { navLabel } from "./routing";
+import { type NavState, navLabel } from "./routing";
 
 // ─── Navigation types ─────────────────────────────────────────────────────────
 
@@ -195,7 +194,7 @@ export interface BreadcrumbEntry {
   label: string;
 }
 
-/** Build a label for a NavState, with optional override for top-level nav items. */
+/** Build a BreadcrumbEntry from a NavState. */
 export function makeCrumb(state: NavState): BreadcrumbEntry {
   return { state, label: navLabel(state) };
 }

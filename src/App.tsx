@@ -186,8 +186,10 @@ export default function App() {
           : s);
       });
       const initial = urlToState(new URL(window.location.href));
+      const trail = [makeCrumb(initial)];
       setNav(initial);
-      window.history.replaceState(initial, "", stateToUrl(initial));
+      setNavStack(trail);
+      window.history.replaceState({ ...initial, trail }, "", stateToUrl(initial));
     } catch (err: unknown) {
       console.error(err);
       worker.terminate();
