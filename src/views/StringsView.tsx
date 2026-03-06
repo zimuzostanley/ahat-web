@@ -50,28 +50,47 @@ function StringsView({ proxy, navigate, initialQuery }: {
     });
   }, [allRows, query, selectedHeap]);
 
-  const duplicates = useMemo(() => allRows ? computeDuplicates(allRows) : [], [allRows]);
+  const heapFiltered = useMemo(() => {
+    if (!allRows) return null;
+    if (selectedHeap === "all") return allRows;
+    return allRows.filter(r => r.heap === selectedHeap);
+  }, [allRows, selectedHeap]);
 
-  const totalRetained = useMemo(() => allRows?.reduce((s, r) => s + r.retainedSize, 0) ?? 0, [allRows]);
+  const duplicates = useMemo(() => heapFiltered ? computeDuplicates(heapFiltered) : [], [heapFiltered]);
+
+  const totalRetained = useMemo(() => heapFiltered?.reduce((s, r) => s + r.retainedSize, 0) ?? 0, [heapFiltered]);
   const totalWasted = useMemo(() => duplicates.reduce((s, d) => s + d.wastedBytes, 0), [duplicates]);
   const uniqueCount = useMemo(() => {
-    if (!allRows) return 0;
+    if (!heapFiltered) return 0;
     const seen = new Set<string>();
-    for (const r of allRows) seen.add(r.value);
+    for (const r of heapFiltered) seen.add(r.value);
     return seen.size;
-  }, [allRows]);
+  }, [heapFiltered]);
 
   if (!allRows) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Strings</h2>
+      <div className="flex items-center gap-3 mb-3">
+        <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-100">Strings</h2>
+        {heaps.length > 1 && (
+          <select
+            value={selectedHeap}
+            onChange={e => setSelectedHeap(e.target.value)}
+            className="appearance-none pl-2 pr-6 py-1 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 rounded"
+            style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='%23888'%3E%3Cpath d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E")`, backgroundRepeat: "no-repeat", backgroundPosition: "right 0.4rem center" }}
+          >
+            <option value="all">All heaps</option>
+            {heaps.map(h => <option key={h} value={h}>{h}</option>)}
+          </select>
+        )}
+      </div>
 
       {/* Summary */}
       <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-3 mb-4">
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
           <span className="text-stone-500 dark:text-stone-400">Total strings:</span>
-          <span className="font-mono">{allRows.length.toLocaleString()}</span>
+          <span className="font-mono">{(heapFiltered ?? allRows).length.toLocaleString()}</span>
           <span className="text-stone-500 dark:text-stone-400">Unique values:</span>
           <span className="font-mono">{uniqueCount.toLocaleString()}</span>
           <span className="text-stone-500 dark:text-stone-400">Duplicate groups:</span>
@@ -108,24 +127,12 @@ function StringsView({ proxy, navigate, initialQuery }: {
         </div>
       )}
 
-      {/* Search + heap filter */}
-      <div className="flex gap-2 mb-3">
-        <input
-          type="text" value={query} onChange={e => handleChange(e.target.value)}
-          placeholder={"Filter strings\u2026"}
-          className="flex-1 px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 focus:outline-none focus:ring-2 focus:ring-sky-400"
-        />
-        {heaps.length > 1 && (
-          <select
-            value={selectedHeap}
-            onChange={e => setSelectedHeap(e.target.value)}
-            className="px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
-          >
-            <option value="all">All heaps</option>
-            {heaps.map(h => <option key={h} value={h}>{h}</option>)}
-          </select>
-        )}
-      </div>
+      {/* Search */}
+      <input
+        type="text" value={query} onChange={e => handleChange(e.target.value)}
+        placeholder={"Filter strings\u2026"}
+        className="w-full px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 mb-3 focus:outline-none focus:ring-2 focus:ring-sky-400"
+      />
 
       {filtered && filtered.length > 0 && (
         <>
