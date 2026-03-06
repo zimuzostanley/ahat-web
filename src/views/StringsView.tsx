@@ -3,7 +3,7 @@ import type { StringListRow } from "../hprof.worker";
 import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize } from "../format";
 import { type NavFn, Section, SortableTable } from "../components";
-import { computeDuplicates } from "./strings-helpers";
+import { computeDuplicates, type DuplicateGroup } from "./strings-helpers";
 
 // ─── StringsView ─────────────────────────────────────────────────────────────
 
@@ -12,6 +12,7 @@ function StringsView({ proxy, navigate, initialQuery }: {
 }) {
   const [allRows, setAllRows] = useState<StringListRow[] | null>(null);
   const [query, setQuery] = useState(initialQuery ?? "");
+  const [selectedHeap, setSelectedHeap] = useState("all");
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -32,12 +33,22 @@ function StringsView({ proxy, navigate, initialQuery }: {
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
+  const heaps = useMemo(() => {
+    if (!allRows) return [];
+    const s = new Set<string>();
+    for (const r of allRows) s.add(r.heap);
+    return [...s].sort();
+  }, [allRows]);
+
   const filtered = useMemo(() => {
     if (!allRows) return null;
-    if (!query) return allRows;
     const q = query.toLowerCase();
-    return allRows.filter(r => r.value.toLowerCase().includes(q));
-  }, [allRows, query]);
+    return allRows.filter(r => {
+      if (selectedHeap !== "all" && r.heap !== selectedHeap) return false;
+      if (q && !r.value.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [allRows, query, selectedHeap]);
 
   const duplicates = useMemo(() => allRows ? computeDuplicates(allRows) : [], [allRows]);
 
@@ -97,16 +108,28 @@ function StringsView({ proxy, navigate, initialQuery }: {
         </div>
       )}
 
-      {/* Search */}
-      <input
-        type="text" value={query} onChange={e => handleChange(e.target.value)}
-        placeholder={"Filter strings\u2026"}
-        className="w-full px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 mb-3 focus:outline-none focus:ring-2 focus:ring-sky-400"
-      />
+      {/* Search + heap filter */}
+      <div className="flex gap-2 mb-3">
+        <input
+          type="text" value={query} onChange={e => handleChange(e.target.value)}
+          placeholder={"Filter strings\u2026"}
+          className="flex-1 px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 focus:outline-none focus:ring-2 focus:ring-sky-400"
+        />
+        {heaps.length > 1 && (
+          <select
+            value={selectedHeap}
+            onChange={e => setSelectedHeap(e.target.value)}
+            className="px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+          >
+            <option value="all">All heaps</option>
+            {heaps.map(h => <option key={h} value={h}>{h}</option>)}
+          </select>
+        )}
+      </div>
 
       {filtered && filtered.length > 0 && (
         <>
-          {query && (
+          {(query || selectedHeap !== "all") && (
             <div className="text-xs text-stone-500 dark:text-stone-400 mb-2">
               {filtered.length.toLocaleString()} match{filtered.length !== 1 ? "es" : ""}
             </div>
@@ -134,8 +157,8 @@ function StringsView({ proxy, navigate, initialQuery }: {
           />
         </>
       )}
-      {query && filtered && filtered.length === 0 && (
-        <div className="text-stone-500 dark:text-stone-400">No strings match "{query}".</div>
+      {(query || selectedHeap !== "all") && filtered && filtered.length === 0 && (
+        <div className="text-stone-500 dark:text-stone-400">No matching strings.</div>
       )}
     </div>
   );
