@@ -13,6 +13,7 @@ function StringsView({ proxy, navigate, initialQuery }: {
   const [allRows, setAllRows] = useState<StringListRow[] | null>(null);
   const [query, setQuery] = useState(initialQuery ?? "");
   const [selectedHeap, setSelectedHeap] = useState("all");
+  const [exactMatch, setExactMatch] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -27,6 +28,7 @@ function StringsView({ proxy, navigate, initialQuery }: {
 
   const handleChange = useCallback((q: string) => {
     setQuery(q);
+    setExactMatch(false);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => updateUrl(q), 300);
   }, [updateUrl]);
@@ -45,10 +47,11 @@ function StringsView({ proxy, navigate, initialQuery }: {
     const q = query.toLowerCase();
     return allRows.filter(r => {
       if (selectedHeap !== "all" && r.heap !== selectedHeap) return false;
-      if (q && !r.value.toLowerCase().includes(q)) return false;
-      return true;
+      if (!q) return true;
+      if (exactMatch) return r.value === query;
+      return r.value.toLowerCase().includes(q);
     });
-  }, [allRows, query, selectedHeap]);
+  }, [allRows, query, selectedHeap, exactMatch]);
 
   const heapFiltered = useMemo(() => {
     if (!allRows) return null;
@@ -122,7 +125,7 @@ function StringsView({ proxy, navigate, initialQuery }: {
                 )},
               ]}
               data={duplicates}
-              onRowClick={r => handleChange(r.value)}
+              onRowClick={r => { setQuery(r.value); setExactMatch(true); updateUrl(r.value); }}
             />
           </Section>
         </div>
