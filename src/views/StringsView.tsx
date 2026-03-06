@@ -77,7 +77,7 @@ function StringsView({ proxy, navigate, initialQuery }: {
           <select
             value={selectedHeap}
             onChange={e => setSelectedHeap(e.target.value)}
-            className="appearance-none pl-2 pr-6 py-1 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 rounded"
+            className="appearance-none pl-2 pr-6 py-1 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400 rounded cursor-pointer"
             style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='%23888'%3E%3Cpath d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E")`, backgroundRepeat: "no-repeat", backgroundPosition: "right 0.4rem center" }}
           >
             <option value="all">All heaps</option>
@@ -116,16 +116,13 @@ function StringsView({ proxy, navigate, initialQuery }: {
                 { label: "Wasted", align: "right", sortKey: r => r.wastedBytes, render: r => <span className="font-mono">{fmtSize(r.wastedBytes)}</span> },
                 { label: "Count", align: "right", sortKey: r => r.count, render: r => <span className="font-mono">{r.count}</span> },
                 { label: "Value", render: r => (
-                  <button
-                    className="text-left font-mono text-emerald-700 dark:text-emerald-400 break-all hover:text-emerald-500 dark:hover:text-emerald-300"
-                    onClick={() => handleChange(r.value)}
-                    title="Click to filter by this value"
-                  >
+                  <span className="font-mono text-emerald-700 dark:text-emerald-400 break-all">
                     "{r.value.length > 200 ? r.value.slice(0, 200) + "\u2026" : r.value}"
-                  </button>
+                  </span>
                 )},
               ]}
               data={duplicates}
+              onRowClick={r => handleChange(r.value)}
             />
           </Section>
         </div>

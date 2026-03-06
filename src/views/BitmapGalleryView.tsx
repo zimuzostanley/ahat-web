@@ -71,9 +71,19 @@ function BitmapCard({ row, proxy, navigate, density, deviceScale }: {
   );
 }
 
+interface DupBitmapGroup {
+  hash: string;
+  width: number;
+  height: number;
+  count: number;
+  wastedBytes: number;
+  instances: BitmapListRow[];
+}
+
 function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: NavFn }) {
   const [rows, setRows] = useState<BitmapListRow[] | null>(null);
   const [deviceScale, setDeviceScale] = useState(false);
+  const [expandedHash, setExpandedHash] = useState<string | null>(null);
 
   useEffect(() => {
     proxy.query<BitmapListRow[]>("getBitmapList").then(setRows).catch(console.error);
@@ -81,14 +91,33 @@ function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: 
 
   if (!rows) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
 
-  // Duplicate detection
-  const hashCounts = new Map<string, number>();
-  for (const r of rows) if (r.hasPixelData) hashCounts.set(r.bufferHash, (hashCounts.get(r.bufferHash) ?? 0) + 1);
+  // Duplicate detection — group by buffer hash
+  const hashGroups = new Map<string, BitmapListRow[]>();
+  for (const r of rows) {
+    if (!r.hasPixelData) continue;
+    const list = hashGroups.get(r.bufferHash);
+    if (list) list.push(r); else hashGroups.set(r.bufferHash, [r]);
+  }
+  const dupGroups: DupBitmapGroup[] = [];
+  for (const [hash, items] of hashGroups) {
+    if (items.length < 2) continue;
+    const minRetained = Math.min(...items.map(i => i.row.retainedTotal));
+    dupGroups.push({
+      hash,
+      width: items[0].width,
+      height: items[0].height,
+      count: items.length,
+      wastedBytes: items.reduce((s, i) => s + i.row.retainedTotal, 0) - minRetained,
+      instances: items,
+    });
+  }
+  dupGroups.sort((a, b) => b.wastedBytes - a.wastedBytes);
+  const totalDupWasted = dupGroups.reduce((s, g) => s + g.wastedBytes, 0);
 
   const totalRetained = rows.reduce((sum, r) => sum + r.row.retainedTotal, 0);
   const withPixels = rows.filter(r => r.hasPixelData);
   const withoutPixels = rows.filter(r => !r.hasPixelData);
-  const dupCount = [...hashCounts.values()].filter(c => c > 1).reduce((s, c) => s + c, 0);
+  const dupCount = dupGroups.reduce((s, g) => s + g.count, 0);
 
   return (
     <div>
@@ -109,6 +138,40 @@ function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: 
               <span className="font-mono">{fmtSize(totalRetained)}</span>
             </div>
           </div>
+
+          {/* Duplicate bitmaps */}
+          {dupGroups.length > 0 && (
+            <div className="mb-4">
+              <Section title={`Duplicate bitmaps (${dupGroups.length} groups, ${fmtSize(totalDupWasted)} wasted)`} defaultOpen={false}>
+                <SortableTable<DupBitmapGroup>
+                  columns={[
+                    { label: "Wasted", align: "right", sortKey: r => r.wastedBytes, render: r => <span className="font-mono">{fmtSize(r.wastedBytes)}</span> },
+                    { label: "Count", align: "right", sortKey: r => r.count, render: r => <span className="font-mono">{r.count}</span> },
+                    { label: "Size", render: r => <span className="font-mono">{r.width}&times;{r.height}</span> },
+                    { label: "Hash", render: r => <span className="font-mono text-stone-500 dark:text-stone-400">{r.hash.slice(0, 12)}</span> },
+                  ]}
+                  data={dupGroups}
+                  onRowClick={r => setExpandedHash(expandedHash === r.hash ? null : r.hash)}
+                />
+                {expandedHash && hashGroups.has(expandedHash) && (
+                  <div className="mt-2 border-t border-stone-200 dark:border-stone-700 pt-2">
+                    <div className="text-xs text-stone-500 dark:text-stone-400 mb-2">
+                      {hashGroups.get(expandedHash)!.length} allocations of this bitmap:
+                    </div>
+                    <SortableTable<BitmapListRow>
+                      columns={[
+                        { label: "Retained", align: "right", sortKey: r => r.row.retainedTotal, render: r => <span className="font-mono">{fmtSize(r.row.retainedTotal)}</span> },
+                        { label: "Heap", render: r => <span className="text-stone-500 dark:text-stone-400">{r.row.heap}</span> },
+                        { label: "Object", render: r => <InstanceLink row={r.row} navigate={navigate} /> },
+                      ]}
+                      data={hashGroups.get(expandedHash)!}
+                      rowKey={r => r.row.id}
+                    />
+                  </div>
+                )}
+              </Section>
+            </div>
+          )}
 
           {/* Vertical bitmap feed */}
           {withPixels.length > 0 && (

@@ -74,7 +74,7 @@ export function Section({ title, children, defaultOpen = true }: {
   );
 }
 
-export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: {
+export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey, onRowClick }: {
   columns: {
     label: string;
     align?: string;
@@ -85,6 +85,7 @@ export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: 
   data: T[];
   limit?: number;
   rowKey?: (row: T, idx: number) => string | number;
+  onRowClick?: (row: T) => void;
 }) {
   const [sortCol, setSortCol] = useState<number | null>(null);
   const [sortAsc, setSortAsc] = useState(false);
@@ -119,7 +120,7 @@ export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: 
         </thead>
         <tbody>
           {visible.map((row, ri) => (
-            <tr key={rowKey ? rowKey(row, ri) : ri} className="border-b border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-800">
+            <tr key={rowKey ? rowKey(row, ri) : ri} className={`border-b border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-800${onRowClick ? " cursor-pointer" : ""}`} onClick={onRowClick ? () => onRowClick(row) : undefined}>
               {columns.map((c, ci) => (
                 <td key={ci} className={`px-2 py-1 ${c.align === "right" ? "text-right font-mono whitespace-nowrap" : ""}`} style={c.minWidth ? { minWidth: c.minWidth } : undefined}>
                   {c.render(row, ri)}
