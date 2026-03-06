@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import m from "mithril";
+import { Fragment } from "../mithril-helpers";
 import { fmtSize } from "../format";
 import { downloadBlob } from "../utils";
 
@@ -253,176 +254,169 @@ export interface DiffTarget {
   buffer: ArrayBuffer;
 }
 
-interface HexViewProps {
+interface HexViewAttrs {
   buffer: ArrayBuffer;
   name: string;
   regions?: { addrStart: string; addrEnd: string }[];
   availableDiffs?: DiffTarget[];
 }
 
-export default function HexView({ buffer, name, regions, availableDiffs }: HexViewProps) {
-  const data = useMemo(() => new Uint8Array(buffer), [buffer]);
-  const totalRows = Math.ceil(data.byteLength / BYTES_PER_ROW);
-  const [scrollTop, setScrollTop] = useState(0);
-  const [containerHeight, setContainerHeight] = useState(600);
-  const [copied, setCopied] = useState(false);
-  const [showStrings, setShowStrings] = useState(false);
-  const [stringFilter, setStringFilter] = useState("");
-  const [highlightRow, setHighlightRow] = useState<number | null>(null);
-  const [diffBaselineId, setDiffBaselineId] = useState<string | null>(null);
-  const [currentDiffIdx, setCurrentDiffIdx] = useState(-1);
-  const scrollNodeRef = useRef<HTMLDivElement | null>(null);
-  const highlightTimerRef = useRef<ReturnType<typeof setTimeout>>();
-  const diffMinimapRef = useRef<HTMLCanvasElement | null>(null);
-  const programmaticScrollRef = useRef(false);
+function HexView(): m.Component<HexViewAttrs> {
+  let scrollTop = 0;
+  let containerHeight = 600;
+  let copied = false;
+  let showStrings = false;
+  let stringFilter = "";
+  let highlightRow: number | null = null;
+  let diffBaselineId: string | null = null;
+  let currentDiffIdx = -1;
+  let scrollNode: HTMLDivElement | null = null;
+  let highlightTimer: ReturnType<typeof setTimeout> | undefined;
+  let diffMinimapCanvas: HTMLCanvasElement | null = null;
+  let programmaticScroll = false;
+  let stringShowCount = MAX_DISPLAYED_STRINGS;
 
-  const regionMap = useMemo(
-    () => regions && regions.length > 0 ? buildRegionMap(regions) : undefined,
-    [regions],
-  );
+  // Cached expensive computations with dependency tracking
+  let cachedBuffer: ArrayBuffer | undefined;
+  let cachedData: Uint8Array | undefined;
+  let cachedRegions: { addrStart: string; addrEnd: string }[] | undefined;
+  let cachedRegionMap: RegionSpan[] | undefined;
+  let cachedDiffBaselineId: string | null | undefined;
+  let cachedAvailableDiffs: DiffTarget[] | undefined;
+  let cachedDiffBaseline: Uint8Array | null = null;
+  let cachedDiffData: Uint8Array | undefined;
+  let cachedDiffBaselineForRows: Uint8Array | null | undefined;
+  let cachedDiffRows: number[] = [];
+  let cachedDiffStatsData: Uint8Array | undefined;
+  let cachedDiffStatsBaseline: Uint8Array | null | undefined;
+  let cachedDiffStats: { changed: number; total: number; baseTotal: number } | null = null;
+  let cachedStringsShow: boolean | undefined;
+  let cachedStringsBuffer: ArrayBuffer | undefined;
+  let cachedStrings: { offset: number; str: string }[] = [];
+  let prevDiffBaselineId: string | null | undefined;
 
-  const addrWidth = useMemo(() => {
+  function getData(buffer: ArrayBuffer): Uint8Array {
+    if (buffer !== cachedBuffer) {
+      cachedBuffer = buffer;
+      cachedData = new Uint8Array(buffer);
+    }
+    return cachedData!;
+  }
+
+  function getRegionMap(regions?: { addrStart: string; addrEnd: string }[]): RegionSpan[] | undefined {
+    if (regions !== cachedRegions) {
+      cachedRegions = regions;
+      cachedRegionMap = regions && regions.length > 0 ? buildRegionMap(regions) : undefined;
+    }
+    return cachedRegionMap;
+  }
+
+  function getAddrWidth(regionMap?: RegionSpan[]): number | undefined {
     if (!regionMap || regionMap.length === 0) return undefined;
     const last = regionMap[regionMap.length - 1];
     const maxAddr = last.vmaBase + (last.offsetEnd - last.offsetStart);
     return maxAddr > 0xFFFFFFFF ? 12 : 8;
-  }, [regionMap]);
+  }
 
-  // Diff baseline
-  const diffBaseline = useMemo(() => {
-    if (!diffBaselineId || !availableDiffs) return null;
-    const found = availableDiffs.find(d => d.id === diffBaselineId);
-    return found ? new Uint8Array(found.buffer) : null;
-  }, [diffBaselineId, availableDiffs]);
-
-  const diffStats = useMemo(() => {
-    if (!diffBaseline) return null;
-    let changed = 0;
-    const len = Math.min(data.byteLength, diffBaseline.byteLength);
-    for (let i = 0; i < len; i++) {
-      if (data[i] !== diffBaseline[i]) changed++;
-    }
-    return { changed, total: data.byteLength, baseTotal: diffBaseline.byteLength };
-  }, [data, diffBaseline]);
-
-  const diffRows = useMemo(
-    () => diffBaseline ? buildDiffRows(data, diffBaseline) : [],
-    [data, diffBaseline],
-  );
-
-  const separators = useMemo(
-    () => regionMap && regionMap.length > 1 ? regionSeparatorRows(regionMap) : [],
-    [regionMap],
-  );
-
-  // Reset diff navigation when baseline changes
-  useEffect(() => { setCurrentDiffIdx(-1); }, [diffBaselineId]);
-
-  const strings = useMemo(
-    () => showStrings ? extractStrings(data) : [],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [showStrings, buffer],
-  );
-
-  const filteredStrings = useMemo(() => {
-    if (!stringFilter) return strings;
-    const lower = stringFilter.toLowerCase();
-    return strings.filter(s => s.str.toLowerCase().includes(lower));
-  }, [strings, stringFilter]);
-
-  const [stringShowCount, setStringShowCount] = useState(MAX_DISPLAYED_STRINGS);
-  const displayStrings = filteredStrings.slice(0, stringShowCount);
-
-  const measuredRef = useCallback((node: HTMLDivElement | null) => {
-    scrollNodeRef.current = node;
-    if (!node) return;
-    const h = Math.min(window.innerHeight - 160, totalRows * ROW_HEIGHT);
-    setContainerHeight(Math.max(200, h));
-  }, [totalRows]);
-
-  const scrollToRow = useCallback((row: number) => {
-    const target = Math.max(0, row * ROW_HEIGHT - containerHeight / 3);
-    if (scrollNodeRef.current) {
-      programmaticScrollRef.current = true;
-      scrollNodeRef.current.scrollTop = target;
-      setScrollTop(target);
-    }
-    setHighlightRow(row);
-    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
-    highlightTimerRef.current = setTimeout(() => setHighlightRow(null), 2000);
-  }, [containerHeight]);
-
-  const scrollToOffset = useCallback((byteOffset: number) => {
-    scrollToRow(Math.floor(byteOffset / BYTES_PER_ROW));
-  }, [scrollToRow]);
-
-  // N/P keyboard navigation through diff rows
-  useEffect(() => {
-    if (!diffBaseline || diffRows.length === 0) return;
-    const handler = (e: KeyboardEvent) => {
-      const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.key === "n" || e.key === "N") {
-        e.preventDefault();
-        let idx: number;
-        if (currentDiffIdx >= 0 && currentDiffIdx < diffRows.length - 1) {
-          idx = currentDiffIdx + 1;
-        } else {
-          const centerRow = Math.floor((scrollTop + containerHeight / 2) / ROW_HEIGHT);
-          idx = findDiffIndex(diffRows, centerRow, "next");
-        }
-        if (idx >= 0 && idx < diffRows.length) {
-          setCurrentDiffIdx(idx);
-          scrollToRow(diffRows[idx]);
-        }
-      } else if (e.key === "p" || e.key === "P") {
-        e.preventDefault();
-        let idx: number;
-        if (currentDiffIdx >= 0 && currentDiffIdx > 0) {
-          idx = currentDiffIdx - 1;
-        } else {
-          const centerRow = Math.floor((scrollTop + containerHeight / 2) / ROW_HEIGHT);
-          idx = findDiffIndex(diffRows, centerRow, "prev");
-        }
-        if (idx >= 0) {
-          setCurrentDiffIdx(idx);
-          scrollToRow(diffRows[idx]);
-        }
+  function getDiffBaseline(diffBaselineIdVal: string | null, availableDiffs?: DiffTarget[]): Uint8Array | null {
+    if (diffBaselineIdVal !== cachedDiffBaselineId || availableDiffs !== cachedAvailableDiffs) {
+      cachedDiffBaselineId = diffBaselineIdVal;
+      cachedAvailableDiffs = availableDiffs;
+      if (!diffBaselineIdVal || !availableDiffs) {
+        cachedDiffBaseline = null;
+      } else {
+        const found = availableDiffs.find(d => d.id === diffBaselineIdVal);
+        cachedDiffBaseline = found ? new Uint8Array(found.buffer) : null;
       }
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [diffBaseline, diffRows, currentDiffIdx, scrollTop, containerHeight, scrollToRow]);
-
-  // Cleanup highlight timer on unmount
-  useEffect(() => () => { if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current); }, []);
-
-  const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
-  const endRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN);
-
-  // Build visible rows — plain strings for normal mode, segments for diff mode
-  const lines: string[] | null = diffBaseline ? null : (() => {
-    const result: string[] = [];
-    for (let i = startRow; i < endRow; i++) {
-      const offset = i * BYTES_PER_ROW;
-      const vmaAddr = regionMap ? offsetToVmaAddr(offset, regionMap) : undefined;
-      result.push(formatRow(data, offset, data.byteLength, vmaAddr, addrWidth));
     }
-    return result;
-  })();
+    return cachedDiffBaseline;
+  }
 
-  const handleCopy = () => {
-    const maxCopyRows = 65_536; // ~1 MB of data
+  function getDiffStats(data: Uint8Array, diffBaseline: Uint8Array | null): { changed: number; total: number; baseTotal: number } | null {
+    if (data !== cachedDiffStatsData || diffBaseline !== cachedDiffStatsBaseline) {
+      cachedDiffStatsData = data;
+      cachedDiffStatsBaseline = diffBaseline;
+      if (!diffBaseline) {
+        cachedDiffStats = null;
+      } else {
+        let changed = 0;
+        const len = Math.min(data.byteLength, diffBaseline.byteLength);
+        for (let i = 0; i < len; i++) {
+          if (data[i] !== diffBaseline[i]) changed++;
+        }
+        cachedDiffStats = { changed, total: data.byteLength, baseTotal: diffBaseline.byteLength };
+      }
+    }
+    return cachedDiffStats;
+  }
+
+  function getDiffRows(data: Uint8Array, diffBaseline: Uint8Array | null): number[] {
+    if (data !== cachedDiffData || diffBaseline !== cachedDiffBaselineForRows) {
+      cachedDiffData = data;
+      cachedDiffBaselineForRows = diffBaseline;
+      cachedDiffRows = diffBaseline ? buildDiffRows(data, diffBaseline) : [];
+    }
+    return cachedDiffRows;
+  }
+
+  function getStrings(show: boolean, buffer: ArrayBuffer, data: Uint8Array): { offset: number; str: string }[] {
+    if (show !== cachedStringsShow || buffer !== cachedStringsBuffer) {
+      cachedStringsShow = show;
+      cachedStringsBuffer = buffer;
+      cachedStrings = show ? extractStrings(data) : [];
+    }
+    return cachedStrings;
+  }
+
+  function scrollToRow(row: number) {
+    const target = Math.max(0, row * ROW_HEIGHT - containerHeight / 3);
+    if (scrollNode) {
+      programmaticScroll = true;
+      scrollNode.scrollTop = target;
+      scrollTop = target;
+    }
+    highlightRow = row;
+    if (highlightTimer) clearTimeout(highlightTimer);
+    highlightTimer = setTimeout(() => { highlightRow = null; m.redraw(); }, 2000);
+  }
+
+  function scrollToOffset(byteOffset: number) {
+    scrollToRow(Math.floor(byteOffset / BYTES_PER_ROW));
+  }
+
+  function handleCopy(data: Uint8Array, regionMap: RegionSpan[] | undefined, addrWidth: number | undefined) {
+    const maxCopyRows = 65_536;
     const text = formatHexDump(data, maxCopyRows, regionMap, addrWidth);
     navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+      copied = true;
+      m.redraw();
+      setTimeout(() => { copied = false; m.redraw(); }, 1500);
     });
-  };
+  }
 
-  // Minimap canvas rendering
-  useEffect(() => {
-    const canvas = diffMinimapRef.current;
+  function handleMinimapClick(e: MouseEvent, diffRows: number[], totalRows: number) {
+    const canvas = e.currentTarget as HTMLCanvasElement;
+    const rect = canvas.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const targetRow = Math.floor((y / containerHeight) * totalRows);
+    if (diffRows.length === 0) return;
+    let lo = 0, hi = diffRows.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (diffRows[mid] < targetRow) lo = mid + 1; else hi = mid;
+    }
+    let idx = lo;
+    if (lo > 0 && lo < diffRows.length && Math.abs(diffRows[lo - 1] - targetRow) < Math.abs(diffRows[lo] - targetRow)) {
+      idx = lo - 1;
+    }
+    if (idx >= 0 && idx < diffRows.length) {
+      currentDiffIdx = idx;
+      scrollToRow(diffRows[idx]);
+    }
+  }
+
+  function renderMinimap(diffBaseline: Uint8Array | null, diffRows: number[], totalRows: number) {
+    const canvas = diffMinimapCanvas;
     if (!canvas || !diffBaseline || diffRows.length === 0) return;
     const dpr = window.devicePixelRatio || 1;
     const w = 6;
@@ -444,219 +438,314 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
     ctx.strokeStyle = "rgba(0,0,0,0.2)";
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, vpTop + 0.5, w - 1, vpH);
-  }, [diffBaseline, diffRows, totalRows, containerHeight, scrollTop]);
+  }
 
-  const handleMinimapClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const y = e.clientY - rect.top;
-    const targetRow = Math.floor((y / containerHeight) * totalRows);
-    // Find nearest diff row via binary search
-    if (diffRows.length === 0) return;
-    let lo = 0, hi = diffRows.length - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (diffRows[mid] < targetRow) lo = mid + 1; else hi = mid;
-    }
-    let idx = lo;
-    if (lo > 0 && lo < diffRows.length && Math.abs(diffRows[lo - 1] - targetRow) < Math.abs(diffRows[lo] - targetRow)) {
-      idx = lo - 1;
-    }
-    if (idx >= 0 && idx < diffRows.length) {
-      setCurrentDiffIdx(idx);
-      scrollToRow(diffRows[idx]);
-    }
-  }, [diffRows, totalRows, containerHeight, scrollToRow]);
+  let keyHandler: ((e: KeyboardEvent) => void) | null = null;
 
-  // Visible region separators
-  const visibleSeparators = separators.filter(s => s.row >= startRow && s.row < endRow);
+  function installKeyHandler(diffBaseline: Uint8Array | null, diffRows: number[]) {
+    removeKeyHandler();
+    if (!diffBaseline || diffRows.length === 0) return;
+    keyHandler = (e: KeyboardEvent) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "n" || e.key === "N") {
+        e.preventDefault();
+        let idx: number;
+        if (currentDiffIdx >= 0 && currentDiffIdx < diffRows.length - 1) {
+          idx = currentDiffIdx + 1;
+        } else {
+          const centerRow = Math.floor((scrollTop + containerHeight / 2) / ROW_HEIGHT);
+          idx = findDiffIndex(diffRows, centerRow, "next");
+        }
+        if (idx >= 0 && idx < diffRows.length) {
+          currentDiffIdx = idx;
+          scrollToRow(diffRows[idx]);
+          m.redraw();
+        }
+      } else if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        let idx: number;
+        if (currentDiffIdx >= 0 && currentDiffIdx > 0) {
+          idx = currentDiffIdx - 1;
+        } else {
+          const centerRow = Math.floor((scrollTop + containerHeight / 2) / ROW_HEIGHT);
+          idx = findDiffIndex(diffRows, centerRow, "prev");
+        }
+        if (idx >= 0) {
+          currentDiffIdx = idx;
+          scrollToRow(diffRows[idx]);
+          m.redraw();
+        }
+      }
+    };
+    document.addEventListener("keydown", keyHandler);
+  }
 
-  return (
-    <div>
-      <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-100 truncate">{name}</h2>
-        <span className="text-sm text-stone-500 dark:text-stone-400">{fmtSize(data.byteLength)}</span>
-        <span className="text-xs text-stone-400 dark:text-stone-500">{totalRows.toLocaleString()} rows</span>
-        <div className="ml-auto flex items-center gap-2">
-          {availableDiffs && availableDiffs.length > 0 && (
-            <select
-              className="text-xs border border-stone-200 dark:border-stone-700 px-1.5 py-0.5 text-stone-500 dark:text-stone-400 bg-white dark:bg-stone-900 cursor-pointer max-w-[160px] truncate"
-              value={diffBaselineId ?? ""}
-              onChange={e => setDiffBaselineId(e.target.value || null)}
-            >
-              <option value="">Compare{"\u2026"}</option>
-              {availableDiffs.map(d => (
-                <option key={d.id} value={d.id}>{d.name}</option>
-              ))}
-            </select>
+  function removeKeyHandler() {
+    if (keyHandler) {
+      document.removeEventListener("keydown", keyHandler);
+      keyHandler = null;
+    }
+  }
+
+  return {
+    oncreate() {
+      // Key handler is installed/updated in view via onupdate-like logic
+    },
+    onremove() {
+      removeKeyHandler();
+      if (highlightTimer) clearTimeout(highlightTimer);
+    },
+    view(vnode) {
+      const { buffer, name, regions, availableDiffs } = vnode.attrs;
+      const data = getData(buffer);
+      const totalRows = Math.ceil(data.byteLength / BYTES_PER_ROW);
+      const regionMap = getRegionMap(regions);
+      const addrWidth = getAddrWidth(regionMap);
+      const diffBaseline = getDiffBaseline(diffBaselineId, availableDiffs);
+      const diffStats = getDiffStats(data, diffBaseline);
+      const diffRows = getDiffRows(data, diffBaseline);
+      const separators = regionMap && regionMap.length > 1 ? regionSeparatorRows(regionMap) : [];
+      const strings = getStrings(showStrings, buffer, data);
+
+      // Reset diff navigation when baseline changes
+      if (diffBaselineId !== prevDiffBaselineId) {
+        prevDiffBaselineId = diffBaselineId;
+        currentDiffIdx = -1;
+      }
+
+      // Re-install key handler (references closure vars directly, so always current)
+      installKeyHandler(diffBaseline, diffRows);
+
+      const filteredStrings = stringFilter
+        ? strings.filter(s => s.str.toLowerCase().includes(stringFilter.toLowerCase()))
+        : strings;
+      const displayStrings = filteredStrings.slice(0, stringShowCount);
+
+      const startRow = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN);
+      const endRow = Math.min(totalRows, Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + OVERSCAN);
+
+      // Build visible rows — plain strings for normal mode
+      const lines: string[] | null = diffBaseline ? null : (() => {
+        const result: string[] = [];
+        for (let i = startRow; i < endRow; i++) {
+          const offset = i * BYTES_PER_ROW;
+          const vmaAddr = regionMap ? offsetToVmaAddr(offset, regionMap) : undefined;
+          result.push(formatRow(data, offset, data.byteLength, vmaAddr, addrWidth));
+        }
+        return result;
+      })();
+
+      // Visible region separators
+      const visibleSeparators = separators.filter(s => s.row >= startRow && s.row < endRow);
+
+      // Capture diffRows/totalRows for minimap click closure
+      const diffRowsForMinimap = diffRows;
+      const totalRowsForMinimap = totalRows;
+
+      return (
+        <div>
+          <div className="flex items-center gap-3 mb-3">
+            <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-100 truncate">{name}</h2>
+            <span className="text-sm text-stone-500 dark:text-stone-400">{fmtSize(data.byteLength)}</span>
+            <span className="text-xs text-stone-400 dark:text-stone-500">{totalRows.toLocaleString()} rows</span>
+            <div className="ml-auto flex items-center gap-2">
+              {availableDiffs && availableDiffs.length > 0 && (
+                <select
+                  className="text-xs border border-stone-200 dark:border-stone-700 px-1.5 py-0.5 text-stone-500 dark:text-stone-400 bg-white dark:bg-stone-900 cursor-pointer max-w-[160px] truncate"
+                  value={diffBaselineId ?? ""}
+                  onchange={(e: Event) => { diffBaselineId = (e.target as HTMLSelectElement).value || null; }}
+                >
+                  <option value="">Compare{"\u2026"}</option>
+                  {availableDiffs.map(d => (
+                    <option key={d.id} value={d.id}>{d.name}</option>
+                  ))}
+                </select>
+              )}
+              <button
+                className={`text-xs px-2 py-0.5 border transition-colors ${
+                  showStrings
+                    ? "text-sky-600 dark:text-sky-400 border-sky-300 dark:border-sky-600 bg-sky-50 dark:bg-sky-900/30"
+                    : "text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
+                }`}
+                onclick={() => { showStrings = !showStrings; }}
+              >Strings</button>
+              <button
+                className="text-xs text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 px-2 py-0.5 border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
+                onclick={() => handleCopy(data, regionMap, addrWidth)}
+              >{copied ? "Copied" : "Copy"}</button>
+              <button
+                className="text-xs text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 px-2 py-0.5 border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
+                onclick={() => downloadBlob(name + ".bin", buffer)}
+              >Download</button>
+            </div>
+          </div>
+          {regionMap && regionMap.length > 0 && (
+            <div className="text-xs text-stone-400 dark:text-stone-500 mb-2 font-mono">
+              {regionMap.length === 1
+                ? <>VMA {regionMap[0].vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}{"\u2013"}{(regionMap[0].vmaBase + regionMap[0].offsetEnd).toString(16).padStart(addrWidth ?? 8, "0")}</>
+                : <>{regionMap.length} VMA regions</>}
+            </div>
           )}
-          <button
-            className={`text-xs px-2 py-0.5 border transition-colors ${
-              showStrings
-                ? "text-sky-600 dark:text-sky-400 border-sky-300 dark:border-sky-600 bg-sky-50 dark:bg-sky-900/30"
-                : "text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
-            }`}
-            onClick={() => setShowStrings(!showStrings)}
-          >Strings</button>
-          <button
-            className="text-xs text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 px-2 py-0.5 border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
-            onClick={handleCopy}
-          >{copied ? "Copied" : "Copy"}</button>
-          <button
-            className="text-xs text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 px-2 py-0.5 border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
-            onClick={() => downloadBlob(name + ".bin", buffer)}
-          >Download</button>
-        </div>
-      </div>
-      {regionMap && regionMap.length > 0 && (
-        <div className="text-xs text-stone-400 dark:text-stone-500 mb-2 font-mono">
-          {regionMap.length === 1
-            ? <>VMA {regionMap[0].vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}{"\u2013"}{(regionMap[0].vmaBase + regionMap[0].offsetEnd).toString(16).padStart(addrWidth ?? 8, "0")}</>
-            : <>{regionMap.length} VMA regions</>}
-        </div>
-      )}
-      {diffStats && (
-        <div className="text-xs text-stone-400 dark:text-stone-500 mb-2 flex items-center gap-3">
-          <span>
-            <span className="font-mono text-amber-700 dark:text-amber-400">{diffStats.changed.toLocaleString()}</span> bytes differ
-            {" "}of {fmtSize(diffStats.total)}
-            {diffStats.total !== diffStats.baseTotal && (
-              <span className="ml-2">(baseline: {fmtSize(diffStats.baseTotal)})</span>
-            )}
-          </span>
-          {diffRows.length > 0 && (<>
-            <span className="text-stone-300 dark:text-stone-600">|</span>
-            <span className="font-mono">
-              {currentDiffIdx >= 0
-                ? <><span className="text-amber-700 dark:text-amber-400">{currentDiffIdx + 1}</span>{" of "}{diffRows.length.toLocaleString()} diff rows</>
-                : <>{diffRows.length.toLocaleString()} diff rows</>}
-            </span>
-            <span className="text-stone-300 dark:text-stone-600 text-[10px]">n/p to navigate</span>
-          </>)}
-        </div>
-      )}
-      <div className="flex">
-        {/* Hex dump */}
-        <div className="flex-1 min-w-0 relative">
-          <div
-            ref={measuredRef}
-            className="overflow-auto border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900"
-            style={{ height: containerHeight }}
-            onScroll={e => {
-              setScrollTop(e.currentTarget.scrollTop);
-              if (programmaticScrollRef.current) programmaticScrollRef.current = false;
-              else setCurrentDiffIdx(-1);
-            }}
-          >
-            <div style={{ height: totalRows * ROW_HEIGHT, position: "relative" }}>
-              {highlightRow !== null && highlightRow >= startRow && highlightRow < endRow && (
-                <div
-                  className="absolute left-0 right-0 bg-sky-100 dark:bg-sky-900/40 transition-colors"
-                  style={{ top: highlightRow * ROW_HEIGHT, height: ROW_HEIGHT }}
+          {diffStats && (
+            <div className="text-xs text-stone-400 dark:text-stone-500 mb-2 flex items-center gap-3">
+              <span>
+                <span className="font-mono text-amber-700 dark:text-amber-400">{diffStats.changed.toLocaleString()}</span> bytes differ
+                {" "}of {fmtSize(diffStats.total)}
+                {diffStats.total !== diffStats.baseTotal && (
+                  <span className="ml-2">(baseline: {fmtSize(diffStats.baseTotal)})</span>
+                )}
+              </span>
+              {diffRows.length > 0 && (<>
+                <span className="text-stone-300 dark:text-stone-600">|</span>
+                <span className="font-mono">
+                  {currentDiffIdx >= 0
+                    ? <><span className="text-amber-700 dark:text-amber-400">{currentDiffIdx + 1}</span>{" of "}{diffRows.length.toLocaleString()} diff rows</>
+                    : <>{diffRows.length.toLocaleString()} diff rows</>}
+                </span>
+                <span className="text-stone-300 dark:text-stone-600 text-[10px]">n/p to navigate</span>
+              </>)}
+            </div>
+          )}
+          <div className="flex">
+            {/* Hex dump */}
+            <div className="flex-1 min-w-0 relative">
+              <div
+                className="overflow-auto border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900"
+                style={{ height: containerHeight }}
+                oncreate={(vn: m.VnodeDOM) => {
+                  const node = vn.dom as HTMLDivElement;
+                  scrollNode = node;
+                  const h = Math.min(window.innerHeight - 160, totalRows * ROW_HEIGHT);
+                  containerHeight = Math.max(200, h);
+                  m.redraw();
+                }}
+                onscroll={(e: Event) => {
+                  scrollTop = (e.currentTarget as HTMLDivElement).scrollTop;
+                  if (programmaticScroll) programmaticScroll = false;
+                  else currentDiffIdx = -1;
+                }}
+              >
+                <div style={{ height: totalRows * ROW_HEIGHT, position: "relative" }}>
+                  {highlightRow !== null && highlightRow >= startRow && highlightRow < endRow && (
+                    <div
+                      className="absolute left-0 right-0 bg-sky-100 dark:bg-sky-900/40 transition-colors"
+                      style={{ top: highlightRow * ROW_HEIGHT, height: ROW_HEIGHT }}
+                    />
+                  )}
+                  {/* VMA region separators */}
+                  {visibleSeparators.map(sep => (
+                    <div
+                      key={`sep-${sep.row}`}
+                      className="absolute left-0 right-0 border-t border-dashed border-stone-300 dark:border-stone-600 pointer-events-none"
+                      style={{ top: sep.row * ROW_HEIGHT - 1 }}
+                    >
+                      <span className="absolute -top-3 left-2 text-[10px] text-stone-400 dark:text-stone-500 bg-white dark:bg-stone-900 px-1 font-mono">
+                        {sep.vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}
+                      </span>
+                    </div>
+                  ))}
+                  {diffBaseline ? (
+                    // Diff mode: per-row divs with per-byte highlighting
+                    Array.from({ length: endRow - startRow }, (_, idx) => {
+                      const i = startRow + idx;
+                      const offset = i * BYTES_PER_ROW;
+                      const vmaAddr = regionMap ? offsetToVmaAddr(offset, regionMap) : undefined;
+                      const segments = formatRowSegments(data, offset, data.byteLength, diffBaseline, diffBaseline.byteLength, vmaAddr, addrWidth);
+                      return (
+                        <div
+                          key={i}
+                          className="font-mono text-xs text-stone-800 dark:text-stone-200 leading-5 select-text whitespace-pre"
+                          style={{ position: "absolute", top: i * ROW_HEIGHT, height: ROW_HEIGHT, padding: "0 8px" }}
+                        >
+                          {segments.map((s, si) =>
+                            s.diff
+                              ? <span key={si} className="bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 rounded-sm">{s.text}</span>
+                              : <span key={si}>{s.text}</span>
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    // Normal mode: single pre block
+                    <pre
+                      className="font-mono text-xs text-stone-800 dark:text-stone-200 leading-5 select-text whitespace-pre relative"
+                      style={{ position: "absolute", top: startRow * ROW_HEIGHT, left: 0, padding: "0 8px" }}
+                    >
+                      {lines!.join("\n")}
+                    </pre>
+                  )}
+                </div>
+              </div>
+              {/* Diff minimap gutter */}
+              {diffBaseline && diffRows.length > 0 && (
+                <canvas
+                  className="absolute top-0 right-0 cursor-pointer z-10"
+                  style={{ width: 6, height: containerHeight }}
+                  oncreate={(vn: m.VnodeDOM) => {
+                    diffMinimapCanvas = vn.dom as HTMLCanvasElement;
+                    renderMinimap(diffBaseline, diffRows, totalRows);
+                  }}
+                  onupdate={() => {
+                    renderMinimap(diffBaseline, diffRows, totalRows);
+                  }}
+                  onclick={(e: MouseEvent) => handleMinimapClick(e, diffRowsForMinimap, totalRowsForMinimap)}
                 />
               )}
-              {/* VMA region separators */}
-              {visibleSeparators.map(sep => (
-                <div
-                  key={`sep-${sep.row}`}
-                  className="absolute left-0 right-0 border-t border-dashed border-stone-300 dark:border-stone-600 pointer-events-none"
-                  style={{ top: sep.row * ROW_HEIGHT - 1 }}
-                >
-                  <span className="absolute -top-3 left-2 text-[10px] text-stone-400 dark:text-stone-500 bg-white dark:bg-stone-900 px-1 font-mono">
-                    {sep.vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}
-                  </span>
-                </div>
-              ))}
-              {diffBaseline ? (
-                // Diff mode: per-row divs with per-byte highlighting
-                Array.from({ length: endRow - startRow }, (_, idx) => {
-                  const i = startRow + idx;
-                  const offset = i * BYTES_PER_ROW;
-                  const vmaAddr = regionMap ? offsetToVmaAddr(offset, regionMap) : undefined;
-                  const segments = formatRowSegments(data, offset, data.byteLength, diffBaseline, diffBaseline.byteLength, vmaAddr, addrWidth);
-                  return (
-                    <div
-                      key={i}
-                      className="font-mono text-xs text-stone-800 dark:text-stone-200 leading-5 select-text whitespace-pre"
-                      style={{ position: "absolute", top: i * ROW_HEIGHT, height: ROW_HEIGHT, padding: "0 8px" }}
-                    >
-                      {segments.map((s, si) =>
-                        s.diff
-                          ? <span key={si} className="bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 rounded-sm">{s.text}</span>
-                          : <span key={si}>{s.text}</span>
-                      )}
-                    </div>
-                  );
-                })
-              ) : (
-                // Normal mode: single pre block
-                <pre
-                  className="font-mono text-xs text-stone-800 dark:text-stone-200 leading-5 select-text whitespace-pre relative"
-                  style={{ position: "absolute", top: startRow * ROW_HEIGHT, left: 0, padding: "0 8px" }}
-                >
-                  {lines!.join("\n")}
-                </pre>
-              )}
             </div>
-          </div>
-          {/* Diff minimap gutter */}
-          {diffBaseline && diffRows.length > 0 && (
-            <canvas
-              ref={diffMinimapRef}
-              className="absolute top-0 right-0 cursor-pointer z-10"
-              style={{ width: 6, height: containerHeight }}
-              onClick={handleMinimapClick}
-            />
-          )}
-        </div>
 
-        {/* Strings panel */}
-        {showStrings && (
-          <div className="w-80 border border-l-0 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 flex flex-col" style={{ height: containerHeight }}>
-            <div className="p-2 border-b border-stone-100 dark:border-stone-800">
-              <input
-                className="w-full text-xs border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-2 py-1 placeholder:text-stone-300 dark:placeholder:text-stone-600 focus:outline-none focus:border-sky-400"
-                placeholder={"Filter strings\u2026"}
-                value={stringFilter}
-                onChange={e => setStringFilter(e.target.value)}
-                autoFocus
-              />
-              <div className="text-[10px] text-stone-400 dark:text-stone-500 mt-1">
-                {filteredStrings.length === strings.length
-                  ? `${strings.length.toLocaleString()} strings`
-                  : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`}
-                {` (\u2265${MIN_STRING_LEN} chars)`}
-              </div>
-            </div>
-            <div className="flex-1 overflow-auto">
-              {displayStrings.map((s, i) => {
-                const vma = regionMap ? offsetToVmaAddr(s.offset, regionMap) : undefined;
-                return (
-                  <div
-                    key={i}
-                    className="px-2 py-0.5 text-xs hover:bg-sky-50 dark:hover:bg-sky-900/30 cursor-pointer border-b border-stone-50 dark:border-stone-800 flex gap-2 items-baseline"
-                    onClick={() => scrollToOffset(s.offset)}
-                    title={`Offset: 0x${s.offset.toString(16)}${vma !== undefined ? ` | VMA: 0x${vma.toString(16)}` : ""}`}
-                  >
-                    <span className="font-mono text-stone-400 dark:text-stone-500 shrink-0 text-[10px]">
-                      {(vma ?? s.offset).toString(16).padStart(vma !== undefined ? (addrWidth ?? 8) : 8, "0")}
-                    </span>
-                    <span className="font-mono text-stone-700 dark:text-stone-200 truncate">{s.str}</span>
+            {/* Strings panel */}
+            {showStrings && (
+              <div className="w-80 border border-l-0 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 flex flex-col" style={{ height: containerHeight }}>
+                <div className="p-2 border-b border-stone-100 dark:border-stone-800">
+                  <input
+                    className="w-full text-xs border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-2 py-1 placeholder:text-stone-300 dark:placeholder:text-stone-600 focus:outline-none focus:border-sky-400"
+                    placeholder={"Filter strings\u2026"}
+                    value={stringFilter}
+                    oninput={(e: Event) => { stringFilter = (e.target as HTMLInputElement).value; }}
+                    oncreate={(vn: m.VnodeDOM) => { (vn.dom as HTMLInputElement).focus(); }}
+                  />
+                  <div className="text-[10px] text-stone-400 dark:text-stone-500 mt-1">
+                    {filteredStrings.length === strings.length
+                      ? `${strings.length.toLocaleString()} strings`
+                      : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`}
+                    {` (\u2265${MIN_STRING_LEN} chars)`}
                   </div>
-                );
-              })}
-              {filteredStrings.length > stringShowCount && (
-                <div className="px-2 py-2 text-[10px] text-stone-400 dark:text-stone-500 text-center">
-                  Showing {stringShowCount.toLocaleString()} of {filteredStrings.length.toLocaleString()}
-                  {" \u2014 "}
-                  <button className="text-sky-600 dark:text-sky-400 hover:underline" onClick={() => setStringShowCount(Math.min(stringShowCount + 5_000, filteredStrings.length))}>show more</button>
-                  {" "}
-                  <button className="text-sky-600 dark:text-sky-400 ml-1 hover:underline" onClick={() => setStringShowCount(filteredStrings.length)}>show all</button>
                 </div>
-              )}
-            </div>
+                <div className="flex-1 overflow-auto">
+                  {displayStrings.map((s, i) => {
+                    const vma = regionMap ? offsetToVmaAddr(s.offset, regionMap) : undefined;
+                    return (
+                      <div
+                        key={i}
+                        className="px-2 py-0.5 text-xs hover:bg-sky-50 dark:hover:bg-sky-900/30 cursor-pointer border-b border-stone-50 dark:border-stone-800 flex gap-2 items-baseline"
+                        onclick={() => scrollToOffset(s.offset)}
+                        title={`Offset: 0x${s.offset.toString(16)}${vma !== undefined ? ` | VMA: 0x${vma.toString(16)}` : ""}`}
+                      >
+                        <span className="font-mono text-stone-400 dark:text-stone-500 shrink-0 text-[10px]">
+                          {(vma ?? s.offset).toString(16).padStart(vma !== undefined ? (addrWidth ?? 8) : 8, "0")}
+                        </span>
+                        <span className="font-mono text-stone-700 dark:text-stone-200 truncate">{s.str}</span>
+                      </div>
+                    );
+                  })}
+                  {filteredStrings.length > stringShowCount && (
+                    <div className="px-2 py-2 text-[10px] text-stone-400 dark:text-stone-500 text-center">
+                      Showing {stringShowCount.toLocaleString()} of {filteredStrings.length.toLocaleString()}
+                      {" \u2014 "}
+                      <button className="text-sky-600 dark:text-sky-400 hover:underline" onclick={() => { stringShowCount = Math.min(stringShowCount + 5_000, filteredStrings.length); }}>show more</button>
+                      {" "}
+                      <button className="text-sky-600 dark:text-sky-400 ml-1 hover:underline" onclick={() => { stringShowCount = filteredStrings.length; }}>show all</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </div>
-  );
+        </div>
+      );
+    },
+  };
 }
+
+export default HexView;

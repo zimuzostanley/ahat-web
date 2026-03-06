@@ -1,67 +1,77 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import m from "mithril";
 import type { InstanceRow } from "../hprof.worker";
 import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize } from "../format";
 import { type NavFn, SortableTable, InstanceLink } from "../components";
 
-function SearchView({ proxy, navigate, initialQuery }: { proxy: WorkerProxy; navigate: NavFn; initialQuery?: string }) {
-  const [query, setQuery] = useState(initialQuery ?? "");
-  const [results, setResults] = useState<InstanceRow[]>([]);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchedRef = useRef(false);
+interface SearchViewAttrs { proxy: WorkerProxy; navigate: NavFn; initialQuery?: string }
 
-  const doSearch = useCallback((q: string) => {
-    if (q.length < 2) { setResults([]); return; }
-    proxy.query<InstanceRow[]>("search", { query: q }).then(setResults).catch(console.error);
-  }, [proxy]);
+function SearchView(): m.Component<SearchViewAttrs> {
+  let query = "";
+  let results: InstanceRow[] = [];
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let searched = false;
 
-  // Run initial search from URL param
-  useEffect(() => {
-    if (initialQuery && initialQuery.length >= 2 && !searchedRef.current) {
-      searchedRef.current = true;
-      doSearch(initialQuery);
-    }
-  }, [initialQuery, doSearch]);
+  function doSearch(q: string, proxy: WorkerProxy) {
+    if (q.length < 2) { results = []; m.redraw(); return; }
+    proxy.query<InstanceRow[]>("search", { query: q })
+      .then(r => { results = r; m.redraw(); })
+      .catch(console.error);
+  }
 
-  // Cleanup debounce timer on unmount
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
-
-  const handleChange = useCallback((q: string) => {
-    setQuery(q);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (q.length < 2) { setResults([]); return; }
-    timerRef.current = setTimeout(() => {
-      doSearch(q);
+  function handleChange(q: string, proxy: WorkerProxy) {
+    query = q;
+    if (timer) clearTimeout(timer);
+    if (q.length < 2) { results = []; return; }
+    timer = setTimeout(() => {
+      doSearch(q, proxy);
       // Update URL without adding to history
       const url = q ? `/search?q=${encodeURIComponent(q)}` : "/search";
       const prev = window.history.state;
       window.history.replaceState({ view: "search", params: { q }, trail: prev?.trail, trailIndex: prev?.trailIndex }, "", url);
     }, 300);
-  }, [doSearch]);
+  }
 
-  return (
-    <div>
-      <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Search</h2>
-      <input
-        type="text" value={query} onChange={e => handleChange(e.target.value)}
-        placeholder={"Class name or 0x\u2026 hex id"}
-        className="w-full px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 mb-3 focus:outline-none focus:ring-2 focus:ring-sky-400"
-      />
-      {results.length > 0 && (
-        <SortableTable<InstanceRow>
-          columns={[
-            { label: "Retained", align: "right", sortKey: r => r.retainedTotal, render: r => <span className="font-mono">{fmtSize(r.retainedTotal)}</span> },
-            { label: "Object", render: r => <InstanceLink row={r} navigate={navigate} /> },
-          ]}
-          data={results}
-          rowKey={r => r.id}
-        />
-      )}
-      {query.length >= 2 && results.length === 0 && (
-        <div className="text-stone-500 dark:text-stone-400">No results found.</div>
-      )}
-    </div>
-  );
+  return {
+    oninit(vnode) {
+      const { initialQuery, proxy } = vnode.attrs;
+      query = initialQuery ?? "";
+      if (initialQuery && initialQuery.length >= 2 && !searched) {
+        searched = true;
+        doSearch(initialQuery, proxy);
+      }
+    },
+    onremove() {
+      if (timer) clearTimeout(timer);
+    },
+    view(vnode) {
+      const { navigate, proxy } = vnode.attrs;
+
+      return (
+        <div>
+          <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Search</h2>
+          <input
+            type="text" value={query} oninput={(e: Event) => handleChange((e.target as HTMLInputElement).value, proxy)}
+            placeholder={"Class name or 0x\u2026 hex id"}
+            className="w-full px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 mb-3 focus:outline-none focus:ring-2 focus:ring-sky-400"
+          />
+          {results.length > 0 && (
+            <SortableTable<InstanceRow>
+              columns={[
+                { label: "Retained", align: "right", sortKey: (r: InstanceRow) => r.retainedTotal, render: (r: InstanceRow) => <span className="font-mono">{fmtSize(r.retainedTotal)}</span> },
+                { label: "Object", render: (r: InstanceRow) => <InstanceLink row={r} navigate={navigate} /> },
+              ]}
+              data={results}
+              rowKey={(r: InstanceRow) => r.id}
+            />
+          )}
+          {query.length >= 2 && results.length === 0 && (
+            <div className="text-stone-500 dark:text-stone-400">No results found.</div>
+          )}
+        </div>
+      );
+    },
+  };
 }
 
 export default SearchView;

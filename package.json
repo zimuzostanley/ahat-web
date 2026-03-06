@@ -7,20 +7,17 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "postinstall": "sh scripts/patch-mithril-types.sh",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "jsbn-rsa": "^1.0.4",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "mithril": "^2.3.8"
   },
   "devDependencies": {
-    "@testing-library/react": "^16.3.2",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
+    "@types/mithril": "^2.2.7",
     "@types/w3c-web-usb": "^1.0.13",
-    "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "happy-dom": "^20.7.0",
     "postcss": "^8.4.49",

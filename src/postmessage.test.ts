@@ -30,7 +30,7 @@ describe("postMessage open-hprof protocol", () => {
 
   beforeEach(() => {
     loadBuffer = vi.fn();
-    handler = makeMessageHandler(loadBuffer);
+    handler = makeMessageHandler(loadBuffer as (name: string, buf: ArrayBuffer) => void);
   });
 
   afterEach(() => {

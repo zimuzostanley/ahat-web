@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import m from "mithril";
 import type { SiteData, SiteChildRow, SiteObjectsRow, HeapInfo } from "../hprof.worker";
 import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize, fmtSizeDelta } from "../format";
@@ -6,117 +6,144 @@ import { type NavFn, SiteLinkRaw, Section, SortableTable, InstanceLink } from ".
 
 export interface SiteParams { id: number }
 
-function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerProxy; heaps: HeapInfo[]; navigate: NavFn; params: SiteParams; isDiffed: boolean }) {
-  const [data, setData] = useState<SiteData | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    setData(null);
-    proxy.query<SiteData>("getSite", { id: params.id ?? 0 })
-      .then(d => { if (!cancelled) setData(d); })
+interface SiteViewAttrs { proxy: WorkerProxy; heaps: HeapInfo[]; navigate: NavFn; params: SiteParams; isDiffed: boolean }
+
+function SiteView(): m.Component<SiteViewAttrs> {
+  let data: SiteData | null = null;
+  let prevId: number | undefined;
+  let cancelRef = { value: false };
+
+  function fetchData(attrs: SiteViewAttrs) {
+    cancelRef.value = true;
+    const localCancelled = { value: false };
+    cancelRef = localCancelled;
+    data = null;
+    prevId = attrs.params.id;
+    const capturedCancel = localCancelled;
+    attrs.proxy.query<SiteData>("getSite", { id: attrs.params.id ?? 0 })
+      .then(d => { if (!capturedCancel.value) { data = d; m.redraw(); } })
       .catch(console.error);
-    return () => { cancelled = true; };
-  }, [proxy, params.id]);
-
-  if (!data) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
-  const heapCols = heaps.filter(h => h.java + h.native_ > 0);
-  const childDiffed = isDiffed && data.children.some(c => c.baselineTotalJava !== undefined);
-  const objDiffed = isDiffed && data.objectsInfos.some(o => o.baselineNumInstances !== undefined);
-
-  // Build child site columns
-  type ChildCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteChildRow) => number; render: (r: SiteChildRow, idx: number) => React.ReactNode };
-  const childCols: ChildCol[] = [
-    { label: "Total Size", align: "right", minWidth: "5rem", sortKey: r => r.totalJava + r.totalNative, render: r => <span className="font-mono">{fmtSize(r.totalJava + r.totalNative)}</span> },
-  ];
-  if (childDiffed) {
-    childCols.push({
-      label: "\u0394", align: "right", minWidth: "5rem",
-      sortKey: r => (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative)),
-      render: r => {
-        const d = (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative));
-        if (d === 0) return null;
-        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
-      },
-    });
+    // Store cancel ref for cleanup
+    (fetchData as any)._cancel = () => { capturedCancel.value = true; };
   }
-  for (const h of heapCols) {
-    childCols.push({
-      label: h.name, align: "right",
-      sortKey: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return (s?.java ?? 0) + (s?.native_ ?? 0); },
-      render: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return <span className="font-mono">{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>; },
-    });
-  }
-  childCols.push({ label: "Child Site", render: r => <SiteLinkRaw {...r} navigate={navigate} /> });
 
-  // Build objects allocated columns
-  type ObjCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteObjectsRow) => number; render: (r: SiteObjectsRow, idx: number) => React.ReactNode };
-  const objCols: ObjCol[] = [
-    { label: "Size", align: "right", minWidth: "5rem", sortKey: r => r.java + r.native_, render: r => <span className="font-mono">{fmtSize(r.java + r.native_)}</span> },
-  ];
-  if (objDiffed) {
-    objCols.push({
-      label: "\u0394 Size", align: "right", minWidth: "5rem",
-      sortKey: r => (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_)),
-      render: r => {
-        const d = (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_));
-        if (d === 0) return null;
-        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
-      },
-    });
-  }
-  objCols.push({
-    label: "Instances", align: "right", minWidth: "4rem",
-    sortKey: r => r.numInstances,
-    render: r => (
-      <button className="text-sky-700 dark:text-sky-400 underline decoration-sky-300 dark:decoration-sky-600 hover:decoration-sky-500 dark:hover:decoration-sky-400 font-mono"
-        onClick={() => navigate("objects", { siteId: data.id, className: r.className, heap: r.heap })}>
-        {r.numInstances.toLocaleString()}
-      </button>
-    ),
-  });
-  if (objDiffed) {
-    objCols.push({
-      label: "\u0394 #", align: "right", minWidth: "4rem",
-      sortKey: r => r.numInstances - (r.baselineNumInstances ?? r.numInstances),
-      render: r => {
-        const d = r.numInstances - (r.baselineNumInstances ?? r.numInstances);
-        if (d === 0) return null;
-        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{d > 0 ? "+" : "\u2212"}{Math.abs(d).toLocaleString()}</span>;
-      },
-    });
-  }
-  objCols.push({ label: "Heap", render: r => <span>{r.heap}</span> });
-  objCols.push({
-    label: "Class", render: r => r.classObjId != null
-      ? <InstanceLink row={{ id: r.classObjId, display: r.className }} navigate={navigate} />
-      : <span>{r.className}</span>,
-  });
+  return {
+    oninit(vnode) {
+      fetchData(vnode.attrs);
+    },
+    onupdate(vnode) {
+      if (vnode.attrs.params.id !== prevId) {
+        fetchData(vnode.attrs);
+      }
+    },
+    onremove() {
+      if ((fetchData as any)._cancel) (fetchData as any)._cancel();
+    },
+    view(vnode) {
+      const { heaps, navigate, isDiffed } = vnode.attrs;
 
-  return (
-    <div className="space-y-3">
-      <div>
-        <h2 className="text-lg font-semibold mb-1 text-stone-800 dark:text-stone-100">Site</h2>
-        <SiteLinkRaw {...data} navigate={navigate} />
-      </div>
+      if (!data) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
+      const heapCols = heaps.filter(h => h.java + h.native_ > 0);
+      const childDiffed = isDiffed && data.children.some(c => c.baselineTotalJava !== undefined);
+      const objDiffed = isDiffed && data.objectsInfos.some(o => o.baselineNumInstances !== undefined);
 
-      <Section title="Allocation Site">
-        <div className="space-y-0.5">
-          {data.chain.map((s, i) => (
-            <div key={i} style={{ paddingLeft: Math.min(i, 20) * 16 }}>{i > 0 && "\u2192 "}<SiteLinkRaw {...s} navigate={navigate} /></div>
-          ))}
+      // Build child site columns
+      type ChildCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteChildRow) => number; render: (r: SiteChildRow, idx: number) => m.Children };
+      const childCols: ChildCol[] = [
+        { label: "Total Size", align: "right", minWidth: "5rem", sortKey: r => r.totalJava + r.totalNative, render: r => <span className="font-mono">{fmtSize(r.totalJava + r.totalNative)}</span> },
+      ];
+      if (childDiffed) {
+        childCols.push({
+          label: "\u0394", align: "right", minWidth: "5rem",
+          sortKey: r => (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative)),
+          render: r => {
+            const d = (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative));
+            if (d === 0) return null;
+            return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
+          },
+        });
+      }
+      for (const h of heapCols) {
+        childCols.push({
+          label: h.name, align: "right",
+          sortKey: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return (s?.java ?? 0) + (s?.native_ ?? 0); },
+          render: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return <span className="font-mono">{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>; },
+        });
+      }
+      childCols.push({ label: "Child Site", render: r => <SiteLinkRaw {...r} navigate={navigate} /> });
+
+      // Build objects allocated columns
+      type ObjCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteObjectsRow) => number; render: (r: SiteObjectsRow, idx: number) => m.Children };
+      const objCols: ObjCol[] = [
+        { label: "Size", align: "right", minWidth: "5rem", sortKey: r => r.java + r.native_, render: r => <span className="font-mono">{fmtSize(r.java + r.native_)}</span> },
+      ];
+      if (objDiffed) {
+        objCols.push({
+          label: "\u0394 Size", align: "right", minWidth: "5rem",
+          sortKey: r => (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_)),
+          render: r => {
+            const d = (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_));
+            if (d === 0) return null;
+            return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
+          },
+        });
+      }
+      objCols.push({
+        label: "Instances", align: "right", minWidth: "4rem",
+        sortKey: r => r.numInstances,
+        render: r => (
+          <button className="text-sky-700 dark:text-sky-400 underline decoration-sky-300 dark:decoration-sky-600 hover:decoration-sky-500 dark:hover:decoration-sky-400 font-mono"
+            onclick={() => navigate("objects", { siteId: data!.id, className: r.className, heap: r.heap })}>
+            {r.numInstances.toLocaleString()}
+          </button>
+        ),
+      });
+      if (objDiffed) {
+        objCols.push({
+          label: "\u0394 #", align: "right", minWidth: "4rem",
+          sortKey: r => r.numInstances - (r.baselineNumInstances ?? r.numInstances),
+          render: r => {
+            const d = r.numInstances - (r.baselineNumInstances ?? r.numInstances);
+            if (d === 0) return null;
+            return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{d > 0 ? "+" : "\u2212"}{Math.abs(d).toLocaleString()}</span>;
+          },
+        });
+      }
+      objCols.push({ label: "Heap", render: r => <span>{r.heap}</span> });
+      objCols.push({
+        label: "Class", render: r => r.classObjId != null
+          ? <InstanceLink row={{ id: r.classObjId, display: r.className }} navigate={navigate} />
+          : <span>{r.className}</span>,
+      });
+
+      return (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold mb-1 text-stone-800 dark:text-stone-100">Site</h2>
+            <SiteLinkRaw {...data} navigate={navigate} />
+          </div>
+
+          <Section title="Allocation Site">
+            <div className="space-y-0.5">
+              {data.chain.map((s, i) => (
+                <div key={i} style={{ paddingLeft: Math.min(i, 20) * 16 }}>{i > 0 && "\u2192 "}<SiteLinkRaw {...s} navigate={navigate} /></div>
+              ))}
+            </div>
+          </Section>
+
+          {data.children.length > 0 && (
+            <Section title="Sites Called from Here">
+              <SortableTable<SiteChildRow> columns={childCols} data={data.children} />
+            </Section>
+          )}
+
+          <Section title="Objects Allocated">
+            <SortableTable<SiteObjectsRow> columns={objCols} data={data.objectsInfos} />
+          </Section>
         </div>
-      </Section>
-
-      {data.children.length > 0 && (
-        <Section title="Sites Called from Here">
-          <SortableTable<SiteChildRow> columns={childCols} data={data.children} />
-        </Section>
-      )}
-
-      <Section title="Objects Allocated">
-        <SortableTable<SiteObjectsRow> columns={objCols} data={data.objectsInfos} />
-      </Section>
-    </div>
-  );
+      );
+    },
+  };
 }
 
 export default SiteView;
