@@ -5,6 +5,7 @@ import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
 import { type NavState, stateToUrl, urlToState } from "./routing";
 import type { NavFn } from "./components";
+import { type BreadcrumbEntry, makeCrumb, Breadcrumbs } from "./components";
 import { downloadBuffer, downloadBlob } from "./utils";
 import { useTheme } from "./use-theme";
 import CaptureView from "./views/CaptureView";
@@ -89,6 +90,7 @@ export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeTab, setActiveTab] = useState<"device" | string>("device");
   const [nav, setNav] = useState<NavState>({ view: "overview", params: {} });
+  const [navStack, setNavStack] = useState<BreadcrumbEntry[]>([makeCrumb({ view: "overview", params: {} })]);
   const [error, setError] = useState<string | null>(null);
   const [captureUsed, setCaptureUsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -109,10 +111,20 @@ export default function App() {
   const showDeviceTab = captureUsed;
   const showTabs = sessions.length > 1 || showDeviceTab;
 
-  // Navigate: push new state to browser history
+  // Navigate from within a view — pushes onto breadcrumb trail
   const navigate: NavFn = useCallback((v, p = {}) => {
     const state = { view: v, params: p } as NavState;
     setNav(state);
+    setNavStack(prev => [...prev, makeCrumb(state)]);
+    window.history.pushState(state, "", stateToUrl(state));
+    window.scrollTo(0, 0);
+  }, []);
+
+  // Navigate from top-level nav bar — resets breadcrumb trail
+  const navigateTop: NavFn = useCallback((v, p = {}) => {
+    const state = { view: v, params: p } as NavState;
+    setNav(state);
+    setNavStack([makeCrumb(state)]);
     window.history.pushState(state, "", stateToUrl(state));
     window.scrollTo(0, 0);
   }, []);
@@ -130,7 +142,13 @@ export default function App() {
   useEffect(() => {
     const handler = (e: PopStateEvent) => {
       if (e.state && e.state.view) {
-        setNav(e.state as NavState);
+        const state = e.state as NavState;
+        setNav(state);
+        // Try to truncate stack to this state, otherwise reset
+        setNavStack(prev => {
+          const idx = prev.findIndex(c => c.state.view === state.view && JSON.stringify(c.state.params) === JSON.stringify(state.params));
+          return idx >= 0 ? prev.slice(0, idx + 1) : [makeCrumb(state)];
+        });
       }
     };
     window.addEventListener("popstate", handler);
@@ -242,6 +260,7 @@ export default function App() {
     if (tabId !== "device") {
       const overviewState: NavState = { view: "overview", params: {} };
       setNav(overviewState);
+      setNavStack([makeCrumb(overviewState)]);
       window.history.replaceState(overviewState, "", stateToUrl(overviewState));
     }
   }, [activeTab]);
@@ -444,7 +463,7 @@ export default function App() {
                         className={`px-3 py-1 text-sm transition-colors ${
                           nav.view === n.view ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
                         }`}
-                        onClick={() => navigate(n.view, n.params)}
+                        onClick={() => navigateTop(n.view, n.params)}
                       >{n.label}</button>
                     ))}
                   </nav>
@@ -513,7 +532,7 @@ export default function App() {
                     className={`px-3 py-1 text-sm transition-colors ${
                       nav.view === n.view ? "bg-stone-600 text-white" : "text-stone-300 hover:bg-stone-700 hover:text-white"
                     }`}
-                    onClick={() => navigate(n.view, n.params)}
+                    onClick={() => navigateTop(n.view, n.params)}
                   >{n.label}</button>
                 ))}
               </nav>
@@ -642,6 +661,13 @@ export default function App() {
           {/* Ready — hprof content views */}
           {activeSession.status === "ready" && activeSession.kind === "hprof" && activeProxy && activeOverview && (
             <main className="flex-1 p-4 max-w-[95%] mx-auto w-full text-sm">
+              <Breadcrumbs trail={navStack} onNavigate={i => {
+                const crumb = navStack[i];
+                setNav(crumb.state);
+                setNavStack(navStack.slice(0, i + 1));
+                window.history.pushState(crumb.state, "", stateToUrl(crumb.state));
+                window.scrollTo(0, 0);
+              }} />
               {nav.view === "overview" && <OverviewView overview={activeOverview} name={activeSession.name} navigate={navigate} />}
               {nav.view === "rooted"   && <RootedView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} isDiffed={isDiffed} />}
               {nav.view === "object"   && <ObjectView proxy={activeProxy} heaps={activeOverview.heaps} navigate={navigate} params={nav.params} />}

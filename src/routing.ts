@@ -8,6 +8,24 @@ export type NavState =
   | { view: "bitmaps"; params: { id?: number } }
   | { view: "strings"; params: { q?: string } };
 
+/** Short human-readable label for a nav state (used in breadcrumbs). */
+export function navLabel(state: NavState): string {
+  switch (state.view) {
+    case "overview": return "Overview";
+    case "rooted": return "Rooted";
+    case "object": return `Object 0x${state.params.id.toString(16)}`;
+    case "objects": {
+      const cls = state.params.className;
+      const short = cls.includes(".") ? cls.slice(cls.lastIndexOf(".") + 1) : cls;
+      return short || "Objects";
+    }
+    case "site": return state.params.id === 0 ? "Allocations" : `Site ${state.params.id}`;
+    case "search": return "Search";
+    case "bitmaps": return "Bitmaps";
+    case "strings": return "Strings";
+  }
+}
+
 export function stateToUrl(state: NavState): string {
   switch (state.view) {
     case "overview": return "/";

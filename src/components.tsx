@@ -1,5 +1,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import type { InstanceRow, PrimOrRef } from "./hprof.worker";
+import type { NavState } from "./routing";
+import { navLabel } from "./routing";
 
 // ─── Navigation types ─────────────────────────────────────────────────────────
 
@@ -184,4 +186,43 @@ export function BitmapImage({ width, height, format, data }: {
   }
   if (!blobUrl) return null;
   return <img src={blobUrl} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain", imageRendering: "pixelated" }} />;
+}
+
+// ─── Breadcrumbs ─────────────────────────────────────────────────────────────
+
+export interface BreadcrumbEntry {
+  state: NavState;
+  label: string;
+}
+
+/** Build a label for a NavState, with optional override for top-level nav items. */
+export function makeCrumb(state: NavState): BreadcrumbEntry {
+  return { state, label: navLabel(state) };
+}
+
+export function Breadcrumbs({ trail, onNavigate }: {
+  trail: BreadcrumbEntry[];
+  onNavigate: (index: number) => void;
+}) {
+  if (trail.length <= 1) return null;
+  return (
+    <nav className="flex items-center gap-1 text-xs overflow-x-auto pb-1 mb-2 scrollbar-thin" aria-label="Breadcrumb">
+      {trail.map((crumb, i) => {
+        const isLast = i === trail.length - 1;
+        return (
+          <span key={i} className="flex items-center gap-1 shrink-0">
+            {i > 0 && <span className="text-stone-400 dark:text-stone-500">/</span>}
+            {isLast ? (
+              <span className="text-stone-700 dark:text-stone-200 font-medium">{crumb.label}</span>
+            ) : (
+              <button
+                className="text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300 hover:underline"
+                onClick={() => onNavigate(i)}
+              >{crumb.label}</button>
+            )}
+          </span>
+        );
+      })}
+    </nav>
+  );
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { stateToUrl, urlToState } from './routing';
+import { stateToUrl, urlToState, navLabel } from './routing';
+import { makeCrumb } from './components';
 
 describe('URL routing', () => {
   describe('stateToUrl', () => {
@@ -242,6 +243,57 @@ describe('URL routing', () => {
       const state = urlToState(new URL(url, "http://localhost"));
       expect(state.view).toBe("strings");
       expect(state.params).toEqual({ q: "android.view" });
+    });
+  });
+
+  describe('navLabel', () => {
+    it('returns Overview', () => {
+      expect(navLabel({ view: "overview", params: {} })).toBe("Overview");
+    });
+
+    it('returns Rooted', () => {
+      expect(navLabel({ view: "rooted", params: {} })).toBe("Rooted");
+    });
+
+    it('returns Object with hex id', () => {
+      expect(navLabel({ view: "object", params: { id: 0xDEAD } })).toBe("Object 0xdead");
+    });
+
+    it('returns short class name for objects view', () => {
+      expect(navLabel({ view: "objects", params: { siteId: 1, className: "android.view.View", heap: null } })).toBe("View");
+    });
+
+    it('returns "Objects" for empty className', () => {
+      expect(navLabel({ view: "objects", params: { siteId: 1, className: "", heap: null } })).toBe("Objects");
+    });
+
+    it('returns Allocations for root site', () => {
+      expect(navLabel({ view: "site", params: { id: 0 } })).toBe("Allocations");
+    });
+
+    it('returns Site N for non-root site', () => {
+      expect(navLabel({ view: "site", params: { id: 42 } })).toBe("Site 42");
+    });
+
+    it('returns Search', () => {
+      expect(navLabel({ view: "search", params: { q: "test" } })).toBe("Search");
+    });
+
+    it('returns Bitmaps', () => {
+      expect(navLabel({ view: "bitmaps", params: {} })).toBe("Bitmaps");
+    });
+
+    it('returns Strings', () => {
+      expect(navLabel({ view: "strings", params: {} })).toBe("Strings");
+    });
+  });
+
+  describe('makeCrumb', () => {
+    it('creates a breadcrumb entry with state and label', () => {
+      const state = { view: "object" as const, params: { id: 0x1234 } };
+      const crumb = makeCrumb(state);
+      expect(crumb.state).toBe(state);
+      expect(crumb.label).toBe("Object 0x1234");
     });
   });
 });
