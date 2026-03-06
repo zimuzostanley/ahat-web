@@ -199,8 +199,9 @@ export function makeCrumb(state: NavState): BreadcrumbEntry {
   return { state, label: navLabel(state) };
 }
 
-export function Breadcrumbs({ trail, onNavigate }: {
+export function Breadcrumbs({ trail, activeIndex, onNavigate }: {
   trail: BreadcrumbEntry[];
+  activeIndex: number;
   onNavigate: (index: number) => void;
 }) {
   if (trail.length <= 1) return null;
@@ -217,15 +218,17 @@ export function Breadcrumbs({ trail, onNavigate }: {
         </svg>
       </button>
       {trail.map((crumb, i) => {
-        const isLast = i === trail.length - 1;
+        const isActive = i === activeIndex;
         return (
           <span key={i} className="flex items-center gap-1 shrink-0">
             {i > 0 && <span className="text-stone-400 dark:text-stone-500">/</span>}
-            {isLast ? (
+            {isActive ? (
               <span className="text-stone-700 dark:text-stone-200 font-medium">{crumb.label}</span>
             ) : (
               <button
-                className="text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300 hover:underline"
+                className={`hover:underline ${i > activeIndex
+                  ? "text-stone-400 hover:text-stone-600 dark:text-stone-500 dark:hover:text-stone-300"
+                  : "text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300"}`}
                 onClick={() => onNavigate(i)}
               >{crumb.label}</button>
             )}

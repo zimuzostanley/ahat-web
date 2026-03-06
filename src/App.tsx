@@ -91,8 +91,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"device" | string>("device");
   const [nav, setNav] = useState<NavState>({ view: "overview", params: {} });
   const [navStack, setNavStack] = useState<BreadcrumbEntry[]>([makeCrumb({ view: "overview", params: {} })]);
+  const [navStackIndex, setNavStackIndex] = useState(0);
   const navStackRef = useRef(navStack);
+  const navStackIndexRef = useRef(navStackIndex);
   navStackRef.current = navStack;
+  navStackIndexRef.current = navStackIndex;
   const [error, setError] = useState<string | null>(null);
   const [captureUsed, setCaptureUsed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -113,13 +116,15 @@ export default function App() {
   const showDeviceTab = captureUsed;
   const showTabs = sessions.length > 1 || showDeviceTab;
 
-  // Navigate from within a view — pushes onto breadcrumb trail
+  // Navigate from within a view — truncate trail after current position, append new crumb
   const navigate: NavFn = useCallback((v, p = {}) => {
     const state = { view: v, params: p } as NavState;
-    const trail = [...navStackRef.current, makeCrumb(state)];
+    const trail = [...navStackRef.current.slice(0, navStackIndexRef.current + 1), makeCrumb(state)];
+    const idx = trail.length - 1;
     setNav(state);
     setNavStack(trail);
-    window.history.pushState({ ...state, trail }, "", stateToUrl(state));
+    setNavStackIndex(idx);
+    window.history.pushState({ ...state, trail, trailIndex: idx }, "", stateToUrl(state));
     window.scrollTo(0, 0);
   }, []);
 
@@ -129,7 +134,8 @@ export default function App() {
     const trail = [makeCrumb(state)];
     setNav(state);
     setNavStack(trail);
-    window.history.pushState({ ...state, trail }, "", stateToUrl(state));
+    setNavStackIndex(0);
+    window.history.pushState({ ...state, trail, trailIndex: 0 }, "", stateToUrl(state));
     window.scrollTo(0, 0);
   }, []);
 
@@ -142,13 +148,16 @@ export default function App() {
     return () => { cancelAnimationFrame(id); document.removeEventListener("click", handler); };
   }, [menuOpen]);
 
-  // Listen for browser back/forward — restore trail from history state
+  // Listen for browser back/forward — restore trail and active index from history state
   useEffect(() => {
     const handler = (e: PopStateEvent) => {
       if (e.state && e.state.view) {
         const state = e.state as NavState;
+        const trail = Array.isArray(e.state.trail) ? e.state.trail : [makeCrumb(state)];
+        const idx = typeof e.state.trailIndex === "number" ? e.state.trailIndex : trail.length - 1;
         setNav(state);
-        setNavStack(Array.isArray(e.state.trail) ? e.state.trail : [makeCrumb(state)]);
+        setNavStack(trail);
+        setNavStackIndex(idx);
       }
     };
     window.addEventListener("popstate", handler);
@@ -189,7 +198,8 @@ export default function App() {
       const trail = [makeCrumb(initial)];
       setNav(initial);
       setNavStack(trail);
-      window.history.replaceState({ ...initial, trail }, "", stateToUrl(initial));
+      setNavStackIndex(0);
+      window.history.replaceState({ ...initial, trail, trailIndex: 0 }, "", stateToUrl(initial));
     } catch (err: unknown) {
       console.error(err);
       worker.terminate();
@@ -264,7 +274,8 @@ export default function App() {
       const trail = [makeCrumb(overviewState)];
       setNav(overviewState);
       setNavStack(trail);
-      window.history.replaceState({ ...overviewState, trail }, "", stateToUrl(overviewState));
+      setNavStackIndex(0);
+      window.history.replaceState({ ...overviewState, trail, trailIndex: 0 }, "", stateToUrl(overviewState));
     }
   }, [activeTab]);
 
@@ -664,12 +675,11 @@ export default function App() {
           {/* Ready — hprof content views */}
           {activeSession.status === "ready" && activeSession.kind === "hprof" && activeProxy && activeOverview && (
             <main className="flex-1 p-4 max-w-[95%] mx-auto w-full text-sm">
-              <Breadcrumbs trail={navStack} onNavigate={i => {
+              <Breadcrumbs trail={navStack} activeIndex={navStackIndex} onNavigate={i => {
                 const crumb = navStack[i];
-                const trail = navStack.slice(0, i + 1);
                 setNav(crumb.state);
-                setNavStack(trail);
-                window.history.pushState({ ...crumb.state, trail }, "", stateToUrl(crumb.state));
+                setNavStackIndex(i);
+                window.history.pushState({ ...crumb.state, trail: navStack, trailIndex: i }, "", stateToUrl(crumb.state));
                 window.scrollTo(0, 0);
               }} />
               {nav.view === "overview" && <OverviewView overview={activeOverview} name={activeSession.name} navigate={navigate} />}

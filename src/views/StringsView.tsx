@@ -24,7 +24,7 @@ function StringsView({ proxy, navigate, initialQuery }: {
   const updateUrl = useCallback((q: string) => {
     const url = q ? `/strings?q=${encodeURIComponent(q)}` : "/strings";
     const prev = window.history.state;
-    window.history.replaceState({ view: "strings", params: q ? { q } : {}, trail: prev?.trail }, "", url);
+    window.history.replaceState({ view: "strings", params: q ? { q } : {}, trail: prev?.trail, trailIndex: prev?.trailIndex }, "", url);
   }, []);
 
   const handleChange = useCallback((q: string) => {

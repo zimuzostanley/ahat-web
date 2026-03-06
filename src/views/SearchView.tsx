@@ -35,7 +35,7 @@ function SearchView({ proxy, navigate, initialQuery }: { proxy: WorkerProxy; nav
       // Update URL without adding to history
       const url = q ? `/search?q=${encodeURIComponent(q)}` : "/search";
       const prev = window.history.state;
-      window.history.replaceState({ view: "search", params: { q }, trail: prev?.trail }, "", url);
+      window.history.replaceState({ view: "search", params: { q }, trail: prev?.trail, trailIndex: prev?.trailIndex }, "", url);
     }, 300);
   }, [doSearch]);
 
