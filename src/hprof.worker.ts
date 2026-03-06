@@ -657,9 +657,13 @@ function handleGetBitmapList(): BitmapListRow[] {
 
     let bufHash = "no-data";
     if (bmp) {
-      // Hash first 32 bytes of pixel data for duplicate detection
-      const sample = bmp.data.slice(0, 32);
-      bufHash = Array.from(sample).map(b => (b & 0xFF).toString(16).padStart(2, "0")).join("");
+      // FNV-1a hash of full pixel buffer for duplicate detection
+      let h = 0x811c9dc5;
+      for (let i = 0; i < bmp.data.length; i++) {
+        h ^= bmp.data[i];
+        h = Math.imul(h, 0x01000193);
+      }
+      bufHash = (h >>> 0).toString(16).padStart(8, "0");
     }
 
     results.push({ inst: ci, w, h, bufHash, hasPixelData, density: typeof density === "number" ? density : 0 });
