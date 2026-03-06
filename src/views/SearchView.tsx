@@ -40,11 +40,11 @@ function SearchView({ proxy, navigate, initialQuery }: { proxy: WorkerProxy; nav
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-3 text-stone-800">Search</h2>
+      <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Search</h2>
       <input
         type="text" value={query} onChange={e => handleChange(e.target.value)}
         placeholder={"Class name or 0x\u2026 hex id"}
-        className="w-full px-3 py-2 border border-stone-300 mb-3 focus:outline-none focus:ring-2 focus:ring-sky-400"
+        className="w-full px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 mb-3 focus:outline-none focus:ring-2 focus:ring-sky-400"
       />
       {results.length > 0 && (
         <SortableTable<InstanceRow>
@@ -57,7 +57,7 @@ function SearchView({ proxy, navigate, initialQuery }: { proxy: WorkerProxy; nav
         />
       )}
       {query.length >= 2 && results.length === 0 && (
-        <div className="text-stone-500">No results found.</div>
+        <div className="text-stone-500 dark:text-stone-400">No results found.</div>
       )}
     </div>
   );

@@ -13,27 +13,27 @@ export const SHOW_LIMIT = 200;
 export type ObjLinkRef = { id: number; display: string; str?: string | null };
 
 export function InstanceLink({ row, navigate }: { row: InstanceRow | ObjLinkRef | null; navigate: NavFn }) {
-  if (!row || row.id === 0) return <span className="text-stone-500">ROOT</span>;
+  if (!row || row.id === 0) return <span className="text-stone-500 dark:text-stone-400">ROOT</span>;
   const full = "className" in row ? row : null;
   return (
     <span>
       {full && full.reachabilityName !== "unreachable" && full.reachabilityName !== "strong" && (
-        <span className="text-amber-600 text-xs mr-1">{full.reachabilityName}</span>
+        <span className="text-amber-600 dark:text-amber-400 text-xs mr-1">{full.reachabilityName}</span>
       )}
-      {full?.isRoot && <span className="text-rose-500 text-xs mr-1">root</span>}
+      {full?.isRoot && <span className="text-rose-500 dark:text-rose-400 text-xs mr-1">root</span>}
       <button
-        className="text-sky-700 hover:text-sky-500 underline decoration-sky-300 hover:decoration-sky-500"
+        className="text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300 underline decoration-sky-300 hover:decoration-sky-500 dark:decoration-sky-600 dark:hover:decoration-sky-400"
         onClick={() => navigate("object", { id: row.id })}
       >
         {row.display}
       </button>
       {row.str != null && (
-        <span className="text-emerald-700 ml-1" title={row.str.length > 80 ? row.str : undefined}>
+        <span className="text-emerald-700 dark:text-emerald-400 ml-1" title={row.str.length > 80 ? row.str : undefined}>
           "{row.str.length > 80 ? row.str.slice(0, 80) + "\u2026" : row.str}"
         </span>
       )}
       {full?.referent && (
-        <span className="text-stone-500 ml-1">
+        <span className="text-stone-500 dark:text-stone-400 ml-1">
           {" "}for <InstanceLink row={full.referent} navigate={navigate} />
         </span>
       )}
@@ -47,7 +47,7 @@ export function SiteLinkRaw({ id, method, signature, filename, line, navigate }:
   const text = `${method}${signature} - ${filename}${line > 0 ? ":" + line : ""}`;
   return (
     <button
-      className="text-sky-700 hover:text-sky-500 underline decoration-sky-300 hover:decoration-sky-500"
+      className="text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300 underline decoration-sky-300 hover:decoration-sky-500 dark:decoration-sky-600 dark:hover:decoration-sky-400"
       onClick={() => navigate("site", { id })}
     >{text}</button>
   );
@@ -58,16 +58,16 @@ export function Section({ title, children, defaultOpen = true }: {
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="bg-white border border-stone-200">
+    <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700">
       <button
-        className="w-full px-4 py-2 flex justify-between items-center text-left hover:bg-stone-50"
+        className="w-full px-4 py-2 flex justify-between items-center text-left hover:bg-stone-50 dark:hover:bg-stone-800"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
       >
-        <span className="text-sm font-semibold text-stone-700">{title}</span>
-        <span className="text-stone-400 text-xs">{open ? "\u25BC" : "\u25B6"}</span>
+        <span className="text-sm font-semibold text-stone-700 dark:text-stone-200">{title}</span>
+        <span className="text-stone-400 dark:text-stone-500 text-xs">{open ? "\u25BC" : "\u25B6"}</span>
       </button>
-      {open && <div className="px-4 pb-3 border-t border-stone-100 pt-3 overflow-x-auto">{children}</div>}
+      {open && <div className="px-4 pb-3 border-t border-stone-100 dark:border-stone-800 pt-3 overflow-x-auto">{children}</div>}
     </div>
   );
 }
@@ -106,7 +106,7 @@ export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: 
             {columns.map((c, i) => (
               <th
                 key={i}
-                className={`px-2 py-1.5 ${c.align === "right" ? "text-right" : "text-left"} bg-stone-700 text-stone-200 text-xs font-medium cursor-pointer select-none whitespace-nowrap border-b border-stone-600`}
+                className={`px-2 py-1.5 ${c.align === "right" ? "text-right" : "text-left"} bg-stone-700 dark:bg-stone-700 text-stone-200 text-xs font-medium cursor-pointer select-none whitespace-nowrap border-b border-stone-600`}
                 style={c.minWidth ? { minWidth: c.minWidth } : undefined}
                 onClick={() => { if (sortCol === i) setSortAsc(!sortAsc); else { setSortCol(i); setSortAsc(false); } }}
               >
@@ -117,7 +117,7 @@ export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: 
         </thead>
         <tbody>
           {visible.map((row, ri) => (
-            <tr key={rowKey ? rowKey(row, ri) : ri} className="border-b border-stone-200 hover:bg-stone-50">
+            <tr key={rowKey ? rowKey(row, ri) : ri} className="border-b border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-800">
               {columns.map((c, ci) => (
                 <td key={ci} className={`px-2 py-1 ${c.align === "right" ? "text-right font-mono whitespace-nowrap" : ""}`} style={c.minWidth ? { minWidth: c.minWidth } : undefined}>
                   {c.render(row, ri)}
@@ -128,12 +128,12 @@ export function SortableTable<T>({ columns, data, limit = SHOW_LIMIT, rowKey }: 
         </tbody>
       </table>
       {sorted.length > showCount && (
-        <div className="text-xs text-stone-500 py-2">
+        <div className="text-xs text-stone-500 dark:text-stone-400 py-2">
           Showing {showCount} of {sorted.length}
           {" \u2014 "}
-          <button className="text-sky-600 ml-1 hover:underline" onClick={() => setShowCount(Math.min(showCount + 500, sorted.length))}>show more</button>
+          <button className="text-sky-600 dark:text-sky-400 ml-1 hover:underline" onClick={() => setShowCount(Math.min(showCount + 500, sorted.length))}>show more</button>
           {" "}
-          <button className="text-sky-600 ml-2 hover:underline" onClick={() => setShowCount(sorted.length)}>show all</button>
+          <button className="text-sky-600 dark:text-sky-400 ml-2 hover:underline" onClick={() => setShowCount(sorted.length)}>show all</button>
         </div>
       )}
     </div>

@@ -17,7 +17,7 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
     return () => { cancelled = true; };
   }, [proxy, params.id]);
 
-  if (!data) return <div className="text-stone-400 p-4">Loading&hellip;</div>;
+  if (!data) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
   const heapCols = heaps.filter(h => h.java + h.native_ > 0);
   const childDiffed = isDiffed && data.children.some(c => c.baselineTotalJava !== undefined);
   const objDiffed = isDiffed && data.objectsInfos.some(o => o.baselineNumInstances !== undefined);
@@ -34,7 +34,7 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
       render: r => {
         const d = (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative));
         if (d === 0) return null;
-        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700" : "text-green-700"}`}>{fmtSizeDelta(d)}</span>;
+        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
       },
     });
   }
@@ -59,7 +59,7 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
       render: r => {
         const d = (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_));
         if (d === 0) return null;
-        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700" : "text-green-700"}`}>{fmtSizeDelta(d)}</span>;
+        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
       },
     });
   }
@@ -67,7 +67,7 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
     label: "Instances", align: "right", minWidth: "4rem",
     sortKey: r => r.numInstances,
     render: r => (
-      <button className="text-sky-700 underline decoration-sky-300 hover:decoration-sky-500 font-mono"
+      <button className="text-sky-700 dark:text-sky-400 underline decoration-sky-300 dark:decoration-sky-600 hover:decoration-sky-500 dark:hover:decoration-sky-400 font-mono"
         onClick={() => navigate("objects", { siteId: data.id, className: r.className, heap: r.heap })}>
         {r.numInstances.toLocaleString()}
       </button>
@@ -80,7 +80,7 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
       render: r => {
         const d = r.numInstances - (r.baselineNumInstances ?? r.numInstances);
         if (d === 0) return null;
-        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700" : "text-green-700"}`}>{d > 0 ? "+" : "\u2212"}{Math.abs(d).toLocaleString()}</span>;
+        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{d > 0 ? "+" : "\u2212"}{Math.abs(d).toLocaleString()}</span>;
       },
     });
   }
@@ -94,7 +94,7 @@ function SiteView({ proxy, heaps, navigate, params, isDiffed }: { proxy: WorkerP
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-lg font-semibold mb-1 text-stone-800">Site</h2>
+        <h2 className="text-lg font-semibold mb-1 text-stone-800 dark:text-stone-100">Site</h2>
         <SiteLinkRaw {...data} navigate={navigate} />
       </div>
 

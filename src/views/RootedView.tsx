@@ -10,7 +10,7 @@ function RootedView({ proxy, heaps, navigate, isDiffed }: { proxy: WorkerProxy; 
     proxy.query<InstanceRow[]>("getRooted").then(setRows).catch(console.error);
   }, [proxy]);
 
-  if (!rows) return <div className="text-stone-400 p-4">Loading&hellip;</div>;
+  if (!rows) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
 
   const heapCols = heaps.filter(h => h.java + h.native_ > 0);
   const diffed = isDiffed && rows.some(r => r.baselineRetainedTotal !== undefined);
@@ -30,7 +30,7 @@ function RootedView({ proxy, heaps, navigate, isDiffed }: { proxy: WorkerProxy; 
       render: r => {
         const d = r.retainedTotal - (r.baselineRetainedTotal ?? r.retainedTotal);
         if (r.baselineRetainedTotal === undefined || d === 0) return null;
-        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700" : "text-green-700"}`}>{fmtSizeDelta(d)}</span>;
+        return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
       },
     });
   }
@@ -59,7 +59,7 @@ function RootedView({ proxy, heaps, navigate, isDiffed }: { proxy: WorkerProxy; 
           const bs = r.baselineRetainedByHeap?.find(x => x.heap === h.name);
           const d = ((s?.java ?? 0) + (s?.native_ ?? 0)) - ((bs?.java ?? 0) + (bs?.native_ ?? 0));
           if (d === 0 || !bs) return null;
-          return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700" : "text-green-700"}`}>{fmtSizeDelta(d)}</span>;
+          return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
         },
       });
     }
@@ -75,7 +75,7 @@ function RootedView({ proxy, heaps, navigate, isDiffed }: { proxy: WorkerProxy; 
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-3 text-stone-800">Rooted</h2>
+      <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Rooted</h2>
       <SortableTable<InstanceRow> columns={cols} data={rows} rowKey={r => r.id} />
     </div>
   );

@@ -14,14 +14,14 @@ export function deltaBgClass(deltaKb: number): string {
   if (deltaKb === 0) return "";
   const abs = Math.abs(deltaKb);
   if (deltaKb > 0) {
-    if (abs >= 50_000) return "bg-red-200";
-    if (abs >= 10_000) return "bg-red-100";
-    if (abs >= 1_000) return "bg-red-50";
+    if (abs >= 50_000) return "bg-red-200 dark:bg-red-900";
+    if (abs >= 10_000) return "bg-red-100 dark:bg-red-900/50";
+    if (abs >= 1_000) return "bg-red-50 dark:bg-red-950";
     return "";
   }
-  if (abs >= 50_000) return "bg-green-200";
-  if (abs >= 10_000) return "bg-green-100";
-  if (abs >= 1_000) return "bg-green-50";
+  if (abs >= 50_000) return "bg-green-200 dark:bg-green-900";
+  if (abs >= 10_000) return "bg-green-100 dark:bg-green-900/50";
+  if (abs >= 1_000) return "bg-green-50 dark:bg-green-950";
   return "";
 }
 

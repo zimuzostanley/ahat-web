@@ -45,21 +45,21 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
 
   return (
     <>
-      <tr className="bg-stone-100">
+      <tr className="bg-stone-100 dark:bg-stone-700">
         <td colSpan={leadingColCount} className="py-0.5 px-2 pl-8">
-          <span className="text-stone-500 text-[10px] font-medium cursor-pointer hover:text-stone-700" onClick={() => onToggleSort("addrStart")}>
+          <span className="text-stone-500 dark:text-stone-400 text-[10px] font-medium cursor-pointer hover:text-stone-700 dark:hover:text-stone-200" onClick={() => onToggleSort("addrStart")}>
             Address {sortField === "addrStart" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
           </span>
-          <span className="ml-3 text-stone-400 text-[10px]">Perms</span>
+          <span className="ml-3 text-stone-400 dark:text-stone-500 text-[10px]">Perms</span>
           <button
-            className="ml-3 text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300"
+            className="ml-3 text-[10px] text-stone-400 dark:text-stone-500 hover:text-sky-600 dark:hover:text-sky-400 disabled:text-stone-300 dark:disabled:text-stone-600"
             disabled={dumpDisabled}
             title="Dump all VMA memory in this group"
             onClick={() => onDump(pid, processName, groupName, entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd })))}
           >dump all</button>
         </td>
         {SMAPS_COLUMNS.map(([f, label]) => (
-          <td key={f} className="py-0.5 px-2 text-right text-stone-500 text-[10px] font-medium cursor-pointer hover:text-stone-700" onClick={() => onToggleSort(f)}>
+          <td key={f} className="py-0.5 px-2 text-right text-stone-500 dark:text-stone-400 text-[10px] font-medium cursor-pointer hover:text-stone-700 dark:hover:text-stone-200" onClick={() => onToggleSort(f)}>
             {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
           </td>
         ))}
@@ -67,20 +67,20 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
       {sorted.map((e, i) => {
         const ed = diffByAddr?.get(e.addrStart);
         return (
-        <tr key={i} className={`border-t border-stone-50 hover:bg-stone-100 ${
+        <tr key={i} className={`border-t border-stone-50 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 ${
           ed?.status === "removed" ? "opacity-60" :
-          ed?.status === "added" ? "bg-green-50/50" : ""
+          ed?.status === "added" ? "bg-green-50/50 dark:bg-green-900/30" : ""
         }`}>
-          <td colSpan={leadingColCount} className={`py-0.5 px-2 pl-8 font-mono text-[10px] text-stone-500 whitespace-nowrap ${ed?.status === "removed" ? "line-through" : ""}`}>
+          <td colSpan={leadingColCount} className={`py-0.5 px-2 pl-8 font-mono text-[10px] text-stone-500 dark:text-stone-400 whitespace-nowrap ${ed?.status === "removed" ? "line-through" : ""}`}>
             {e.addrStart}-{e.addrEnd}
-            <span className="ml-2 text-stone-400">{e.perms}</span>
+            <span className="ml-2 text-stone-400 dark:text-stone-500">{e.perms}</span>
             {ed && ed.status !== "matched" && (
-              <span className={`ml-2 font-medium ${ed.status === "added" ? "text-green-600" : "text-red-600"}`}>
+              <span className={`ml-2 font-medium ${ed.status === "added" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                 {ed.status === "added" ? "NEW" : "GONE"}
               </span>
             )}
             <button
-              className="ml-2 text-stone-400 hover:text-sky-600 disabled:text-stone-300"
+              className="ml-2 text-stone-400 dark:text-stone-500 hover:text-sky-600 dark:hover:text-sky-400 disabled:text-stone-300 dark:disabled:text-stone-600"
               disabled={dumpDisabled || ed?.status === "removed"}
               title="Dump this VMA"
               onClick={() => onDump(pid, processName, `${groupName}_${e.addrStart}-${e.addrEnd}`, [{ addrStart: e.addrStart, addrEnd: e.addrEnd }])}
@@ -92,7 +92,7 @@ function VmaEntries({ entries, groupName, pid, processName, sortField, sortAsc, 
             <td key={f} className={`py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap ${ed ? deltaBgClass(delta) : ""}`}>
               {e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014"}
               {ed && (
-                <span className={`ml-1 inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                <span className={`ml-1 inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`}>
                   {delta !== 0 ? fmtDelta(delta) : ""}
                 </span>
               )}
@@ -149,12 +149,12 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
   return (
     <>
       {/* Sub-table header */}
-      <tr className="bg-stone-50 border-t border-stone-200">
-        <td colSpan={leadingColCount - 1} className="text-left py-1 px-2 pl-6 text-stone-500 text-xs font-medium">
+      <tr className="bg-stone-50 dark:bg-stone-800 border-t border-stone-200 dark:border-stone-700">
+        <td colSpan={leadingColCount - 1} className="text-left py-1 px-2 pl-6 text-stone-500 dark:text-stone-400 text-xs font-medium">
           Mapping
         </td>
         <td
-          className="text-right py-1 px-1 text-stone-400 text-xs font-medium cursor-pointer select-none hover:text-stone-700"
+          className="text-right py-1 px-1 text-stone-400 dark:text-stone-500 text-xs font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200"
           onClick={() => onToggleSort("count")}
         >
           # {sortField === "count" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
@@ -162,7 +162,7 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
         {SMAPS_COLUMNS.map(([f, label]) => (
           <td
             key={f}
-            className="text-right py-1 px-2 text-stone-500 text-xs font-medium cursor-pointer select-none hover:text-stone-700 whitespace-nowrap"
+            className="text-right py-1 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200 whitespace-nowrap"
             onClick={() => onToggleSort(f)}
           >
             {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
@@ -170,15 +170,15 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
         ))}
       </tr>
       {/* Totals row */}
-      <tr className="border-b-2 border-stone-300 font-semibold bg-stone-50">
-        <td colSpan={leadingColCount} className="py-0.5 px-2 pl-6 text-stone-600 text-xs">Total</td>
+      <tr className="border-b-2 border-stone-300 dark:border-stone-600 font-semibold bg-stone-50 dark:bg-stone-800">
+        <td colSpan={leadingColCount} className="py-0.5 px-2 pl-6 text-stone-600 dark:text-stone-300 text-xs">Total</td>
         {SMAPS_COLUMNS.map(([f]) => {
           const delta = totals[SMAPS_DELTA_KEY[f]];
           return (
             <td key={f} className={`py-0.5 px-2 text-right font-mono text-xs whitespace-nowrap ${smapsDiffs ? deltaBgClass(delta) : ""}`}>
               {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
               {smapsDiffs && (
-                <span className={`ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                <span className={`ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`}>
                   {delta !== 0 ? fmtDelta(delta) : ""}
                 </span>
               )}
@@ -192,37 +192,37 @@ function SmapsSubTable({ pid, processName, aggregated, expandedGroup, onToggleGr
         return (
         <Fragment key={g.name}>
           <tr
-            className={`border-t border-stone-100 cursor-pointer hover:bg-stone-100 bg-stone-50 text-xs ${
+            className={`border-t border-stone-100 dark:border-stone-800 cursor-pointer hover:bg-stone-100 dark:hover:bg-stone-700 bg-stone-50 dark:bg-stone-800 text-xs ${
               sd?.status === "removed" ? "opacity-60" :
-              sd?.status === "added" ? "bg-green-50/50" : ""
+              sd?.status === "added" ? "bg-green-50/50 dark:bg-green-900/30" : ""
             }`}
             onClick={() => sd?.status !== "removed" && onToggleGroup(g.name)}
           >
-            <td colSpan={leadingColCount - 1} className={`py-0.5 px-2 pl-6 font-mono text-stone-700 ${sd?.status === "removed" ? "line-through" : ""}`} title={g.name}>
+            <td colSpan={leadingColCount - 1} className={`py-0.5 px-2 pl-6 font-mono text-stone-700 dark:text-stone-200 ${sd?.status === "removed" ? "line-through" : ""}`} title={g.name}>
               <div className="flex items-center gap-1">
-                <span className="text-stone-400 shrink-0">{expandedGroup === g.name ? "\u25BC" : "\u25B6"}</span>
+                <span className="text-stone-400 dark:text-stone-500 shrink-0">{expandedGroup === g.name ? "\u25BC" : "\u25B6"}</span>
                 <span className="truncate max-w-[280px]">{g.name}</span>
                 {sd && sd.status !== "matched" && (
-                  <span className={`text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600" : "text-red-600"}`}>
+                  <span className={`text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                     {sd.status === "added" ? "NEW" : "GONE"}
                   </span>
                 )}
                 <button
-                  className="text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300 shrink-0"
+                  className="text-[10px] text-stone-400 dark:text-stone-500 hover:text-sky-600 dark:hover:text-sky-400 disabled:text-stone-300 dark:disabled:text-stone-600 shrink-0"
                   disabled={dumpDisabled || sd?.status === "removed"}
                   title={`Dump ${g.name} memory`}
                   onClick={e => { e.stopPropagation(); onDump(pid, processName, g.name, g.entries.map(en => ({ addrStart: en.addrStart, addrEnd: en.addrEnd }))); }}
                 >dump</button>
               </div>
             </td>
-            <td className="py-0.5 px-1 text-right font-mono text-stone-400">{g.count}</td>
+            <td className="py-0.5 px-1 text-right font-mono text-stone-400 dark:text-stone-500">{g.count}</td>
             {SMAPS_COLUMNS.map(([f]) => {
               const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
               return (
                 <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
                   {g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"}
                   {sd && (
-                    <span className={`ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                    <span className={`ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`}>
                       {delta !== 0 ? fmtDelta(delta) : ""}
                     </span>
                   )}
@@ -285,20 +285,20 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
 
   return (
     <div className="mt-4">
-      <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2">
+      <h3 className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">
         Shared Mappings
         <span className="font-normal ml-2">
           ({mappings.length} mappings across {loadedCount} processes)
         </span>
-        {loading && <span className="ml-2 text-sky-600 animate-pulse">loading{"\u2026"}</span>}
+        {loading && <span className="ml-2 text-sky-600 dark:text-sky-400 animate-pulse">loading{"\u2026"}</span>}
       </h3>
-      <div className="bg-white border border-stone-200 max-h-[500px] overflow-y-auto">
+      <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 max-h-[500px] overflow-y-auto">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-stone-50 z-10">
-            <tr className="border-b border-stone-200">
-              <th className="text-left py-1 px-2 text-stone-500 font-medium">Mapping</th>
+          <thead className="sticky top-0 bg-stone-50 dark:bg-stone-800 z-10">
+            <tr className="border-b border-stone-200 dark:border-stone-700">
+              <th className="text-left py-1 px-2 text-stone-500 dark:text-stone-400 font-medium">Mapping</th>
               <th
-                className="text-right py-1 px-1 text-stone-400 font-medium w-8 cursor-pointer select-none hover:text-stone-700"
+                className="text-right py-1 px-1 text-stone-400 dark:text-stone-500 font-medium w-8 cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200"
                 onClick={() => toggleSort("processCount")}
               >
                 Procs {sortField === "processCount" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
@@ -306,7 +306,7 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
               {SMAPS_COLUMNS.map(([f, label]) => (
                 <th
                   key={f}
-                  className="text-right py-1 px-2 text-stone-500 font-medium cursor-pointer select-none hover:text-stone-700 whitespace-nowrap"
+                  className="text-right py-1 px-2 text-stone-500 dark:text-stone-400 font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200 whitespace-nowrap"
                   onClick={() => toggleSort(f)}
                 >
                   {label} {sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
@@ -315,8 +315,8 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b-2 border-stone-300 font-semibold">
-              <td className="py-0.5 px-2 text-stone-600">Total</td>
+            <tr className="border-b-2 border-stone-300 dark:border-stone-600 font-semibold">
+              <td className="py-0.5 px-2 text-stone-600 dark:text-stone-300">Total</td>
               <td />
               {SMAPS_COLUMNS.map(([f]) => {
                 const delta = totals[SMAPS_DELTA_KEY[f]];
@@ -324,7 +324,7 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
                   <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${diffs ? deltaBgClass(delta) : ""}`}>
                     {totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"}
                     {diffs && (
-                      <span className={`ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                      <span className={`ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`}>
                         {delta !== 0 ? fmtDelta(delta) : ""}
                       </span>
                     )}
@@ -337,31 +337,31 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
               return (
               <Fragment key={`${m.name}-${i}`}>
                 <tr
-                  className={`border-t border-stone-100 cursor-pointer hover:bg-stone-50 ${
+                  className={`border-t border-stone-100 dark:border-stone-800 cursor-pointer hover:bg-stone-50 dark:hover:bg-stone-800 ${
                     sd?.status === "removed" ? "opacity-60" :
-                    sd?.status === "added" ? "bg-green-50/50" : ""
+                    sd?.status === "added" ? "bg-green-50/50 dark:bg-green-900/30" : ""
                   }`}
                   onClick={() => sd?.status !== "removed" && setExpandedMapping(expandedMapping === m.name ? null : m.name)}
                 >
-                  <td className={`py-0.5 px-2 font-mono text-stone-700 ${sd?.status === "removed" ? "line-through" : ""}`} title={m.name}>
+                  <td className={`py-0.5 px-2 font-mono text-stone-700 dark:text-stone-200 ${sd?.status === "removed" ? "line-through" : ""}`} title={m.name}>
                     <div className="flex items-center gap-1">
-                      <span className="text-stone-400 shrink-0">{expandedMapping === m.name ? "\u25BC" : "\u25B6"}</span>
+                      <span className="text-stone-400 dark:text-stone-500 shrink-0">{expandedMapping === m.name ? "\u25BC" : "\u25B6"}</span>
                       <span className="truncate max-w-[280px]">{m.name}</span>
                       {sd && sd.status !== "matched" && (
-                        <span className={`text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600" : "text-red-600"}`}>
+                        <span className={`text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                           {sd.status === "added" ? "NEW" : "GONE"}
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className="py-0.5 px-1 text-right font-mono text-stone-400">{m.processCount}</td>
+                  <td className="py-0.5 px-1 text-right font-mono text-stone-400 dark:text-stone-500">{m.processCount}</td>
                   {SMAPS_COLUMNS.map(([f]) => {
                     const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
                     return (
                       <td key={f} className={`py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`}>
                         {m[f] > 0 ? fmtSize(m[f] * 1024) : "\u2014"}
                         {sd && (
-                          <span className={`ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700" : delta < 0 ? "text-green-700" : ""}`}>
+                          <span className={`ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`}>
                             {delta !== 0 ? fmtDelta(delta) : ""}
                           </span>
                         )}
@@ -371,13 +371,13 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
                 </tr>
                 {expandedMapping === m.name && sd?.status !== "removed" && (
                   <>
-                    <tr className="bg-stone-100">
-                      <td className="py-0.5 px-2 pl-6 text-stone-500 text-[10px] font-medium">
+                    <tr className="bg-stone-100 dark:bg-stone-700">
+                      <td className="py-0.5 px-2 pl-6 text-stone-500 dark:text-stone-400 text-[10px] font-medium">
                         Process (PID)
                       </td>
                       <td />
                       {SMAPS_COLUMNS.map(([, label]) => (
-                        <td key={label} className="py-0.5 px-2 text-right text-stone-500 text-[10px] font-medium">
+                        <td key={label} className="py-0.5 px-2 text-right text-stone-500 dark:text-stone-400 text-[10px] font-medium">
                           {label}
                         </td>
                       ))}
@@ -387,12 +387,12 @@ function SharedMappingsTable({ mappings, loadedCount, loading, diffs, smapsData,
                       const matchedGroup = procAgg?.find(g => g.name === m.name);
                       const regions = matchedGroup?.entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }));
                       return (
-                      <tr key={p.pid} className="border-t border-stone-50 hover:bg-stone-100">
-                        <td className="py-0.5 px-2 pl-6 text-[10px] text-stone-600 whitespace-nowrap">
+                      <tr key={p.pid} className="border-t border-stone-50 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700">
+                        <td className="py-0.5 px-2 pl-6 text-[10px] text-stone-600 dark:text-stone-300 whitespace-nowrap">
                           <div className="flex items-center gap-1">
-                            <span>{p.name} <span className="text-stone-400">({p.pid})</span></span>
+                            <span>{p.name} <span className="text-stone-400 dark:text-stone-500">({p.pid})</span></span>
                             <button
-                              className="text-[10px] text-stone-400 hover:text-sky-600 disabled:text-stone-300 shrink-0"
+                              className="text-[10px] text-stone-400 dark:text-stone-500 hover:text-sky-600 dark:hover:text-sky-400 disabled:text-stone-300 dark:disabled:text-stone-600 shrink-0"
                               disabled={dumpDisabled || !regions?.length}
                               title={`Dump ${m.name} from ${p.name} (${p.pid})`}
                               onClick={() => regions && onDump(p.pid, p.name, m.name, regions)}
@@ -459,7 +459,7 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
       : null;
     return (
       <button
-        className="text-xs text-amber-700 hover:text-rose-700 px-2 py-0.5 border border-amber-300 hover:border-rose-400 whitespace-nowrap w-[104px] truncate"
+        className="text-xs text-amber-700 dark:text-amber-400 hover:text-rose-700 dark:hover:text-rose-400 px-2 py-0.5 border border-amber-300 dark:border-amber-600 hover:border-rose-400 dark:hover:border-rose-500 whitespace-nowrap w-[104px] truncate"
         title="Click to cancel"
         onClick={(e) => { e.stopPropagation(); onCancel(pid); }}
       >
@@ -471,7 +471,7 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
   return (
     <div ref={ref} className="relative inline-flex w-[104px]">
       <button
-        className="flex-1 text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-2 py-0.5 border border-r-0 border-sky-200 hover:border-sky-400 disabled:border-stone-200 whitespace-nowrap rounded-l"
+        className="flex-1 text-xs text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 disabled:text-stone-300 dark:disabled:text-stone-600 disabled:cursor-not-allowed px-2 py-0.5 border border-r-0 border-sky-200 dark:border-sky-700 hover:border-sky-400 dark:hover:border-sky-500 disabled:border-stone-200 dark:disabled:border-stone-700 whitespace-nowrap rounded-l"
         disabled={disabled}
         title="Dump Java heap"
         onClick={(e) => { e.stopPropagation(); onDump(pid, false); }}
@@ -480,7 +480,7 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
       </button>
       <button
         ref={caretRef}
-        className="text-xs text-sky-600 hover:text-sky-800 disabled:text-stone-300 disabled:cursor-not-allowed px-1 py-0.5 border border-sky-200 hover:border-sky-400 disabled:border-stone-200 rounded-r"
+        className="text-xs text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 disabled:text-stone-300 dark:disabled:text-stone-600 disabled:cursor-not-allowed px-1 py-0.5 border border-sky-200 dark:border-sky-700 hover:border-sky-400 dark:hover:border-sky-500 disabled:border-stone-200 dark:disabled:border-stone-700 rounded-r"
         disabled={disabled}
         title="More options"
         onClick={(e) => {
@@ -496,17 +496,17 @@ function DumpButton({ pid, job, disabled, onDump, onCancel }: {
       </button>
       {open && menuPos && (
         <div
-          className="fixed z-50 bg-white border border-stone-200 shadow-lg rounded text-xs w-[160px]"
+          className="fixed z-50 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 shadow-lg rounded text-xs w-[160px]"
           style={{ top: menuPos.top, left: menuPos.left }}
         >
           <button
-            className="block w-full text-left px-3 py-1.5 hover:bg-sky-50 text-stone-700 rounded-t"
+            className="block w-full text-left px-3 py-1.5 hover:bg-sky-50 dark:hover:bg-sky-900/30 text-stone-700 dark:text-stone-200 rounded-t"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onDump(pid, false); }}
           >
             Java dump
           </button>
           <button
-            className="block w-full text-left px-3 py-1.5 hover:bg-sky-50 text-stone-700 border-t border-stone-100 rounded-b"
+            className="block w-full text-left px-3 py-1.5 hover:bg-sky-50 dark:hover:bg-sky-900/30 text-stone-700 dark:text-stone-200 border-t border-stone-100 dark:border-stone-800 rounded-b"
             onClick={(e) => { e.stopPropagation(); setOpen(false); onDump(pid, true); }}
           >
             + bitmaps
@@ -1015,8 +1015,8 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
   if (!hasWebUsb) {
     return (
       <div className="text-center py-8">
-        <p className="text-stone-600 mb-2">WebUSB is not available.</p>
-        <p className="text-stone-400 text-sm">Use Chrome or Edge over HTTPS/localhost.</p>
+        <p className="text-stone-600 dark:text-stone-300 mb-2">WebUSB is not available.</p>
+        <p className="text-stone-400 dark:text-stone-500 text-sm">Use Chrome or Edge over HTTPS/localhost.</p>
       </div>
     );
   }
@@ -1027,14 +1027,14 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
       {!connected && !processes && (
         <div className="text-center py-8">
           <button
-            className="px-6 py-3 bg-stone-800 text-white hover:bg-stone-700 transition-colors disabled:opacity-50"
+            className="px-6 py-3 bg-stone-800 dark:bg-stone-700 text-white hover:bg-stone-700 dark:hover:bg-stone-600 transition-colors disabled:opacity-50"
             onClick={handleConnect}
             disabled={connectStatus !== null}
           >
             {connectStatus ?? "Connect USB Device"}
           </button>
-          <p className="text-stone-400 text-xs mt-3">
-            Enable USB debugging on device. If ADB is running, stop it first: <code className="bg-stone-100 px-1">adb kill-server</code>
+          <p className="text-stone-400 dark:text-stone-500 text-xs mt-3">
+            Enable USB debugging on device. If ADB is running, stop it first: <code className="bg-stone-100 dark:bg-stone-700 px-1">adb kill-server</code>
           </p>
         </div>
       )}
@@ -1043,19 +1043,19 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
           <div className="flex items-center gap-3 mb-4 flex-wrap">
             {connected ? (
               <>
-                <span className="text-stone-600">{conn.productName}</span>
-                <span className="text-stone-400 font-mono text-xs">{conn.serial}</span>
+                <span className="text-stone-600 dark:text-stone-300">{conn.productName}</span>
+                <span className="text-stone-400 dark:text-stone-500 font-mono text-xs">{conn.serial}</span>
               </>
             ) : (
-              <span className="text-amber-600 text-xs">Disconnected</span>
+              <span className="text-amber-600 dark:text-amber-400 text-xs">Disconnected</span>
             )}
             <span className="ml-auto" />
-            <button className={`text-xs ${connected ? "text-stone-400 hover:text-stone-600" : "text-stone-300 cursor-not-allowed"}`} onClick={refreshProcesses} disabled={!connected}>
+            <button className={`text-xs ${connected ? "text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300" : "text-stone-300 dark:text-stone-600 cursor-not-allowed"}`} onClick={refreshProcesses} disabled={!connected}>
               {enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Diffing\u2026" : "Refresh"}
             </button>
             {connected && processes && !enrichStatus && (
               <button
-                className="text-sky-600 hover:text-sky-800 text-xs border border-sky-300 px-2 py-0.5"
+                className="text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 text-xs border border-sky-300 dark:border-sky-600 px-2 py-0.5"
                 onClick={handleDiff}
               >
                 Diff
@@ -1063,19 +1063,19 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
             )}
             {diffMode && !enrichStatus && (
               <button
-                className="text-amber-600 hover:text-amber-800 text-xs border border-amber-300 px-2 py-0.5"
+                className="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 text-xs border border-amber-300 dark:border-amber-600 px-2 py-0.5"
                 onClick={clearDiff}
               >
                 Clear Diff
               </button>
             )}
             {connected ? (
-              <button className="text-stone-400 hover:text-stone-600 text-xs" onClick={handleDisconnect}>
+              <button className="text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 text-xs" onClick={handleDisconnect}>
                 Disconnect
               </button>
             ) : (
               <button
-                className="px-3 py-0.5 text-xs bg-stone-800 text-white hover:bg-stone-700 transition-colors disabled:opacity-50"
+                className="px-3 py-0.5 text-xs bg-stone-800 dark:bg-stone-700 text-white hover:bg-stone-700 dark:hover:bg-stone-600 transition-colors disabled:opacity-50"
                 onClick={handleConnect}
                 disabled={connectStatus !== null}
               >
@@ -1086,31 +1086,31 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
 
           {/* Non-root banner */}
           {connected && !conn.isRoot && processes && (
-            <div className="bg-amber-50 border border-amber-200 text-amber-700 text-xs px-3 py-2 mb-3">
+            <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs px-3 py-2 mb-3">
               Non-rooted device — only debuggable apps can be captured
             </div>
           )}
 
           {/* VMA dump progress */}
           {vmaDumpStatus && (
-            <div className="mb-2 text-xs text-stone-500">
+            <div className="mb-2 text-xs text-stone-500 dark:text-stone-400">
               <div className="flex items-center gap-2">
                 <span className="truncate">{vmaDumpStatus}</span>
-                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelVmaDump}>Cancel</button>
+                <button className="text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 ml-auto" onClick={cancelVmaDump}>Cancel</button>
               </div>
             </div>
           )}
 
           {/* Enrichment progress */}
           {enrichStatus && (
-            <div className="mb-2 text-xs text-stone-500">
+            <div className="mb-2 text-xs text-stone-500 dark:text-stone-400">
               <div className="flex items-center gap-2 mb-1">
                 <span className="truncate">{diffMode ? `Diffing: ${enrichStatus}` : enrichStatus}</span>
-                {enrichProgress && <span className="text-stone-400 whitespace-nowrap">{enrichProgress.done}/{enrichProgress.total}</span>}
-                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelEnrichment}>Cancel</button>
+                {enrichProgress && <span className="text-stone-400 dark:text-stone-500 whitespace-nowrap">{enrichProgress.done}/{enrichProgress.total}</span>}
+                <button className="text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 ml-auto" onClick={cancelEnrichment}>Cancel</button>
               </div>
               {enrichProgress && enrichProgress.total > 0 && (
-                <div className="h-1 bg-stone-100 rounded overflow-hidden">
+                <div className="h-1 bg-stone-100 dark:bg-stone-700 rounded overflow-hidden">
                   <div className="h-full bg-sky-500 transition-all" style={{ width: `${(enrichProgress.done / enrichProgress.total) * 100}%` }} />
                 </div>
               )}
@@ -1119,14 +1119,14 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
 
           {/* VMA scan progress */}
           {scanStatus && (
-            <div className="mb-2 text-xs text-stone-500">
+            <div className="mb-2 text-xs text-stone-500 dark:text-stone-400">
               <div className="flex items-center gap-2 mb-1">
                 <span className="truncate">Scanning: {scanStatus}</span>
-                {scanProgress && <span className="text-stone-400 whitespace-nowrap">{scanProgress.done}/{scanProgress.total}</span>}
-                <button className="text-rose-500 hover:text-rose-700 ml-auto" onClick={cancelSmapsFetch}>Cancel</button>
+                {scanProgress && <span className="text-stone-400 dark:text-stone-500 whitespace-nowrap">{scanProgress.done}/{scanProgress.total}</span>}
+                <button className="text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 ml-auto" onClick={cancelSmapsFetch}>Cancel</button>
               </div>
               {scanProgress && scanProgress.total > 0 && (
-                <div className="h-1 bg-stone-100 rounded overflow-hidden">
+                <div className="h-1 bg-stone-100 dark:bg-stone-700 rounded overflow-hidden">
                   <div className="h-full bg-amber-500 transition-all" style={{ width: `${(scanProgress.done / scanProgress.total) * 100}%` }} />
                 </div>
               )}
@@ -1135,7 +1135,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
 
           {/* Global memory summary */}
           {globalMemInfo && (
-            <div className="mb-3 bg-white border border-stone-200 px-3 py-2 overflow-x-auto">
+            <div className="mb-3 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 px-3 py-2 overflow-x-auto">
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
                 {([
                   ["Total", globalMemInfo.totalRamKb, globalMemInfoDiff?.deltaTotalRamKb, false],
@@ -1144,24 +1144,24 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                   ...(globalMemInfo.memAvailableKb > 0 ? [["Available", globalMemInfo.memAvailableKb, globalMemInfoDiff?.deltaMemAvailableKb, true] as const] : []),
                   ...(globalMemInfo.lostRamKb > 0 ? [["Lost", globalMemInfo.lostRamKb, globalMemInfoDiff?.deltaLostRamKb, false] as const] : []),
                 ] as const).map(([label, value, delta, inverted]) => (
-                  <span key={label} className="text-stone-500 whitespace-nowrap">
+                  <span key={label} className="text-stone-500 dark:text-stone-400 whitespace-nowrap">
                     {label}{" "}
-                    <span className="font-mono text-stone-800">{fmtSize(value * 1024)}</span>
+                    <span className="font-mono text-stone-800 dark:text-stone-100">{fmtSize(value * 1024)}</span>
                     {delta != null && delta !== 0 && (
-                      <span className={`font-mono ml-1 ${(inverted ? -delta : delta) > 0 ? "text-red-700" : "text-green-700"}`}>
+                      <span className={`font-mono ml-1 ${(inverted ? -delta : delta) > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>
                         {fmtDelta(delta)}
                       </span>
                     )}
                   </span>
                 ))}
                 {globalMemInfo.swapTotalKb > 0 && (
-                  <span className="text-stone-500 whitespace-nowrap">
+                  <span className="text-stone-500 dark:text-stone-400 whitespace-nowrap">
                     ZRAM{" "}
-                    <span className="font-mono text-stone-800">
+                    <span className="font-mono text-stone-800 dark:text-stone-100">
                       {fmtSize(globalMemInfo.zramPhysicalKb * 1024)}{" / "}{fmtSize(globalMemInfo.swapTotalKb * 1024)}
                     </span>
                     {globalMemInfoDiff && globalMemInfoDiff.deltaZramPhysicalKb !== 0 && (
-                      <span className={`font-mono ml-1 ${globalMemInfoDiff.deltaZramPhysicalKb > 0 ? "text-red-700" : "text-green-700"}`}>
+                      <span className={`font-mono ml-1 ${globalMemInfoDiff.deltaZramPhysicalKb > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>
                         {fmtDelta(globalMemInfoDiff.deltaZramPhysicalKb)}
                       </span>
                     )}
@@ -1173,29 +1173,29 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
 
           {/* Process list */}
           {sorted === null ? (
-            <div className="text-stone-400 p-4">Loading processes&hellip;</div>
+            <div className="text-stone-400 dark:text-stone-500 p-4">Loading processes&hellip;</div>
           ) : sorted.length === 0 ? (
-            <div className="text-stone-400 p-4 flex items-center gap-3">
+            <div className="text-stone-400 dark:text-stone-500 p-4 flex items-center gap-3">
               No processes found.
-              <button className="text-sky-700 underline decoration-sky-300" onClick={refreshProcesses}>
+              <button className="text-sky-700 dark:text-sky-400 underline decoration-sky-300 dark:decoration-sky-600" onClick={refreshProcesses}>
                 Refresh
               </button>
             </div>
           ) : (
-            <div className="bg-white border border-stone-200 overflow-x-auto">
+            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 overflow-x-auto">
               <table className="w-full min-w-[700px] text-sm">
                 <thead>
-                  <tr className="bg-stone-50 border-b border-stone-200">
-                    <th className="py-1.5 px-2 text-stone-500 text-xs font-medium w-[120px]"></th>
-                    <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium w-14 cursor-pointer select-none hover:text-stone-700" onClick={() => toggleSort("pid")}>
+                  <tr className="bg-stone-50 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700">
+                    <th className="py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium w-[120px]"></th>
+                    <th className="text-left py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium w-14 cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200" onClick={() => toggleSort("pid")}>
                       PID {sortField === "pid" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
                     </th>
-                    <th className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium cursor-pointer select-none hover:text-stone-700" onClick={() => toggleSort("name")}>
+                    <th className="text-left py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200" onClick={() => toggleSort("name")}>
                       Process {sortField === "name" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
                     </th>
                     {hasOomLabel && (
                       <th
-                        className="text-left py-1.5 px-2 text-stone-500 text-xs font-medium cursor-pointer select-none hover:text-stone-700"
+                        className="text-left py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200"
                         onClick={() => toggleSort("oomLabel")}
                       >
                         State {sortField === "oomLabel" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
@@ -1204,7 +1204,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                     {ROLLUP_COLUMNS.map(([field, label]) => (
                       <th
                         key={field}
-                        className="text-right py-1.5 px-2 text-stone-500 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700"
+                        className="text-right py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700 dark:hover:text-stone-200"
                         onClick={() => toggleSort(field)}
                       >
                         {label} {sortField === field ? (sortAsc ? "\u25B2" : "\u25BC") : ""}
@@ -1214,8 +1214,8 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                 </thead>
                 <tbody>
                   {/* Totals row */}
-                  <tr className="border-b-2 border-stone-300 font-semibold bg-stone-50">
-                    <td className="py-1 px-2 text-stone-600" colSpan={hasOomLabel ? 4 : 3}>Total ({processTotals.count})</td>
+                  <tr className="border-b-2 border-stone-300 dark:border-stone-600 font-semibold bg-stone-50 dark:bg-stone-800">
+                    <td className="py-1 px-2 text-stone-600 dark:text-stone-300" colSpan={hasOomLabel ? 4 : 3}>Total ({processTotals.count})</td>
                     {ROLLUP_COLUMNS.map(([f]) => (
                       <td key={f} className="py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem]">
                         {processTotals.values[f] > 0 ? fmtSize(processTotals.values[f] * 1024) : "\u2014"}
@@ -1238,10 +1238,10 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                     return (
                     <Fragment key={rowKey}>
                     <tr
-                      className={`border-t border-stone-100 cursor-pointer ${
+                      className={`border-t border-stone-100 dark:border-stone-800 cursor-pointer ${
                         d.status === "removed" ? "opacity-60" :
-                        d.status === "added" ? "bg-green-50/50" :
-                        isSmapsExpanded ? "bg-sky-50" : "hover:bg-stone-50"
+                        d.status === "added" ? "bg-green-50/50 dark:bg-green-900/30" :
+                        isSmapsExpanded ? "bg-sky-50 dark:bg-sky-900/20" : "hover:bg-stone-50 dark:hover:bg-stone-800"
                       }`}
                       onClick={() => {
                         if (d.status === "removed") return;
@@ -1266,25 +1266,25 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                           />
                         )}
                       </td>
-                      <td className="py-1 px-2 font-mono text-stone-400 whitespace-nowrap">
+                      <td className="py-1 px-2 font-mono text-stone-400 dark:text-stone-500 whitespace-nowrap">
                         {conn.isRoot && d.status !== "removed" && (
-                          <span className="text-stone-400 mr-1">{isSmapsExpanded ? "\u25BC" : isSmapsLoading ? "\u2026" : "\u25B6"}</span>
+                          <span className="text-stone-400 dark:text-stone-500 mr-1">{isSmapsExpanded ? "\u25BC" : isSmapsLoading ? "\u2026" : "\u25B6"}</span>
                         )}
                         {p.pid}
                       </td>
-                      <td className={`py-1 px-2 text-stone-800 truncate max-w-[400px] ${d.status === "removed" ? "line-through" : ""}`} title={p.name}>
+                      <td className={`py-1 px-2 text-stone-800 dark:text-stone-100 truncate max-w-[400px] ${d.status === "removed" ? "line-through" : ""}`} title={p.name}>
                         {p.name}
                         {isDiff && d.status !== "matched" && (
-                          <span className={`ml-2 text-[10px] font-medium ${d.status === "added" ? "text-green-600" : "text-red-600"}`}>
+                          <span className={`ml-2 text-[10px] font-medium ${d.status === "added" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
                             {d.status === "added" ? "NEW" : "GONE"}
                           </span>
                         )}
                       </td>
                       {hasOomLabel && (
-                        <td className="py-1 px-2 text-stone-500 text-xs whitespace-nowrap">
+                        <td className="py-1 px-2 text-stone-500 dark:text-stone-400 text-xs whitespace-nowrap">
                           {p.oomLabel}
                           {isDiff && d.prev && d.prev.oomLabel !== p.oomLabel && (
-                            <span className="ml-1 text-amber-600" title={`was: ${d.prev.oomLabel || "(none)"}`}>
+                            <span className="ml-1 text-amber-600 dark:text-amber-400" title={`was: ${d.prev.oomLabel || "(none)"}`}>
                               {"\u2190 "}{d.prev.oomLabel || "\u2014"}
                             </span>
                           )}
@@ -1297,7 +1297,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                           <td key={f} className={`py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] ${isDiff ? deltaBgClass(delta) : ""}`}>
                             {value > 0 ? fmtSize(value * 1024) : "\u2014"}
                             {isDiff && delta !== 0 && (
-                              <span className={`ml-1 text-[10px] ${delta > 0 ? "text-red-700" : "text-green-700"}`}>
+                              <span className={`ml-1 text-[10px] ${delta > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>
                                 {fmtDelta(delta)}
                               </span>
                             )}
@@ -1307,7 +1307,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
                     </tr>
                     {isSmapsLoading && (
                       <tr>
-                        <td colSpan={colCount} className="p-2 text-xs text-stone-400 animate-pulse border-t border-stone-200">
+                        <td colSpan={colCount} className="p-2 text-xs text-stone-400 dark:text-stone-500 animate-pulse border-t border-stone-200 dark:border-stone-700">
                           Fetching process smaps{"\u2026"}
                         </td>
                       </tr>
@@ -1345,7 +1345,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
             <div className="mt-4">
               {smapsData.size < (processes?.length ?? 0) && (
                 <button
-                  className="text-xs text-sky-600 hover:text-sky-800 border border-sky-300 px-2 py-0.5 mb-2"
+                  className="text-xs text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 border border-sky-300 dark:border-sky-600 px-2 py-0.5 mb-2"
                   onClick={scanStatus ? cancelSmapsFetch : scanAllSmaps}
                   disabled={!connected || !!vmaDumpStatus}
                 >
@@ -1370,7 +1370,7 @@ function CaptureView({ onCaptured, onVmaDump, conn }: {
       )}
 
       {error && (
-        <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm">{error}</div>
+        <div className="mt-4 p-3 bg-rose-50 dark:bg-rose-950 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 text-sm">{error}</div>
       )}
     </div>
   );

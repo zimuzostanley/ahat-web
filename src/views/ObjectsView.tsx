@@ -18,17 +18,17 @@ function ObjectsView({ proxy, navigate, params }: { proxy: WorkerProxy; navigate
       .then(setRows).catch(console.error);
   }, [proxy, siteId, className, heap]);
 
-  if (!rows) return <div className="text-stone-400 p-4">Loading&hellip;</div>;
+  if (!rows) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-3 text-stone-800">Instances</h2>
-      <div className="bg-white border border-stone-200 p-3 mb-3">
+      <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Instances</h2>
+      <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-3 mb-3">
         <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-          <span className="text-stone-500">Class:</span>
+          <span className="text-stone-500 dark:text-stone-400">Class:</span>
           <span className="font-mono">{className}</span>
-          {heap && <><span className="text-stone-500">Heap:</span><span>{heap}</span></>}
-          <span className="text-stone-500">Count:</span>
+          {heap && <><span className="text-stone-500 dark:text-stone-400">Heap:</span><span>{heap}</span></>}
+          <span className="text-stone-500 dark:text-stone-400">Count:</span>
           <span className="font-mono">{rows.length.toLocaleString()}</span>
         </div>
       </div>

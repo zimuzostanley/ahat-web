@@ -6,6 +6,7 @@ import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
 import { type NavState, stateToUrl, urlToState } from "./routing";
 import type { NavFn } from "./components";
 import { downloadBuffer, downloadBlob } from "./utils";
+import { useTheme } from "./use-theme";
 import CaptureView from "./views/CaptureView";
 import HexView from "./views/HexView";
 import OverviewView from "./views/OverviewView";
@@ -39,6 +40,54 @@ interface Session {
 
 let nextSessionId = 1;
 
+// ─── Theme toggle icon ───────────────────────────────────────────────────────
+
+function ThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="text-stone-400 hover:text-white p-1 transition-colors"
+      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+      title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+    >
+      {theme === "dark" ? (
+        // Sun icon
+        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+        </svg>
+      ) : (
+        // Moon icon
+        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+// ─── Landing page theme toggle ───────────────────────────────────────────────
+
+function LandingThemeToggle({ theme, onToggle }: { theme: "light" | "dark"; onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 p-1.5 transition-colors"
+      aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+      title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+    >
+      {theme === "dark" ? (
+        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+        </svg>
+      ) : (
+        <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -54,6 +103,7 @@ export default function App() {
   const fileRef = useRef<HTMLInputElement>(null);
   const mapFileRef = useRef<HTMLInputElement>(null);
   const adbConnRef = useRef(new AdbConnection());
+  const [theme, toggleTheme] = useTheme();
 
   // Derived state
   const activeSession = activeTab !== "device" ? sessions.find(s => s.id === activeTab) ?? null : null;
@@ -299,7 +349,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-stone-50 flex flex-col"
+    <div className="min-h-screen bg-stone-50 dark:bg-stone-950 flex flex-col text-stone-800 dark:text-stone-100"
       onDragOver={e => e.preventDefault()} onDrop={handleDrop}
     >
       {/* Hidden file inputs */}
@@ -308,7 +358,7 @@ export default function App() {
 
       {/* Header — shown when we have sessions */}
       {sessions.length > 0 && (
-        <header className="bg-stone-800 text-white flex-shrink-0">
+        <header className="bg-stone-800 dark:bg-stone-900 text-white flex-shrink-0">
           <div className="px-4 py-2 flex items-center gap-3">
             {/* Logo */}
             <button
@@ -390,13 +440,14 @@ export default function App() {
               </>
             )}
 
-            {/* Right side: back + menu */}
-            <div className="ml-auto flex items-center gap-3">
+            {/* Right side: back + theme + menu */}
+            <div className="ml-auto flex items-center gap-2">
               {activeSession?.status === "ready" && (
                 <button className="text-stone-400 hover:text-white text-sm" onClick={() => window.history.back()} aria-label="Go back">
                   &larr; Back
                 </button>
               )}
+              <ThemeToggle theme={theme} onToggle={toggleTheme} />
               <div className="relative">
                 <button
                   className="text-stone-400 hover:text-white text-xs border border-stone-600 px-2 py-0.5"
@@ -404,7 +455,7 @@ export default function App() {
                   aria-label="Menu"
                 >{"\u22EF"}</button>
                 {menuOpen && (
-                  <div className="absolute right-0 top-full mt-1 bg-stone-800 border border-stone-600 shadow-lg z-50 min-w-[140px]">
+                  <div className="absolute right-0 top-full mt-1 bg-stone-800 dark:bg-stone-900 border border-stone-600 shadow-lg z-50 min-w-[140px]">
                     <button className="w-full text-left px-3 py-1.5 text-xs text-stone-300 hover:bg-stone-700 hover:text-white" onClick={() => { fileRef.current?.click(); setMenuOpen(false); }}>
                       Open File
                     </button>
@@ -475,28 +526,28 @@ export default function App() {
           <div className="max-w-lg w-full">
             <div className="text-center mb-8">
               <div className="inline-flex items-center gap-2 mb-3">
-                <div className="w-8 h-8 bg-stone-800 flex items-center justify-center text-white font-bold text-sm">A</div>
-                <h1 className="text-3xl font-bold text-stone-800 tracking-tight">
-                  ahat<span className="text-stone-400 font-normal">.web</span>
+                <div className="w-8 h-8 bg-stone-800 dark:bg-stone-700 flex items-center justify-center text-white font-bold text-sm">A</div>
+                <h1 className="text-3xl font-bold text-stone-800 dark:text-stone-100 tracking-tight">
+                  ahat<span className="text-stone-400 dark:text-stone-500 font-normal">.web</span>
                 </h1>
               </div>
-              <p className="text-stone-500 text-sm">Android Heap Analysis Tool — runs entirely in your browser</p>
+              <p className="text-stone-500 dark:text-stone-400 text-sm">Android Heap Analysis Tool — runs entirely in your browser</p>
             </div>
             <div
-              className="bg-white border-2 border-dashed border-stone-300 p-10 text-center cursor-pointer hover:border-sky-400 transition-colors"
+              className="bg-white dark:bg-stone-900 border-2 border-dashed border-stone-300 dark:border-stone-600 p-10 text-center cursor-pointer hover:border-sky-400 dark:hover:border-sky-500 transition-colors"
               onClick={() => fileRef.current?.click()}
             >
               <div className="mb-4">
-                <svg className="w-12 h-12 mx-auto text-stone-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <svg className="w-12 h-12 mx-auto text-stone-300 dark:text-stone-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                 </svg>
               </div>
-              <p className="text-stone-700 font-medium mb-1">Drop an .hprof file here or click to browse</p>
-              <p className="text-stone-400 text-sm">Supports J2SE HPROF format with Android extensions</p>
+              <p className="text-stone-700 dark:text-stone-200 font-medium mb-1">Drop an .hprof file here or click to browse</p>
+              <p className="text-stone-400 dark:text-stone-500 text-sm">Supports J2SE HPROF format with Android extensions</p>
             </div>
-            <div className="mt-4 text-center">
+            <div className="mt-4 flex items-center justify-center gap-3">
               <button
-                className="px-5 py-2.5 border border-stone-300 text-stone-700 hover:border-stone-400 hover:bg-white transition-colors"
+                className="px-5 py-2.5 border border-stone-300 dark:border-stone-600 text-stone-700 dark:text-stone-300 hover:border-stone-400 dark:hover:border-stone-500 hover:bg-white dark:hover:bg-stone-800 transition-colors"
                 onClick={() => setCaptureUsed(true)}
               >
                 <span className="inline-flex items-center gap-2">
@@ -506,9 +557,10 @@ export default function App() {
                   Capture from device
                 </span>
               </button>
+              <LandingThemeToggle theme={theme} onToggle={toggleTheme} />
             </div>
             {error && (
-              <div className="mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-sm">{error}</div>
+              <div className="mt-4 p-3 bg-rose-50 dark:bg-rose-950 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 text-sm">{error}</div>
             )}
           </div>
         </div>
@@ -520,10 +572,10 @@ export default function App() {
           {sessions.length === 0 && (
             <div className="p-8 pb-0 max-w-[95%] mx-auto">
               <div className="flex items-center gap-4 mb-6">
-                <button className="text-stone-400 hover:text-stone-600" onClick={() => setCaptureUsed(false)}>
+                <button className="text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300" onClick={() => setCaptureUsed(false)}>
                   &larr; Back
                 </button>
-                <h1 className="text-lg font-semibold text-stone-800">Capture from device</h1>
+                <h1 className="text-lg font-semibold text-stone-800 dark:text-stone-100">Capture from device</h1>
               </div>
             </div>
           )}
@@ -539,16 +591,16 @@ export default function App() {
           {/* Loading state — inline in tab */}
           {activeSession.status === "loading" && (
             <div className="flex items-center justify-center p-8 flex-1">
-              <div className="max-w-md w-full bg-white border border-stone-200 p-8">
-                <h2 className="text-lg font-semibold text-stone-800 mb-4 truncate" title={`Parsing ${activeSession.name}`}>
+              <div className="max-w-md w-full bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-8">
+                <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-100 mb-4 truncate" title={`Parsing ${activeSession.name}`}>
                   Parsing {activeSession.name}&hellip;
                 </h2>
-                <div className="w-full h-2 bg-stone-100 overflow-hidden mb-3">
+                <div className="w-full h-2 bg-stone-100 dark:bg-stone-700 overflow-hidden mb-3">
                   <div className="h-full bg-sky-500 transition-all duration-300" style={{ width: activeSession.progress.pct + "%" }} />
                 </div>
-                <p className="text-sm text-stone-500 truncate" title={activeSession.progress.msg}>{activeSession.progress.msg}</p>
+                <p className="text-sm text-stone-500 dark:text-stone-400 truncate" title={activeSession.progress.msg}>{activeSession.progress.msg}</p>
                 <button
-                  className="mt-4 text-sm text-stone-500 hover:text-rose-600"
+                  className="mt-4 text-sm text-stone-500 dark:text-stone-400 hover:text-rose-600 dark:hover:text-rose-400"
                   onClick={() => closeTab(activeSession.id)}
                 >Cancel</button>
               </div>
@@ -558,11 +610,11 @@ export default function App() {
           {/* Error state */}
           {activeSession.status === "error" && (
             <div className="flex items-center justify-center p-8 flex-1">
-              <div className="max-w-md w-full bg-white border border-rose-200 p-8">
-                <h2 className="text-lg font-semibold text-rose-700 mb-2">Failed to parse {activeSession.name}</h2>
-                <p className="text-sm text-stone-600 mb-4">{activeSession.errorMsg}</p>
+              <div className="max-w-md w-full bg-white dark:bg-stone-900 border border-rose-200 dark:border-rose-800 p-8">
+                <h2 className="text-lg font-semibold text-rose-700 dark:text-rose-400 mb-2">Failed to parse {activeSession.name}</h2>
+                <p className="text-sm text-stone-600 dark:text-stone-400 mb-4">{activeSession.errorMsg}</p>
                 <button
-                  className="text-sm text-stone-500 hover:text-stone-700"
+                  className="text-sm text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200"
                   onClick={() => closeTab(activeSession.id)}
                 >Close</button>
               </div>

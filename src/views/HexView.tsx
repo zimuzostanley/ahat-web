@@ -433,7 +433,7 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
     if (!ctx) return;
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = "#d97706"; // amber-600
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--color-diff-marker").trim();
     const markH = Math.max(1, h / totalRows);
     for (const row of diffRows) {
       ctx.fillRect(0, (row / totalRows) * h, w, markH);
@@ -473,13 +473,13 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
-        <h2 className="text-lg font-semibold text-stone-800 truncate">{name}</h2>
-        <span className="text-sm text-stone-500">{fmtSize(data.byteLength)}</span>
-        <span className="text-xs text-stone-400">{totalRows.toLocaleString()} rows</span>
+        <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-100 truncate">{name}</h2>
+        <span className="text-sm text-stone-500 dark:text-stone-400">{fmtSize(data.byteLength)}</span>
+        <span className="text-xs text-stone-400 dark:text-stone-500">{totalRows.toLocaleString()} rows</span>
         <div className="ml-auto flex items-center gap-2">
           {availableDiffs && availableDiffs.length > 0 && (
             <select
-              className="text-xs border border-stone-200 px-1.5 py-0.5 text-stone-500 bg-white cursor-pointer max-w-[160px] truncate"
+              className="text-xs border border-stone-200 dark:border-stone-700 px-1.5 py-0.5 text-stone-500 dark:text-stone-400 bg-white dark:bg-stone-900 cursor-pointer max-w-[160px] truncate"
               value={diffBaselineId ?? ""}
               onChange={e => setDiffBaselineId(e.target.value || null)}
             >
@@ -492,45 +492,45 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
           <button
             className={`text-xs px-2 py-0.5 border transition-colors ${
               showStrings
-                ? "text-sky-600 border-sky-300 bg-sky-50"
-                : "text-stone-500 hover:text-stone-700 border-stone-200 hover:border-stone-400"
+                ? "text-sky-600 dark:text-sky-400 border-sky-300 dark:border-sky-600 bg-sky-50 dark:bg-sky-900/30"
+                : "text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
             }`}
             onClick={() => setShowStrings(!showStrings)}
           >Strings</button>
           <button
-            className="text-xs text-stone-500 hover:text-stone-700 px-2 py-0.5 border border-stone-200 hover:border-stone-400"
+            className="text-xs text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 px-2 py-0.5 border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
             onClick={handleCopy}
           >{copied ? "Copied" : "Copy"}</button>
           <button
-            className="text-xs text-stone-500 hover:text-stone-700 px-2 py-0.5 border border-stone-200 hover:border-stone-400"
+            className="text-xs text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 px-2 py-0.5 border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
             onClick={() => downloadBlob(name + ".bin", buffer)}
           >Download</button>
         </div>
       </div>
       {regionMap && regionMap.length > 0 && (
-        <div className="text-xs text-stone-400 mb-2 font-mono">
+        <div className="text-xs text-stone-400 dark:text-stone-500 mb-2 font-mono">
           {regionMap.length === 1
             ? <>VMA {regionMap[0].vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}{"\u2013"}{(regionMap[0].vmaBase + regionMap[0].offsetEnd).toString(16).padStart(addrWidth ?? 8, "0")}</>
             : <>{regionMap.length} VMA regions</>}
         </div>
       )}
       {diffStats && (
-        <div className="text-xs text-stone-400 mb-2 flex items-center gap-3">
+        <div className="text-xs text-stone-400 dark:text-stone-500 mb-2 flex items-center gap-3">
           <span>
-            <span className="font-mono text-amber-700">{diffStats.changed.toLocaleString()}</span> bytes differ
+            <span className="font-mono text-amber-700 dark:text-amber-400">{diffStats.changed.toLocaleString()}</span> bytes differ
             {" "}of {fmtSize(diffStats.total)}
             {diffStats.total !== diffStats.baseTotal && (
               <span className="ml-2">(baseline: {fmtSize(diffStats.baseTotal)})</span>
             )}
           </span>
           {diffRows.length > 0 && (<>
-            <span className="text-stone-300">|</span>
+            <span className="text-stone-300 dark:text-stone-600">|</span>
             <span className="font-mono">
               {currentDiffIdx >= 0
-                ? <><span className="text-amber-700">{currentDiffIdx + 1}</span>{" of "}{diffRows.length.toLocaleString()} diff rows</>
+                ? <><span className="text-amber-700 dark:text-amber-400">{currentDiffIdx + 1}</span>{" of "}{diffRows.length.toLocaleString()} diff rows</>
                 : <>{diffRows.length.toLocaleString()} diff rows</>}
             </span>
-            <span className="text-stone-300 text-[10px]">n/p to navigate</span>
+            <span className="text-stone-300 dark:text-stone-600 text-[10px]">n/p to navigate</span>
           </>)}
         </div>
       )}
@@ -539,7 +539,7 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
         <div className="flex-1 min-w-0 relative">
           <div
             ref={measuredRef}
-            className="overflow-auto border border-stone-200 bg-white"
+            className="overflow-auto border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900"
             style={{ height: containerHeight }}
             onScroll={e => {
               setScrollTop(e.currentTarget.scrollTop);
@@ -550,7 +550,7 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
             <div style={{ height: totalRows * ROW_HEIGHT, position: "relative" }}>
               {highlightRow !== null && highlightRow >= startRow && highlightRow < endRow && (
                 <div
-                  className="absolute left-0 right-0 bg-sky-100 transition-colors"
+                  className="absolute left-0 right-0 bg-sky-100 dark:bg-sky-900/40 transition-colors"
                   style={{ top: highlightRow * ROW_HEIGHT, height: ROW_HEIGHT }}
                 />
               )}
@@ -558,10 +558,10 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
               {visibleSeparators.map(sep => (
                 <div
                   key={`sep-${sep.row}`}
-                  className="absolute left-0 right-0 border-t border-dashed border-stone-300 pointer-events-none"
+                  className="absolute left-0 right-0 border-t border-dashed border-stone-300 dark:border-stone-600 pointer-events-none"
                   style={{ top: sep.row * ROW_HEIGHT - 1 }}
                 >
-                  <span className="absolute -top-3 left-2 text-[10px] text-stone-400 bg-white px-1 font-mono">
+                  <span className="absolute -top-3 left-2 text-[10px] text-stone-400 dark:text-stone-500 bg-white dark:bg-stone-900 px-1 font-mono">
                     {sep.vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}
                   </span>
                 </div>
@@ -576,12 +576,12 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
                   return (
                     <div
                       key={i}
-                      className="font-mono text-xs text-stone-800 leading-5 select-text whitespace-pre"
+                      className="font-mono text-xs text-stone-800 dark:text-stone-200 leading-5 select-text whitespace-pre"
                       style={{ position: "absolute", top: i * ROW_HEIGHT, height: ROW_HEIGHT, padding: "0 8px" }}
                     >
                       {segments.map((s, si) =>
                         s.diff
-                          ? <span key={si} className="bg-amber-200 text-amber-900 rounded-sm">{s.text}</span>
+                          ? <span key={si} className="bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 rounded-sm">{s.text}</span>
                           : <span key={si}>{s.text}</span>
                       )}
                     </div>
@@ -590,7 +590,7 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
               ) : (
                 // Normal mode: single pre block
                 <pre
-                  className="font-mono text-xs text-stone-800 leading-5 select-text whitespace-pre relative"
+                  className="font-mono text-xs text-stone-800 dark:text-stone-200 leading-5 select-text whitespace-pre relative"
                   style={{ position: "absolute", top: startRow * ROW_HEIGHT, left: 0, padding: "0 8px" }}
                 >
                   {lines!.join("\n")}
@@ -611,16 +611,16 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
 
         {/* Strings panel */}
         {showStrings && (
-          <div className="w-80 border border-l-0 border-stone-200 bg-white flex flex-col" style={{ height: containerHeight }}>
-            <div className="p-2 border-b border-stone-100">
+          <div className="w-80 border border-l-0 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 flex flex-col" style={{ height: containerHeight }}>
+            <div className="p-2 border-b border-stone-100 dark:border-stone-800">
               <input
-                className="w-full text-xs border border-stone-200 px-2 py-1 placeholder:text-stone-300 focus:outline-none focus:border-sky-400"
+                className="w-full text-xs border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-2 py-1 placeholder:text-stone-300 dark:placeholder:text-stone-600 focus:outline-none focus:border-sky-400"
                 placeholder="Filter strings\u2026"
                 value={stringFilter}
                 onChange={e => setStringFilter(e.target.value)}
                 autoFocus
               />
-              <div className="text-[10px] text-stone-400 mt-1">
+              <div className="text-[10px] text-stone-400 dark:text-stone-500 mt-1">
                 {filteredStrings.length === strings.length
                   ? `${strings.length.toLocaleString()} strings`
                   : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`}
@@ -633,24 +633,24 @@ export default function HexView({ buffer, name, regions, availableDiffs }: HexVi
                 return (
                   <div
                     key={i}
-                    className="px-2 py-0.5 text-xs hover:bg-sky-50 cursor-pointer border-b border-stone-50 flex gap-2 items-baseline"
+                    className="px-2 py-0.5 text-xs hover:bg-sky-50 dark:hover:bg-sky-900/30 cursor-pointer border-b border-stone-50 dark:border-stone-800 flex gap-2 items-baseline"
                     onClick={() => scrollToOffset(s.offset)}
                     title={`Offset: 0x${s.offset.toString(16)}${vma !== undefined ? ` | VMA: 0x${vma.toString(16)}` : ""}`}
                   >
-                    <span className="font-mono text-stone-400 shrink-0 text-[10px]">
+                    <span className="font-mono text-stone-400 dark:text-stone-500 shrink-0 text-[10px]">
                       {(vma ?? s.offset).toString(16).padStart(vma !== undefined ? (addrWidth ?? 8) : 8, "0")}
                     </span>
-                    <span className="font-mono text-stone-700 truncate">{s.str}</span>
+                    <span className="font-mono text-stone-700 dark:text-stone-200 truncate">{s.str}</span>
                   </div>
                 );
               })}
               {filteredStrings.length > stringShowCount && (
-                <div className="px-2 py-2 text-[10px] text-stone-400 text-center">
+                <div className="px-2 py-2 text-[10px] text-stone-400 dark:text-stone-500 text-center">
                   Showing {stringShowCount.toLocaleString()} of {filteredStrings.length.toLocaleString()}
                   {" \u2014 "}
-                  <button className="text-sky-600 hover:underline" onClick={() => setStringShowCount(Math.min(stringShowCount + 5_000, filteredStrings.length))}>show more</button>
+                  <button className="text-sky-600 dark:text-sky-400 hover:underline" onClick={() => setStringShowCount(Math.min(stringShowCount + 5_000, filteredStrings.length))}>show more</button>
                   {" "}
-                  <button className="text-sky-600 ml-1 hover:underline" onClick={() => setStringShowCount(filteredStrings.length)}>show all</button>
+                  <button className="text-sky-600 dark:text-sky-400 ml-1 hover:underline" onClick={() => setStringShowCount(filteredStrings.length)}>show all</button>
                 </div>
               )}
             </div>

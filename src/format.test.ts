@@ -37,21 +37,21 @@ describe("deltaBgClass", () => {
 
   // Positive (increases = red)
   it("+999 KiB returns empty (below threshold)", () => expect(deltaBgClass(999)).toBe(""));
-  it("+1000 KiB = bg-red-50", () => expect(deltaBgClass(1_000)).toBe("bg-red-50"));
-  it("+9999 KiB = bg-red-50", () => expect(deltaBgClass(9_999)).toBe("bg-red-50"));
-  it("+10000 KiB = bg-red-100", () => expect(deltaBgClass(10_000)).toBe("bg-red-100"));
-  it("+49999 KiB = bg-red-100", () => expect(deltaBgClass(49_999)).toBe("bg-red-100"));
-  it("+50000 KiB = bg-red-200", () => expect(deltaBgClass(50_000)).toBe("bg-red-200"));
-  it("+100000 KiB = bg-red-200", () => expect(deltaBgClass(100_000)).toBe("bg-red-200"));
+  it("+1000 KiB = bg-red-50", () => expect(deltaBgClass(1_000)).toBe("bg-red-50 dark:bg-red-950"));
+  it("+9999 KiB = bg-red-50", () => expect(deltaBgClass(9_999)).toBe("bg-red-50 dark:bg-red-950"));
+  it("+10000 KiB = bg-red-100", () => expect(deltaBgClass(10_000)).toBe("bg-red-100 dark:bg-red-900/50"));
+  it("+49999 KiB = bg-red-100", () => expect(deltaBgClass(49_999)).toBe("bg-red-100 dark:bg-red-900/50"));
+  it("+50000 KiB = bg-red-200", () => expect(deltaBgClass(50_000)).toBe("bg-red-200 dark:bg-red-900"));
+  it("+100000 KiB = bg-red-200", () => expect(deltaBgClass(100_000)).toBe("bg-red-200 dark:bg-red-900"));
 
   // Negative (decreases = green)
   it("-999 KiB returns empty", () => expect(deltaBgClass(-999)).toBe(""));
-  it("-1000 KiB = bg-green-50", () => expect(deltaBgClass(-1_000)).toBe("bg-green-50"));
-  it("-9999 KiB = bg-green-50", () => expect(deltaBgClass(-9_999)).toBe("bg-green-50"));
-  it("-10000 KiB = bg-green-100", () => expect(deltaBgClass(-10_000)).toBe("bg-green-100"));
-  it("-49999 KiB = bg-green-100", () => expect(deltaBgClass(-49_999)).toBe("bg-green-100"));
-  it("-50000 KiB = bg-green-200", () => expect(deltaBgClass(-50_000)).toBe("bg-green-200"));
-  it("-100000 KiB = bg-green-200", () => expect(deltaBgClass(-100_000)).toBe("bg-green-200"));
+  it("-1000 KiB = bg-green-50", () => expect(deltaBgClass(-1_000)).toBe("bg-green-50 dark:bg-green-950"));
+  it("-9999 KiB = bg-green-50", () => expect(deltaBgClass(-9_999)).toBe("bg-green-50 dark:bg-green-950"));
+  it("-10000 KiB = bg-green-100", () => expect(deltaBgClass(-10_000)).toBe("bg-green-100 dark:bg-green-900/50"));
+  it("-49999 KiB = bg-green-100", () => expect(deltaBgClass(-49_999)).toBe("bg-green-100 dark:bg-green-900/50"));
+  it("-50000 KiB = bg-green-200", () => expect(deltaBgClass(-50_000)).toBe("bg-green-200 dark:bg-green-900"));
+  it("-100000 KiB = bg-green-200", () => expect(deltaBgClass(-100_000)).toBe("bg-green-200 dark:bg-green-900"));
 });
 
 describe("fmtDelta", () => {
@@ -115,16 +115,16 @@ describe("deltaBgClassBytes", () => {
     expect(deltaBgClassBytes(999 * 1024)).toBe("");
   });
   it("at threshold (1000 KiB in bytes)", () => {
-    expect(deltaBgClassBytes(1000 * 1024)).toBe("bg-red-50");
+    expect(deltaBgClassBytes(1000 * 1024)).toBe("bg-red-50 dark:bg-red-950");
   });
   it("negative at threshold", () => {
-    expect(deltaBgClassBytes(-1000 * 1024)).toBe("bg-green-50");
+    expect(deltaBgClassBytes(-1000 * 1024)).toBe("bg-green-50 dark:bg-green-950");
   });
   it("large positive (50 MiB in bytes)", () => {
-    expect(deltaBgClassBytes(50_000 * 1024)).toBe("bg-red-200");
+    expect(deltaBgClassBytes(50_000 * 1024)).toBe("bg-red-200 dark:bg-red-900");
   });
   it("delegates to deltaBgClass with KiB conversion", () => {
     // 10_000 * 1024 bytes = 10_000 KiB → bg-red-100
-    expect(deltaBgClassBytes(10_000 * 1024)).toBe("bg-red-100");
+    expect(deltaBgClassBytes(10_000 * 1024)).toBe("bg-red-100 dark:bg-red-900/50");
   });
 });

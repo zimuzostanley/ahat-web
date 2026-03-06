@@ -35,10 +35,10 @@ function BitmapCard({ row, proxy, navigate, density, deviceScale }: {
   const dpH = Math.round(row.height / scale);
 
   return (
-    <div ref={ref} className="bg-white border border-stone-200">
+    <div ref={ref} className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700">
       {/* Image area */}
       <div
-        className="bg-stone-50 flex items-center justify-center overflow-hidden"
+        className="bg-stone-50 dark:bg-stone-800 flex items-center justify-center overflow-hidden"
         style={deviceScale
           ? { maxWidth: dpW, maxHeight: "45vh", aspectRatio: `${row.width} / ${row.height}`, margin: "0 auto" }
           : { width: "100%", maxHeight: "45vh", aspectRatio: `${row.width} / ${row.height}` }
@@ -47,7 +47,7 @@ function BitmapCard({ row, proxy, navigate, density, deviceScale }: {
         {bitmap && typeof bitmap === "object" ? (
           <BitmapImage width={bitmap.width} height={bitmap.height} format={bitmap.format} data={bitmap.data} />
         ) : bitmap === "loading" ? (
-          <span className="text-stone-300">&hellip;</span>
+          <span className="text-stone-300 dark:text-stone-600">&hellip;</span>
         ) : bitmap === "error" ? (
           <span className="text-stone-300 text-sm">no data</span>
         ) : !row.hasPixelData ? (
@@ -55,15 +55,15 @@ function BitmapCard({ row, proxy, navigate, density, deviceScale }: {
         ) : null}
       </div>
       {/* Info bar */}
-      <div className="px-3 py-2 border-t border-stone-100 flex items-center justify-between">
+      <div className="px-3 py-2 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between">
         <div>
-          <span className="text-xs font-mono text-stone-600">{row.width}&times;{row.height} px</span>
-          <span className="text-xs text-stone-400 ml-2">{dpW}&times;{dpH} dp</span>
-          <span className="text-xs text-stone-400 ml-2">@{dpi}dpi</span>
-          <span className="text-xs text-stone-400 ml-2">{fmtSize(row.row.retainedTotal)}</span>
+          <span className="text-xs font-mono text-stone-600 dark:text-stone-300">{row.width}&times;{row.height} px</span>
+          <span className="text-xs text-stone-400 dark:text-stone-500 ml-2">{dpW}&times;{dpH} dp</span>
+          <span className="text-xs text-stone-400 dark:text-stone-500 ml-2">@{dpi}dpi</span>
+          <span className="text-xs text-stone-400 dark:text-stone-500 ml-2">{fmtSize(row.row.retainedTotal)}</span>
         </div>
         <button
-          className="text-xs text-sky-700 underline decoration-sky-300 hover:decoration-sky-500"
+          className="text-xs text-sky-700 dark:text-sky-400 underline decoration-sky-300 dark:decoration-sky-600 hover:decoration-sky-500 dark:hover:decoration-sky-400"
           onClick={() => navigate("object", { id: row.row.id })}
         >Details</button>
       </div>
@@ -79,7 +79,7 @@ function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: 
     proxy.query<BitmapListRow[]>("getBitmapList").then(setRows).catch(console.error);
   }, [proxy]);
 
-  if (!rows) return <div className="text-stone-400 p-4">Loading&hellip;</div>;
+  if (!rows) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
 
   // Duplicate detection
   const hashCounts = new Map<string, number>();
@@ -92,20 +92,20 @@ function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: 
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-3 text-stone-800">Bitmaps</h2>
+      <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Bitmaps</h2>
 
       {rows.length === 0 ? (
-        <div className="text-stone-500">No bitmaps found in this heap dump.</div>
+        <div className="text-stone-500 dark:text-stone-400">No bitmaps found in this heap dump.</div>
       ) : (
         <>
-          <div className="bg-white border border-stone-200 p-3 mb-4">
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-3 mb-4">
             <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-              <span className="text-stone-500">Total bitmaps:</span>
+              <span className="text-stone-500 dark:text-stone-400">Total bitmaps:</span>
               <span className="font-mono">{rows.length}</span>
-              <span className="text-stone-500">With pixel data:</span>
-              <span className="font-mono">{withPixels.length}{withPixels.length === 0 && <span className="text-stone-400 ml-2">(dump with <code className="bg-stone-100 px-1">-b</code> to include pixel data)</span>}</span>
-              {dupCount > 0 && (<><span className="text-stone-500">Duplicates:</span><span className="font-mono text-amber-600">{dupCount}</span></>)}
-              <span className="text-stone-500">Total retained:</span>
+              <span className="text-stone-500 dark:text-stone-400">With pixel data:</span>
+              <span className="font-mono">{withPixels.length}{withPixels.length === 0 && <span className="text-stone-400 dark:text-stone-500 ml-2">(dump with <code className="bg-stone-100 dark:bg-stone-700 px-1">-b</code> to include pixel data)</span>}</span>
+              {dupCount > 0 && (<><span className="text-stone-500 dark:text-stone-400">Duplicates:</span><span className="font-mono text-amber-600 dark:text-amber-400">{dupCount}</span></>)}
+              <span className="text-stone-500 dark:text-stone-400">Total retained:</span>
               <span className="font-mono">{fmtSize(totalRetained)}</span>
             </div>
           </div>
@@ -114,16 +114,16 @@ function BitmapGalleryView({ proxy, navigate }: { proxy: WorkerProxy; navigate: 
           {withPixels.length > 0 && (
             <div className="mb-4">
               <div className="flex items-center justify-between mb-2">
-                <h3 className="text-xs font-semibold text-stone-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider">
                   {withPixels.length} bitmap{withPixels.length > 1 ? "s" : ""} with pixel data
                 </h3>
-                <div className="inline-flex text-xs border border-stone-200 divide-x divide-stone-200">
+                <div className="inline-flex text-xs border border-stone-200 dark:border-stone-700 divide-x divide-stone-200 dark:divide-stone-700">
                   <button
-                    className={`px-2 py-0.5 ${deviceScale ? "bg-sky-50 text-sky-700 font-medium" : "text-stone-400 hover:text-stone-600"}`}
+                    className={`px-2 py-0.5 ${deviceScale ? "bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 font-medium" : "text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300"}`}
                     onClick={() => setDeviceScale(true)}
                   >Device size</button>
                   <button
-                    className={`px-2 py-0.5 ${!deviceScale ? "bg-sky-50 text-sky-700 font-medium" : "text-stone-400 hover:text-stone-600"}`}
+                    className={`px-2 py-0.5 ${!deviceScale ? "bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 font-medium" : "text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300"}`}
                     onClick={() => setDeviceScale(false)}
                   >Full width</button>
                 </div>
