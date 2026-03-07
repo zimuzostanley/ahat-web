@@ -1231,6 +1231,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     const d = globalMemInfoDiff;
                     const usedKb = g.totalRamKb - g.memAvailableKb;
                     const deltaUsedKb = d ? d.deltaTotalRamKb - d.deltaMemAvailableKb : 0;
+                    // inverted: true = up is good (green), false = up is bad (red)
                     const items: [string, number, number, boolean][] = [
                       ["Total", g.totalRamKb, d?.deltaTotalRamKb ?? 0, false],
                       ["Used", usedKb, deltaUsedKb, false],
