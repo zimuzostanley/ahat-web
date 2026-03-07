@@ -738,14 +738,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             globalMemInfo = {
               totalRamKb: procInfo.totalRamKb ?? 0,
               freeRamKb: procInfo.freeRamKb ?? 0,
-              usedPssKb: 0,
-              lostRamKb: 0,
-              zramPhysicalKb: 0,
-              swapTotalKb: procInfo.swapTotalKb ?? 0,
-              swapFreeKb: procInfo.swapFreeKb ?? 0,
               memAvailableKb: procInfo.memAvailableKb ?? 0,
               buffersKb: procInfo.buffersKb ?? 0,
               cachedKb: procInfo.cachedKb ?? 0,
+              shmemKb: procInfo.shmemKb ?? 0,
+              slabKb: procInfo.slabKb ?? 0,
+              swapTotalKb: procInfo.swapTotalKb ?? 0,
+              swapFreeKb: procInfo.swapFreeKb ?? 0,
             };
             recomputeDiffs();
             m.redraw();
@@ -1227,23 +1226,32 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             globalMemInfo && (
               m("div", { className: "ah-global-mem" }, [
                 m("div", { className: "ah-global-mem__inner" }, [
-                  ([
-                    ["Total", globalMemInfo.totalRamKb, globalMemInfoDiff?.deltaTotalRamKb, false],
-                    ["Free", globalMemInfo.freeRamKb, globalMemInfoDiff?.deltaFreeRamKb, true],
-                    ["Used", globalMemInfo.usedPssKb, globalMemInfoDiff?.deltaUsedPssKb, false],
-                    ...(globalMemInfo.memAvailableKb > 0 ? [["Available", globalMemInfo.memAvailableKb, globalMemInfoDiff?.deltaMemAvailableKb, true] as const] : []),
-                    ...(globalMemInfo.lostRamKb > 0 ? [["Lost", globalMemInfo.lostRamKb, globalMemInfoDiff?.deltaLostRamKb, false] as const] : []),
-                  ] as const).map(([label, value, delta, inverted]) =>
-                    m("span", { key: label, className: "ah-global-mem__item" }, [
-                      `${label} `,
-                      m("span", { className: "ah-global-mem__value" }, fmtSize(value * 1024)),
-                      delta != null && delta !== 0 && (
-                        m("span", {
-                          className: `ah-mono ah-ml-1 ${(inverted ? -delta : delta) > 0 ? "ah-delta-pos" : "ah-delta-neg"}`,
-                        }, fmtDelta(delta))
-                      ),
-                    ]),
-                  ),
+                  (() => {
+                    const g = globalMemInfo!;
+                    const d = globalMemInfoDiff;
+                    const usedKb = g.totalRamKb - g.memAvailableKb;
+                    const deltaUsedKb = d ? d.deltaTotalRamKb - d.deltaMemAvailableKb : 0;
+                    const items: [string, number, number, boolean][] = [
+                      ["Total", g.totalRamKb, d?.deltaTotalRamKb ?? 0, false],
+                      ["Used", usedKb, deltaUsedKb, false],
+                      ["Free", g.freeRamKb, d?.deltaFreeRamKb ?? 0, true],
+                      ["Available", g.memAvailableKb, d?.deltaMemAvailableKb ?? 0, true],
+                      ["Cached", g.cachedKb + g.buffersKb, d ? d.deltaCachedKb + d.deltaBuffersKb : 0, true],
+                      ["Shmem", g.shmemKb, d?.deltaShmemKb ?? 0, false],
+                      ["Slab", g.slabKb, d?.deltaSlabKb ?? 0, false],
+                    ];
+                    return items.map(([label, value, delta, inverted]) =>
+                      m("span", { key: label, className: "ah-global-mem__item" }, [
+                        `${label} `,
+                        m("span", { className: "ah-global-mem__value" }, fmtSize(value * 1024)),
+                        delta !== 0 && (
+                          m("span", {
+                            className: `ah-mono ah-ml-1 ${(inverted ? -delta : delta) > 0 ? "ah-delta-pos" : "ah-delta-neg"}`,
+                          }, fmtDelta(delta))
+                        ),
+                      ]),
+                    );
+                  })(),
                   globalMemInfo.swapTotalKb > 0 && (
                     m("span", { className: "ah-global-mem__item" }, [
                       "Swap ",

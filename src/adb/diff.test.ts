@@ -106,16 +106,16 @@ describe("diffProcesses", () => {
 
 describe("diffGlobalMemInfo", () => {
   const base: GlobalMemInfo = {
-    totalRamKb: 8000000, freeRamKb: 4000000, usedPssKb: 3000000,
-    lostRamKb: 100000, zramPhysicalKb: 50000, swapTotalKb: 200000,
-    swapFreeKb: 150000, memAvailableKb: 5000000, buffersKb: 100000, cachedKb: 500000,
+    totalRamKb: 8000000, freeRamKb: 4000000, memAvailableKb: 5000000,
+    buffersKb: 100000, cachedKb: 500000, shmemKb: 200000, slabKb: 150000,
+    swapTotalKb: 200000, swapFreeKb: 150000,
   };
 
   it("computes deltas for all fields", () => {
-    const current = { ...base, freeRamKb: 3500000, usedPssKb: 3500000 };
+    const current = { ...base, freeRamKb: 3500000, cachedKb: 600000 };
     const d = diffGlobalMemInfo(base, current);
     expect(d.deltaFreeRamKb).toBe(-500000);
-    expect(d.deltaUsedPssKb).toBe(500000);
+    expect(d.deltaCachedKb).toBe(100000);
     expect(d.deltaTotalRamKb).toBe(0);
   });
 
@@ -129,8 +129,8 @@ describe("diffGlobalMemInfo", () => {
   it("handles identical snapshots", () => {
     const d = diffGlobalMemInfo(base, { ...base });
     expect(d.deltaFreeRamKb).toBe(0);
-    expect(d.deltaUsedPssKb).toBe(0);
-    expect(d.deltaLostRamKb).toBe(0);
+    expect(d.deltaShmemKb).toBe(0);
+    expect(d.deltaSlabKb).toBe(0);
   });
 });
 

@@ -22,14 +22,13 @@ export interface ProcessInfo {
 export interface GlobalMemInfo {
   totalRamKb: number;
   freeRamKb: number;
-  usedPssKb: number;
-  lostRamKb: number;
-  zramPhysicalKb: number;
-  swapTotalKb: number;
-  swapFreeKb: number;
   memAvailableKb: number;
   buffersKb: number;
   cachedKb: number;
+  shmemKb: number;
+  slabKb: number;
+  swapTotalKb: number;
+  swapFreeKb: number;
 }
 
 /** A single VMA entry from /proc/<pid>/smaps. */
@@ -821,6 +820,8 @@ export function parseProcMeminfo(output: string): Partial<GlobalMemInfo> {
       case "MemAvailable": result.memAvailableKb = val; break;
       case "Buffers": result.buffersKb = val; break;
       case "Cached": result.cachedKb = val; break;
+      case "Shmem": result.shmemKb = val; break;
+      case "Slab": result.slabKb = val; break;
       case "SwapTotal": result.swapTotalKb = val; break;
       case "SwapFree": result.swapFreeKb = val; break;
     }
@@ -849,13 +850,12 @@ export interface GlobalMemInfoDiff {
   prev: GlobalMemInfo;
   deltaTotalRamKb: number;
   deltaFreeRamKb: number;
-  deltaUsedPssKb: number;
-  deltaLostRamKb: number;
-  deltaZramPhysicalKb: number;
-  deltaSwapFreeKb: number;
   deltaMemAvailableKb: number;
   deltaBuffersKb: number;
   deltaCachedKb: number;
+  deltaShmemKb: number;
+  deltaSlabKb: number;
+  deltaSwapFreeKb: number;
 }
 
 /** Diff two process lists by PID + name. */
@@ -907,13 +907,12 @@ export function diffGlobalMemInfo(prev: GlobalMemInfo, current: GlobalMemInfo): 
     current, prev,
     deltaTotalRamKb: current.totalRamKb - prev.totalRamKb,
     deltaFreeRamKb: current.freeRamKb - prev.freeRamKb,
-    deltaUsedPssKb: current.usedPssKb - prev.usedPssKb,
-    deltaLostRamKb: current.lostRamKb - prev.lostRamKb,
-    deltaZramPhysicalKb: current.zramPhysicalKb - prev.zramPhysicalKb,
-    deltaSwapFreeKb: current.swapFreeKb - prev.swapFreeKb,
     deltaMemAvailableKb: current.memAvailableKb - prev.memAvailableKb,
     deltaBuffersKb: current.buffersKb - prev.buffersKb,
     deltaCachedKb: current.cachedKb - prev.cachedKb,
+    deltaShmemKb: current.shmemKb - prev.shmemKb,
+    deltaSlabKb: current.slabKb - prev.slabKb,
+    deltaSwapFreeKb: current.swapFreeKb - prev.swapFreeKb,
   };
 }
 
