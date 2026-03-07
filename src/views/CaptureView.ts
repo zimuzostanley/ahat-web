@@ -1690,7 +1690,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             if (isExpanded) {
                               expandedSmapsPid = null;
                               expandedSmapsGroup = null;
-                            } else if (conn.isRoot) {
+                            } else if (conn.isRoot || hasSmaps) {
                               expandedSmapsPid = p.pid;
                               expandedSmapsGroup = null;
                               if (!hasSmaps) fetchSmapsOnDemand(p.pid);
@@ -1709,7 +1709,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             ),
                           ]),
                           m("td", { className: "ah-capture-td--pid" }, [
-                            conn.isRoot && d.status !== "removed" && (
+                            (conn.isRoot || hasSmaps) && d.status !== "removed" && (
                               m("span", { className: isSmapsLoading ? "ah-expander--loading" : "ah-expander", style: { marginRight: "0.25rem" } }, isSmapsExpanded ? "\u25BC" : isSmapsLoading ? "\u2026" : "\u25B6")
                             ),
                             String(p.pid),
