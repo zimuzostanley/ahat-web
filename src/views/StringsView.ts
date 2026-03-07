@@ -173,19 +173,13 @@ function StringsView(): m.Component<StringsViewAttrs> {
                 { label: "Length", align: "right", sortKey: (r: StringListRow) => r.length, render: (r: StringListRow) => m("span", { className: "ah-mono" }, r.length.toLocaleString()) },
                 { label: "Heap", render: (r: StringListRow) => m("span", { className: "ah-info-grid__label" }, r.heap) },
                 { label: "Value", render: (r: StringListRow) =>
-                  m("span", null,
-                    m("button", {
-                      className: "ah-link",
-                      onclick: () => navigate("object", { id: r.id, label: `"${r.value.length > 40 ? r.value.slice(0, 40) + "\u2026" : r.value}"` }),
-                    },
-                      m("span", { className: "ah-mono ah-break-all", style: { color: "var(--ah-badge-string)" } },
-                        "\"", r.value.length > 300 ? r.value.slice(0, 300) + "\u2026" : r.value, "\"")
-                    )
-                  ),
+                  m("span", { className: "ah-mono ah-break-all", style: { color: "var(--ah-badge-string)" } },
+                    "\"", r.value.length > 300 ? r.value.slice(0, 300) + "\u2026" : r.value, "\""),
                 },
               ],
               data: filtered,
               rowKey: (r: StringListRow) => r.id,
+              onRowClick: (r: StringListRow) => navigate("object", { id: r.id, label: `"${r.value.length > 40 ? r.value.slice(0, 40) + "\u2026" : r.value}"` }),
             })
           )
         ),
