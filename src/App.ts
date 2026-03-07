@@ -556,8 +556,9 @@ export default function App(): m.Component {
                 m("div", { className: "ah-capture-header__inner" },
                   m("button", {
                     className: "ah-capture-header__logo",
-                    onclick: () => { captureUsed = false; },
-                    title: "Back to home",
+                    onclick: () => { if (!adbConn.connected) captureUsed = false; },
+                    title: adbConn.connected ? "Capture from device" : "Back to home",
+                    style: adbConn.connected ? { cursor: "default" } : undefined,
                   },
                     m("div", { className: "ah-header__logo-icon" }, "A"),
                     m("span", { className: "ah-capture-header__title" }, "Capture from device")
