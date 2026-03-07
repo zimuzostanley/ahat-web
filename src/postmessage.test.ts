@@ -10,10 +10,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
  *   3. Opener sends { type: "open-hprof", name: string, buffer: ArrayBuffer }.
  *   4. ahat-web receives it and loads the buffer.
  *
- * These tests verify the message handler logic in isolation (no React rendering).
+ * These tests verify the message handler logic in isolation (no DOM rendering).
  */
 
-/** Extracts the core handler logic from App's useEffect for testability. */
+/** Extracts the core handler logic from App's mount handler for testability. */
 function makeMessageHandler(loadBuffer: (name: string, buf: ArrayBuffer) => void) {
   return (e: MessageEvent) => {
     const d = e.data;

@@ -32,7 +32,7 @@ Open the app and drag-and-drop an `.hprof` file, or click "Open file" to browse.
 
 ```
 ┌──────────────┐    postMessage     ┌────────────────────┐
-│   React UI   │ ◄──────────────── │    Web Worker       │
+│  Mithril UI  │ ◄──────────────── │    Web Worker       │
 │   (App.tsx)  │ ──────────────►   │  (hprof.worker.ts)  │
 │              │   query/result     │                     │
 │  Views:      │                    │  hprof.ts  (parser) │
@@ -51,13 +51,13 @@ Open the app and drag-and-drop an `.hprof` file, or click "Open file" to browse.
 - **`src/hprof.worker.ts`** — Web Worker that holds the parsed snapshot. Main thread sends queries (`getOverview`, `getInstance`, `getRooted`, etc.) and receives plain-JS display records. Also handles diffing and ProGuard map loading.
 - **`src/worker-proxy.ts`** — Promise-based proxy for communicating with the worker from the main thread.
 - **`src/proguard.ts`** — R8/ProGuard mapping file parser supporting v1/v2/v2.2/v2.4 formats with class, field, and stack frame deobfuscation.
-- **`src/App.tsx`** — Main React component. Manages sessions (multiple tabs), routing, diff controls, and ADB connection state.
+- **`src/App.tsx`** — Main Mithril component. Manages sessions (multiple tabs), routing, diff controls, and ADB connection state.
 - **`src/views/`** — Individual view components (Overview, Object, Site, Rooted, Search, HexView, Capture, etc.)
 - **`src/adb/`** — WebUSB ADB implementation: device handshake, shell commands, file pull, heap dump capture, and memory info parsing.
 
 ## Tech Stack
 
-React 18, TypeScript 5, Vite 6, Tailwind CSS 3, Vitest
+Mithril.js 2.x, TypeScript 5, Vite 6, SCSS (BEM), Vitest
 
 ## Testing
 

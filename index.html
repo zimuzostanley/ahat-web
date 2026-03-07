@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ahat.web — Android Heap Analysis Tool</title>
     <style>
-      /* Inline critical bg so there's no white flash before Tailwind loads */
+      /* Inline critical bg so there's no white flash before styles load */
       html { background-color: #fafaf9; }
       html.dark { background-color: #0c0a09; color-scheme: dark; }
     </style>
@@ -18,7 +18,7 @@
       } catch(e) {}
     </script>
   </head>
-  <body class="bg-stone-50 dark:bg-stone-950 transition-colors">
+  <body>
     <div id="root"></div>
     <script type="module" src="./src/main.tsx"></script>
   </body>
