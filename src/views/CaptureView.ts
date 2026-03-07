@@ -696,9 +696,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     diffTriggered = false;
   }
 
-  // Progressive diff recomputation
+  // Progressive diff recomputation — skip process diffs while enrichment
+  // is still running to avoid showing processes as "GONE" before the full
+  // /proc list has been fetched (the initial LRU list is smaller).
   function recomputeDiffs() {
-    if (diffMode && prevProcesses && processes) {
+    if (diffMode && prevProcesses && processes && !enrichStatus) {
       processDiffs = diffProcesses(prevProcesses, processes);
     }
     if (diffMode && prevGlobalMemInfo && globalMemInfo) {
@@ -1190,18 +1192,18 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                 className: "ah-capture-toolbar__btn",
                 onclick: refreshProcesses,
                 disabled: !connected,
-              }, enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Diffing\u2026" : "Refresh"),
+              }, enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Scanning\u2026" : "Refresh"),
               connected && processes && !enrichStatus && (
                 m("button", {
                   className: "ah-capture-toolbar__btn--accent",
                   onclick: handleDiff,
-                }, "Diff")
+                }, "Snapshot")
               ),
               diffMode && !enrichStatus && (
                 m("button", {
                   className: "ah-capture-toolbar__btn--warning",
                   onclick: clearDiff,
-                }, "Clear Diff")
+                }, "Clear")
               ),
               connected ? (
                 m("button", {
@@ -1239,7 +1241,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             enrichStatus && (
               m("div", { className: "ah-capture-progress" }, [
                 m("div", { className: "ah-capture-progress__row" }, [
-                  m("span", { className: "ah-capture-progress__text" }, diffMode ? `Diffing: ${enrichStatus}` : enrichStatus),
+                  m("span", { className: "ah-capture-progress__text" }, diffMode ? `Snapshot: ${enrichStatus}` : enrichStatus),
                   enrichProgress && m("span", { className: "ah-capture-progress__count" }, `${enrichProgress.done}/${enrichProgress.total}`),
                   m("button", {
                     className: "ah-capture-progress__cancel",
