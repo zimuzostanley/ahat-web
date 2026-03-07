@@ -4,16 +4,19 @@ import { AdbConnection, PINNED_PROCESSES, type ProcessInfo, type CapturePhase, t
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
 import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, type SmapsNumericField } from "./capture-helpers";
 
-type SmapsSortFieldType = SmapsNumericField | "count";
-type VmaSortFieldType = SmapsNumericField | "addrStart";
+type SmapsSortFieldType = SmapsNumericField | "count" | "deltaPssKb";
+type VmaSortFieldType = SmapsNumericField | "addrStart" | "deltaPssKb";
 
 function makeSort<F extends string>(initial: F) {
   let field = initial;
   let asc = false;
+  let userSorted = false;
   return {
     get field() { return field; },
     get asc() { return asc; },
+    get userSorted() { return userSorted; },
     toggle(f: F) {
+      userSorted = true;
       if (field === f) asc = !asc;
       else { field = f; asc = false; }
     },
@@ -45,7 +48,14 @@ const VmaEntries: m.Component<{
         if (sortField === "addrStart") {
           return sortAsc ? a.addrStart.localeCompare(b.addrStart) : b.addrStart.localeCompare(a.addrStart);
         }
-        return sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField];
+        if (sortField === "deltaPssKb") {
+          if (!diffByAddr) return 0;
+          const aD = diffByAddr.get(a.addrStart)?.deltaPssKb ?? 0;
+          const bD = diffByAddr.get(b.addrStart)?.deltaPssKb ?? 0;
+          return sortAsc ? aD - bD : bD - aD;
+        }
+        const f = sortField;
+        return sortAsc ? a[f] - b[f] : b[f] - a[f];
       };
       return sortWithDiffPinning(entries, entryDiffs, cmp);
     })();
@@ -75,6 +85,11 @@ const VmaEntries: m.Component<{
             onclick: () => onToggleSort(f),
           }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
         ),
+        entryDiffs && m("td", {
+          className: "ah-vma-td--right ah-smaps-th--sortable",
+          style: { fontWeight: 500 },
+          onclick: () => onToggleSort("deltaPssKb"),
+        }, `\u0394 PSS ${sortField === "deltaPssKb" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
       ]),
       sorted.map((e, i) => {
         const ed = diffByAddr?.get(e.addrStart);
@@ -121,6 +136,11 @@ const VmaEntries: m.Component<{
               ),
             ]);
           }),
+          entryDiffs && m("td", {
+            className: `ah-vma-td--right ${ed ? deltaBgClass(ed.deltaPssKb) : ""}`,
+          }, ed && ed.deltaPssKb !== 0 ? m("span", {
+            className: ed.deltaPssKb > 0 ? "ah-delta-pos" : "ah-delta-neg",
+          }, fmtDelta(ed.deltaPssKb)) : "\u2014"),
         ]);
       }),
     ]);
@@ -158,7 +178,14 @@ const SmapsSubTable: m.Component<{
 
     const sorted = (() => {
       const cmp = (a: SmapsAggregated, b: SmapsAggregated) => {
-        return sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField];
+        if (sortField === "deltaPssKb") {
+          if (!diffByName) return 0;
+          const aD = diffByName.get(a.name)?.deltaPssKb ?? 0;
+          const bD = diffByName.get(b.name)?.deltaPssKb ?? 0;
+          return sortAsc ? aD - bD : bD - aD;
+        }
+        const f = sortField;
+        return sortAsc ? a[f] - b[f] : b[f] - a[f];
       };
       return sortWithDiffPinning(aggregated, smapsDiffs, cmp);
     })();
@@ -185,6 +212,10 @@ const SmapsSubTable: m.Component<{
             onclick: () => onToggleSort(f),
           }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
         ),
+        smapsDiffs && m("td", {
+          className: "ah-smaps-th--right ah-smaps-th--sortable",
+          onclick: () => onToggleSort("deltaPssKb"),
+        }, `\u0394 PSS ${sortField === "deltaPssKb" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
       ]),
       // Totals row
       m("tr", { className: "ah-smaps-total-row" }, [
@@ -209,6 +240,15 @@ const SmapsSubTable: m.Component<{
             ),
           ]);
         }),
+        smapsDiffs && (() => {
+          const totalDelta = totals.deltaPssKb;
+          return m("td", {
+            className: `ah-smaps-td--right ${deltaBgClass(totalDelta)}`,
+            style: { fontSize: "0.75rem" },
+          }, totalDelta !== 0 ? m("span", {
+            className: totalDelta > 0 ? "ah-delta-pos" : "ah-delta-neg",
+          }, fmtDelta(totalDelta)) : "\u2014");
+        })(),
       ]),
       sorted.map(g => {
         const sd = diffByName?.get(g.name);
@@ -259,6 +299,11 @@ const SmapsSubTable: m.Component<{
                 ),
               ]);
             }),
+            smapsDiffs && m("td", {
+              className: `ah-smaps-td--right ${sd ? deltaBgClass(sd.deltaPssKb) : ""}`,
+            }, sd && sd.deltaPssKb !== 0 ? m("span", {
+              className: sd.deltaPssKb > 0 ? "ah-delta-pos" : "ah-delta-neg",
+            }, fmtDelta(sd.deltaPssKb)) : "\u2014"),
           ]),
           expandedGroup === g.name && sd?.status !== "removed" && (
             m(VmaEntries, {
@@ -564,7 +609,7 @@ function DumpButton(): m.Component<{
 
 // --- Capture View ----------------------------------------------------------------
 
-type SortField = "pid" | "name" | "oomLabel" | SmapsNumericField;
+type SortField = "pid" | "name" | "oomLabel" | "deltaPssKb" | SmapsNumericField;
 
 // Process table columns shown when rollup data is available
 const ROLLUP_COLUMNS: [SmapsNumericField, string][] = [
@@ -1021,13 +1066,17 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
       recomputeDiffs();
 
+      const pinProcesses = !sort.userSorted;
+
       const sorted = (() => {
         if (!processes) return null;
         const copy = [...processes];
         copy.sort((a, b) => {
-          const aPin = PINNED_PROCESSES.has(a.name) ? 0 : 1;
-          const bPin = PINNED_PROCESSES.has(b.name) ? 0 : 1;
-          if (aPin !== bPin) return aPin - bPin;
+          if (pinProcesses) {
+            const aPin = PINNED_PROCESSES.has(a.name) ? 0 : 1;
+            const bPin = PINNED_PROCESSES.has(b.name) ? 0 : 1;
+            if (aPin !== bPin) return aPin - bPin;
+          }
           if (sort.field === "name") {
             const cmp = a.name.localeCompare(b.name);
             return sort.asc ? cmp : -cmp;
@@ -1037,6 +1086,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             return sort.asc ? cmp : -cmp;
           }
           if (sort.field === "pid") return sort.asc ? a.pid - b.pid : b.pid - a.pid;
+          if (sort.field === "deltaPssKb") {
+            const aD = processDiffs?.find(d => d.current.pid === a.pid)?.deltaPssKb ?? 0;
+            const bD = processDiffs?.find(d => d.current.pid === b.pid)?.deltaPssKb ?? 0;
+            return sort.asc ? aD - bD : bD - aD;
+          }
           const aVal = getFieldValue(a, sort.field, smapsRollups.get(a.pid));
           const bVal = getFieldValue(b, sort.field, smapsRollups.get(b.pid));
           return sort.asc ? aVal - bVal : bVal - aVal;
@@ -1048,9 +1102,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         if (!processDiffs) return null;
         const copy = [...processDiffs];
         copy.sort((a, b) => {
-          const aPin = PINNED_PROCESSES.has(a.current.name) ? 0 : 1;
-          const bPin = PINNED_PROCESSES.has(b.current.name) ? 0 : 1;
-          if (aPin !== bPin) return aPin - bPin;
+          if (pinProcesses) {
+            const aPin = PINNED_PROCESSES.has(a.current.name) ? 0 : 1;
+            const bPin = PINNED_PROCESSES.has(b.current.name) ? 0 : 1;
+            if (aPin !== bPin) return aPin - bPin;
+          }
           if (sort.field === "name") {
             const cmp = a.current.name.localeCompare(b.current.name);
             return sort.asc ? cmp : -cmp;
@@ -1060,6 +1116,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             return sort.asc ? cmp : -cmp;
           }
           if (sort.field === "pid") return sort.asc ? a.current.pid - b.current.pid : b.current.pid - a.current.pid;
+          if (sort.field === "deltaPssKb") return sort.asc ? a.deltaPssKb - b.deltaPssKb : b.deltaPssKb - a.deltaPssKb;
           const aVal = getFieldValue(a.current, sort.field, smapsRollups.get(a.current.pid));
           const bVal = getFieldValue(b.current, sort.field, smapsRollups.get(b.current.pid));
           return sort.asc ? aVal - bVal : bVal - aVal;
@@ -1311,6 +1368,10 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           onclick: () => sort.toggle(field),
                         }, `${label} ${sort.field === field ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
                       ),
+                      diffMode && m("th", {
+                        className: "ah-capture-th ah-capture-th--sortable ah-capture-th--right",
+                        onclick: () => sort.toggle("deltaPssKb"),
+                      }, `\u0394 PSS ${sort.field === "deltaPssKb" ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
                     ]),
                   ]),
                   m("tbody", [
@@ -1327,6 +1388,14 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           className: "ah-capture-td--right",
                         }, processTotals.values[f] > 0 ? fmtSize(processTotals.values[f] * 1024) : "\u2014"),
                       ),
+                      diffMode && (() => {
+                        const totalDelta = sortedDiffs ? sortedDiffs.reduce((s, d) => s + d.deltaPssKb, 0) : 0;
+                        return m("td", {
+                          className: "ah-capture-td--right",
+                        }, totalDelta !== 0 ? m("span", {
+                          className: totalDelta > 0 ? "ah-delta-pos" : "ah-delta-neg",
+                        }, fmtDelta(totalDelta)) : "\u2014");
+                      })(),
                     ]),
                     (diffMode && sortedDiffs ? sortedDiffs : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }))).map(d => {
                       const p = d.current;
@@ -1337,7 +1406,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                       const isSmapsExpanded = isExpanded && hasSmaps;
                       const isSmapsLoading = isExpanded && !hasSmaps && smapsFetchPid === p.pid;
                       const isDiff = diffMode && sortedDiffs !== null;
-                      const colCount = 3 + (hasOomLabel ? 1 : 0) + ROLLUP_COLUMNS.length;
+                      const colCount = 3 + (hasOomLabel ? 1 : 0) + ROLLUP_COLUMNS.length + (isDiff ? 1 : 0);
                       const rollup = smapsRollups.get(p.pid);
                       const prevRollup = prevSmapsRollups.get(p.pid);
                       const rowKey = `${d.status}-${p.pid}`;
@@ -1417,6 +1486,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                               ),
                             ]);
                           }),
+                          isDiff && m("td", {
+                            className: `ah-capture-td--right ${deltaBgClass(d.deltaPssKb)}`,
+                          }, d.deltaPssKb !== 0 ? m("span", {
+                            className: d.deltaPssKb > 0 ? "ah-delta-pos" : "ah-delta-neg",
+                          }, fmtDelta(d.deltaPssKb)) : "\u2014"),
                         ]),
                         isSmapsLoading && (
                           m("tr", [
