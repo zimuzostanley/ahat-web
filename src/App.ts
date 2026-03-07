@@ -84,6 +84,7 @@ export default function App(): m.Component {
   let activeTab: "device" | string = "device";
   let error: string | null = null;
   let captureUsed = false;
+  let pendingSessionFile: File | null = null;
   let menuOpen = false;
   let baselineSessionId: string | null = null;
   let diffing = false;
@@ -539,7 +540,20 @@ export default function App(): m.Component {
                     ),
                     "Capture from device"
                   )
-                )
+                ),
+                m("label", { className: "ah-landing__session-load" }, [
+                  "or load a saved session",
+                  m("input", {
+                    type: "file",
+                    accept: ".json",
+                    style: { display: "none" },
+                    onchange: (e: Event) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) { pendingSessionFile = file; captureUsed = true; }
+                      (e.target as HTMLInputElement).value = "";
+                    },
+                  }),
+                ]),
               ),
               error && (
                 m("div", { className: "ah-error-banner ah-mt-4" }, error)
@@ -568,7 +582,7 @@ export default function App(): m.Component {
               )
             ),
             m("div", { className: sessions.length > 0 ? "ah-capture-wrap--compact" : "ah-capture-wrap" },
-              m(CaptureView, { onCaptured: loadBuffer, onVmaDump: loadVmaDump, conn: adbConn })
+              m(CaptureView, { onCaptured: loadBuffer, onVmaDump: loadVmaDump, conn: adbConn, sessionFile: pendingSessionFile })
             )
           )
         ),

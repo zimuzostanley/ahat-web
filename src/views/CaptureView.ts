@@ -655,6 +655,7 @@ interface CaptureViewAttrs {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
   onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
   conn: AdbConnection;
+  sessionFile?: File | null;
 }
 
 function CaptureView(): m.Component<CaptureViewAttrs> {
@@ -1189,12 +1190,17 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   // Attrs-derived callbacks stored each render
   let _onCaptured: (name: string, buffer: ArrayBuffer) => void;
   let _onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
+  let _importedSessionFile: File | null = null;
 
   return {
     oninit(vnode) {
       conn = vnode.attrs.conn;
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
+      if (vnode.attrs.sessionFile) {
+        _importedSessionFile = vnode.attrs.sessionFile;
+        importSession(vnode.attrs.sessionFile);
+      }
     },
     onremove() {
       cancelEnrichment();
@@ -1207,6 +1213,10 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       conn = vnode.attrs.conn;
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
+      if (vnode.attrs.sessionFile && vnode.attrs.sessionFile !== _importedSessionFile) {
+        _importedSessionFile = vnode.attrs.sessionFile;
+        importSession(vnode.attrs.sessionFile);
+      }
 
       recomputeDiffs();
 
@@ -1405,26 +1415,28 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   disabled: connectStatus !== null,
                 }, connectStatus ?? "Reconnect")
               ),
-              m("span", { className: "ah-capture-toolbar__divider" }),
               processes && m(Fragment, [
+                m("span", { className: "ah-capture-toolbar__divider" }),
                 m("button", {
                   className: "ah-capture-toolbar__btn",
                   onclick: exportSession,
                 }, "Save"),
-                m("span", { className: "ah-capture-toolbar__divider" }),
               ]),
-              m("label", { className: "ah-capture-toolbar__btn ah-capture-toolbar__file-label" }, [
-                "Load",
-                m("input", {
-                  type: "file",
-                  accept: ".json",
-                  style: { display: "none" },
-                  onchange: (e: Event) => {
-                    const file = (e.target as HTMLInputElement).files?.[0];
-                    if (file) importSession(file);
-                    (e.target as HTMLInputElement).value = "";
-                  },
-                }),
+              !connected && m(Fragment, [
+                m("span", { className: "ah-capture-toolbar__divider" }),
+                m("label", { className: "ah-capture-toolbar__btn ah-capture-toolbar__file-label" }, [
+                  "Load",
+                  m("input", {
+                    type: "file",
+                    accept: ".json",
+                    style: { display: "none" },
+                    onchange: (e: Event) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) importSession(file);
+                      (e.target as HTMLInputElement).value = "";
+                    },
+                  }),
+                ]),
               ]),
             ]),
 
