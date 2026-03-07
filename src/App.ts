@@ -554,7 +554,14 @@ export default function App(): m.Component {
             sessions.length === 0 && (
               m("div", { className: "ah-capture-header" },
                 m("div", { className: "ah-capture-header__inner" },
-                  m("h1", { className: "ah-capture-header__title" }, "Capture from device"),
+                  m("button", {
+                    className: "ah-capture-header__logo",
+                    onclick: () => { captureUsed = false; },
+                    title: "Back to home",
+                  },
+                    m("div", { className: "ah-header__logo-icon" }, "A"),
+                    m("span", { className: "ah-capture-header__title" }, "Capture from device")
+                  ),
                   m(ThemeToggle, { variant: "landing" })
                 )
               )
