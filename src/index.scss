@@ -1549,35 +1549,43 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   margin-left: auto;
 }
 
-.ah-capture-toolbar__btn {
+// Shared base for all capture toolbar buttons
+%capture-btn {
   font-size: 0.75rem;
   line-height: 1rem;
+  height: 1.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+  transition: color 0.15s;
+}
+
+.ah-capture-toolbar__btn {
+  @extend %capture-btn;
   color: var(--ah-text-faint);
   &:hover { color: var(--ah-text-secondary); }
   &:disabled { color: var(--ah-text-fainter); cursor: not-allowed; }
 }
 
 .ah-capture-toolbar__btn--accent {
+  @extend %capture-btn;
   color: var(--ah-link-alt);
-  border: 1px solid var(--ah-link-decoration);
-  padding: 0.125rem 0.5rem;
+  border-color: var(--ah-link-decoration);
   &:hover { color: var(--ah-accent-hover); }
 }
 
 .ah-capture-toolbar__btn--warning {
+  @extend %capture-btn;
   color: var(--ah-badge-warning);
-  border: 1px solid var(--ah-btn-capture-border);
-  padding: 0.125rem 0.5rem;
+  border-color: var(--ah-btn-capture-border);
   &:hover { color: var(--ah-btn-capture-hover-text); }
 }
 
 .ah-capture-toolbar__btn--connect {
-  padding: 0.125rem 0.75rem;
-  font-size: 0.75rem;
-  line-height: 1rem;
+  @extend %capture-btn;
+  padding: 0 0.75rem;
   background: #292524;
   color: white;
-  transition: background-color 0.15s;
+  border-color: transparent;
   &:hover { background: #44403c; }
   &:disabled { opacity: 0.5; }
   .dark & { background: #44403c; &:hover { background: #57534e; } }
