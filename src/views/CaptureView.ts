@@ -2,10 +2,13 @@ import m from "mithril";
 import { Fragment } from "../mithril-helpers";
 import { AdbConnection, PINNED_PROCESSES, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
-import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, type SmapsNumericField } from "./capture-helpers";
+import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, type SmapsNumericField, type SmapsDeltaKey } from "./capture-helpers";
 
-type SmapsSortFieldType = SmapsNumericField | "count" | "deltaPssKb";
-type VmaSortFieldType = SmapsNumericField | "addrStart" | "deltaPssKb";
+type SmapsSortFieldType = SmapsNumericField | SmapsDeltaKey | "count";
+type VmaSortFieldType = SmapsNumericField | SmapsDeltaKey | "addrStart";
+
+const DELTA_KEYS = new Set<string>(Object.values(SMAPS_DELTA_KEY));
+function isDeltaKey(f: string): f is SmapsDeltaKey { return DELTA_KEYS.has(f); }
 
 function makeSort<F extends string>(initial: F) {
   let field = initial;
@@ -48,10 +51,10 @@ const VmaEntries: m.Component<{
         if (sortField === "addrStart") {
           return sortAsc ? a.addrStart.localeCompare(b.addrStart) : b.addrStart.localeCompare(a.addrStart);
         }
-        if (sortField === "deltaPssKb") {
+        if (isDeltaKey(sortField)) {
           if (!diffByAddr) return 0;
-          const aD = diffByAddr.get(a.addrStart)?.deltaPssKb ?? 0;
-          const bD = diffByAddr.get(b.addrStart)?.deltaPssKb ?? 0;
+          const aD = diffByAddr.get(a.addrStart)?.[sortField] ?? 0;
+          const bD = diffByAddr.get(b.addrStart)?.[sortField] ?? 0;
           return sortAsc ? aD - bD : bD - aD;
         }
         const f = sortField;
@@ -77,19 +80,26 @@ const VmaEntries: m.Component<{
             onclick: () => onDump(pid, processName, groupName, entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }))),
           }, "dump all"),
         ]),
-        SMAPS_COLUMNS.map(([f, label]) =>
-          m("td", {
-            key: f,
-            className: "ah-vma-td--right ah-smaps-th--sortable",
-            style: { fontWeight: 500 },
-            onclick: () => onToggleSort(f),
-          }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
-        ),
-        entryDiffs && m("td", {
-          className: "ah-vma-td--right ah-smaps-th--sortable",
-          style: { fontWeight: 500 },
-          onclick: () => onToggleSort("deltaPssKb"),
-        }, `\u0394 PSS ${sortField === "deltaPssKb" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
+        SMAPS_COLUMNS.flatMap(([f, label]) => {
+          const cells = [
+            m("td", {
+              key: f,
+              className: "ah-vma-td--right ah-smaps-th--sortable",
+              style: { fontWeight: 500 },
+              onclick: () => onToggleSort(f),
+            }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
+          ];
+          if (entryDiffs) {
+            const dk = SMAPS_DELTA_KEY[f];
+            cells.push(m("td", {
+              key: dk,
+              className: "ah-vma-td--right ah-smaps-th--sortable",
+              style: { fontWeight: 500 },
+              onclick: () => onToggleSort(dk),
+            }, `\u0394 ${label} ${sortField === dk ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`));
+          }
+          return cells;
+        }),
       ]),
       sorted.map((e, i) => {
         const ed = diffByAddr?.get(e.addrStart);
@@ -121,26 +131,24 @@ const VmaEntries: m.Component<{
               onclick: () => onDump(pid, processName, `${groupName}_${e.addrStart}-${e.addrEnd}`, [{ addrStart: e.addrStart, addrEnd: e.addrEnd }]),
             }, "dump"),
           ]),
-          SMAPS_COLUMNS.map(([f]) => {
-            const delta = ed ? ed[SMAPS_DELTA_KEY[f]] : 0;
-            return m("td", {
-              key: f,
-              className: `ah-vma-td--right ${ed ? deltaBgClass(delta) : ""}`,
-            }, [
-              e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014",
-              ed && (
-                m("span", {
-                  className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
-                  style: { display: "inline-block", minWidth: "4rem", textAlign: "right" },
-                }, delta !== 0 ? fmtDelta(delta) : "")
-              ),
-            ]);
+          SMAPS_COLUMNS.flatMap(([f]) => {
+            const cells = [
+              m("td", {
+                key: f,
+                className: "ah-vma-td--right",
+              }, e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014"),
+            ];
+            if (entryDiffs) {
+              const delta = ed ? ed[SMAPS_DELTA_KEY[f]] : 0;
+              cells.push(m("td", {
+                key: `d-${f}`,
+                className: `ah-vma-td--right ${ed ? deltaBgClass(delta) : ""}`,
+              }, delta !== 0 ? m("span", {
+                className: delta > 0 ? "ah-delta-pos" : "ah-delta-neg",
+              }, fmtDelta(delta)) : "\u2014"));
+            }
+            return cells;
           }),
-          entryDiffs && m("td", {
-            className: `ah-vma-td--right ${ed ? deltaBgClass(ed.deltaPssKb) : ""}`,
-          }, ed && ed.deltaPssKb !== 0 ? m("span", {
-            className: ed.deltaPssKb > 0 ? "ah-delta-pos" : "ah-delta-neg",
-          }, fmtDelta(ed.deltaPssKb)) : "\u2014"),
         ]);
       }),
     ]);
@@ -178,10 +186,10 @@ const SmapsSubTable: m.Component<{
 
     const sorted = (() => {
       const cmp = (a: SmapsAggregated, b: SmapsAggregated) => {
-        if (sortField === "deltaPssKb") {
+        if (isDeltaKey(sortField)) {
           if (!diffByName) return 0;
-          const aD = diffByName.get(a.name)?.deltaPssKb ?? 0;
-          const bD = diffByName.get(b.name)?.deltaPssKb ?? 0;
+          const aD = diffByName.get(a.name)?.[sortField] ?? 0;
+          const bD = diffByName.get(b.name)?.[sortField] ?? 0;
           return sortAsc ? aD - bD : bD - aD;
         }
         const f = sortField;
@@ -205,17 +213,24 @@ const SmapsSubTable: m.Component<{
           style: { paddingRight: "0.25rem" },
           onclick: () => onToggleSort("count"),
         }, `# ${sortField === "count" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
-        SMAPS_COLUMNS.map(([f, label]) =>
-          m("td", {
-            key: f,
-            className: "ah-smaps-th--right ah-smaps-th--sortable",
-            onclick: () => onToggleSort(f),
-          }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
-        ),
-        smapsDiffs && m("td", {
-          className: "ah-smaps-th--right ah-smaps-th--sortable",
-          onclick: () => onToggleSort("deltaPssKb"),
-        }, `\u0394 PSS ${sortField === "deltaPssKb" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
+        SMAPS_COLUMNS.flatMap(([f, label]) => {
+          const cells = [
+            m("td", {
+              key: f,
+              className: "ah-smaps-th--right ah-smaps-th--sortable",
+              onclick: () => onToggleSort(f),
+            }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
+          ];
+          if (smapsDiffs) {
+            const dk = SMAPS_DELTA_KEY[f];
+            cells.push(m("td", {
+              key: dk,
+              className: "ah-smaps-th--right ah-smaps-th--sortable",
+              onclick: () => onToggleSort(dk),
+            }, `\u0394 ${label} ${sortField === dk ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`));
+          }
+          return cells;
+        }),
       ]),
       // Totals row
       m("tr", { className: "ah-smaps-total-row" }, [
@@ -224,31 +239,26 @@ const SmapsSubTable: m.Component<{
           className: "ah-smaps-td",
           style: { paddingLeft: "1.5rem", color: "var(--ah-text-secondary)", fontSize: "0.75rem" },
         }, "Total"),
-        SMAPS_COLUMNS.map(([f]) => {
-          const delta = totals[SMAPS_DELTA_KEY[f]];
-          return m("td", {
-            key: f,
-            className: `ah-smaps-td--right ${smapsDiffs ? deltaBgClass(delta) : ""}`,
-            style: { fontSize: "0.75rem" },
-          }, [
-            totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014",
-            smapsDiffs && (
-              m("span", {
-                className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
-                style: { fontSize: "10px", fontWeight: "normal", display: "inline-block", minWidth: "4rem", textAlign: "right" },
-              }, delta !== 0 ? fmtDelta(delta) : "")
-            ),
-          ]);
+        SMAPS_COLUMNS.flatMap(([f]) => {
+          const cells = [
+            m("td", {
+              key: f,
+              className: "ah-smaps-td--right",
+              style: { fontSize: "0.75rem" },
+            }, totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"),
+          ];
+          if (smapsDiffs) {
+            const delta = totals[SMAPS_DELTA_KEY[f]];
+            cells.push(m("td", {
+              key: `d-${f}`,
+              className: `ah-smaps-td--right ${deltaBgClass(delta)}`,
+              style: { fontSize: "0.75rem" },
+            }, delta !== 0 ? m("span", {
+              className: delta > 0 ? "ah-delta-pos" : "ah-delta-neg",
+            }, fmtDelta(delta)) : "\u2014"));
+          }
+          return cells;
         }),
-        smapsDiffs && (() => {
-          const totalDelta = totals.deltaPssKb;
-          return m("td", {
-            className: `ah-smaps-td--right ${deltaBgClass(totalDelta)}`,
-            style: { fontSize: "0.75rem" },
-          }, totalDelta !== 0 ? m("span", {
-            className: totalDelta > 0 ? "ah-delta-pos" : "ah-delta-neg",
-          }, fmtDelta(totalDelta)) : "\u2014");
-        })(),
       ]),
       sorted.map(g => {
         const sd = diffByName?.get(g.name);
@@ -284,26 +294,24 @@ const SmapsSubTable: m.Component<{
               ]),
             ]),
             m("td", { className: "ah-smaps-td--count" }, String(g.count)),
-            SMAPS_COLUMNS.map(([f]) => {
-              const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
-              return m("td", {
-                key: f,
-                className: `ah-smaps-td--right ${sd ? deltaBgClass(delta) : ""}`,
-              }, [
-                g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014",
-                sd && (
-                  m("span", {
-                    className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
-                    style: { fontSize: "10px", display: "inline-block", minWidth: "4rem", textAlign: "right" },
-                  }, delta !== 0 ? fmtDelta(delta) : "")
-                ),
-              ]);
+            SMAPS_COLUMNS.flatMap(([f]) => {
+              const cells = [
+                m("td", {
+                  key: f,
+                  className: "ah-smaps-td--right",
+                }, g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"),
+              ];
+              if (smapsDiffs) {
+                const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
+                cells.push(m("td", {
+                  key: `d-${f}`,
+                  className: `ah-smaps-td--right ${sd ? deltaBgClass(delta) : ""}`,
+                }, delta !== 0 ? m("span", {
+                  className: delta > 0 ? "ah-delta-pos" : "ah-delta-neg",
+                }, fmtDelta(delta)) : "\u2014"));
+              }
+              return cells;
             }),
-            smapsDiffs && m("td", {
-              className: `ah-smaps-td--right ${sd ? deltaBgClass(sd.deltaPssKb) : ""}`,
-            }, sd && sd.deltaPssKb !== 0 ? m("span", {
-              className: sd.deltaPssKb > 0 ? "ah-delta-pos" : "ah-delta-neg",
-            }, fmtDelta(sd.deltaPssKb)) : "\u2014"),
           ]),
           expandedGroup === g.name && sd?.status !== "removed" && (
             m(VmaEntries, {
@@ -375,33 +383,46 @@ function SharedMappingsTable(): m.Component<{
                   style: { width: "2rem", paddingRight: "0.25rem" },
                   onclick: () => sort.toggle("processCount"),
                 }, `Procs ${sort.field === "processCount" ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
-                SMAPS_COLUMNS.map(([f, label]) =>
-                  m("th", {
-                    key: f,
-                    className: "ah-smaps-th--right ah-smaps-th--sortable",
-                    onclick: () => sort.toggle(f),
-                  }, `${label} ${sort.field === f ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
-                ),
+                SMAPS_COLUMNS.flatMap(([f, label]) => {
+                  const cells = [
+                    m("th", {
+                      key: f,
+                      className: "ah-smaps-th--right ah-smaps-th--sortable",
+                      onclick: () => sort.toggle(f),
+                    }, `${label} ${sort.field === f ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
+                  ];
+                  if (diffs) {
+                    cells.push(m("th", {
+                      key: `d-${f}`,
+                      className: "ah-smaps-th--right",
+                      style: { color: "var(--ah-text-faint)" },
+                    }, `\u0394 ${label}`));
+                  }
+                  return cells;
+                }),
               ]),
             ]),
             m("tbody", [
               m("tr", { className: "ah-smaps-total-row" }, [
                 m("td", { className: "ah-smaps-td", style: { color: "var(--ah-text-secondary)" } }, "Total"),
                 m("td"),
-                SMAPS_COLUMNS.map(([f]) => {
-                  const delta = totals[SMAPS_DELTA_KEY[f]];
-                  return m("td", {
-                    key: f,
-                    className: `ah-smaps-td--right ${diffs ? deltaBgClass(delta) : ""}`,
-                  }, [
-                    totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014",
-                    diffs && (
-                      m("span", {
-                        className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
-                        style: { fontSize: "10px", fontWeight: "normal", display: "inline-block", minWidth: "4rem", textAlign: "right" },
-                      }, delta !== 0 ? fmtDelta(delta) : "")
-                    ),
-                  ]);
+                SMAPS_COLUMNS.flatMap(([f]) => {
+                  const cells = [
+                    m("td", {
+                      key: f,
+                      className: "ah-smaps-td--right",
+                    }, totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"),
+                  ];
+                  if (diffs) {
+                    const delta = totals[SMAPS_DELTA_KEY[f]];
+                    cells.push(m("td", {
+                      key: `d-${f}`,
+                      className: `ah-smaps-td--right ${deltaBgClass(delta)}`,
+                    }, delta !== 0 ? m("span", {
+                      className: delta > 0 ? "ah-delta-pos" : "ah-delta-neg",
+                    }, fmtDelta(delta)) : "\u2014"));
+                  }
+                  return cells;
                 }),
               ]),
               sorted.map((mp, i) => {
@@ -429,20 +450,23 @@ function SharedMappingsTable(): m.Component<{
                       ]),
                     ]),
                     m("td", { className: "ah-smaps-td--count" }, String(mp.processCount)),
-                    SMAPS_COLUMNS.map(([f]) => {
-                      const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
-                      return m("td", {
-                        key: f,
-                        className: `ah-smaps-td--right ${sd ? deltaBgClass(delta) : ""}`,
-                      }, [
-                        mp[f] > 0 ? fmtSize(mp[f] * 1024) : "\u2014",
-                        sd && (
-                          m("span", {
-                            className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
-                            style: { fontSize: "10px", display: "inline-block", minWidth: "4rem", textAlign: "right" },
-                          }, delta !== 0 ? fmtDelta(delta) : "")
-                        ),
-                      ]);
+                    SMAPS_COLUMNS.flatMap(([f]) => {
+                      const cells = [
+                        m("td", {
+                          key: f,
+                          className: "ah-smaps-td--right",
+                        }, mp[f] > 0 ? fmtSize(mp[f] * 1024) : "\u2014"),
+                      ];
+                      if (diffs) {
+                        const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
+                        cells.push(m("td", {
+                          key: `d-${f}`,
+                          className: `ah-smaps-td--right ${sd ? deltaBgClass(delta) : ""}`,
+                        }, delta !== 0 ? m("span", {
+                          className: delta > 0 ? "ah-delta-pos" : "ah-delta-neg",
+                        }, fmtDelta(delta)) : "\u2014"));
+                      }
+                      return cells;
                     }),
                   ]),
                   expandedMapping === mp.name && sd?.status !== "removed" && m(Fragment, [
@@ -609,7 +633,7 @@ function DumpButton(): m.Component<{
 
 // --- Capture View ----------------------------------------------------------------
 
-type SortField = "pid" | "name" | "oomLabel" | "deltaPssKb" | SmapsNumericField;
+type SortField = "pid" | "name" | "oomLabel" | SmapsNumericField | SmapsDeltaKey;
 
 // Process table columns shown when rollup data is available
 const ROLLUP_COLUMNS: [SmapsNumericField, string][] = [
@@ -1088,9 +1112,17 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             return sort.asc ? cmp : -cmp;
           }
           if (sort.field === "pid") return sort.asc ? a.pid - b.pid : b.pid - a.pid;
-          if (sort.field === "deltaPssKb") {
-            const aD = processDiffs?.find(d => d.current.pid === a.pid)?.deltaPssKb ?? 0;
-            const bD = processDiffs?.find(d => d.current.pid === b.pid)?.deltaPssKb ?? 0;
+          if (isDeltaKey(sort.field)) {
+            const sf = sort.field;
+            // Find the base field from the delta key
+            const baseField = Object.entries(SMAPS_DELTA_KEY).find(([, dk]) => dk === sf)?.[0] as SmapsNumericField | undefined;
+            if (!baseField) return 0;
+            const aR = smapsRollups.get(a.pid);
+            const bR = smapsRollups.get(b.pid);
+            const aPR = prevSmapsRollups.get(a.pid);
+            const bPR = prevSmapsRollups.get(b.pid);
+            const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
+            const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
             return sort.asc ? aD - bD : bD - aD;
           }
           const aVal = getFieldValue(a, sort.field, smapsRollups.get(a.pid));
@@ -1118,7 +1150,18 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             return sort.asc ? cmp : -cmp;
           }
           if (sort.field === "pid") return sort.asc ? a.current.pid - b.current.pid : b.current.pid - a.current.pid;
-          if (sort.field === "deltaPssKb") return sort.asc ? a.deltaPssKb - b.deltaPssKb : b.deltaPssKb - a.deltaPssKb;
+          if (isDeltaKey(sort.field)) {
+            const sf = sort.field;
+            const baseField = Object.entries(SMAPS_DELTA_KEY).find(([, dk]) => dk === sf)?.[0] as SmapsNumericField | undefined;
+            if (!baseField) return 0;
+            const aR = smapsRollups.get(a.current.pid);
+            const bR = smapsRollups.get(b.current.pid);
+            const aPR = prevSmapsRollups.get(a.current.pid);
+            const bPR = prevSmapsRollups.get(b.current.pid);
+            const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
+            const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
+            return sort.asc ? aD - bD : bD - aD;
+          }
           const aVal = getFieldValue(a.current, sort.field, smapsRollups.get(a.current.pid));
           const bVal = getFieldValue(b.current, sort.field, smapsRollups.get(b.current.pid));
           return sort.asc ? aVal - bVal : bVal - aVal;
@@ -1363,17 +1406,24 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           onclick: () => sort.toggle("oomLabel"),
                         }, `State ${sort.field === "oomLabel" ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`)
                       ),
-                      ROLLUP_COLUMNS.map(([field, label]) =>
-                        m("th", {
-                          key: field,
-                          className: "ah-capture-th ah-capture-th--sortable ah-capture-th--right",
-                          onclick: () => sort.toggle(field),
-                        }, `${label} ${sort.field === field ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
-                      ),
-                      diffMode && m("th", {
-                        className: "ah-capture-th ah-capture-th--sortable ah-capture-th--right",
-                        onclick: () => sort.toggle("deltaPssKb"),
-                      }, `\u0394 PSS ${sort.field === "deltaPssKb" ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
+                      ROLLUP_COLUMNS.flatMap(([field, label]) => {
+                        const cells = [
+                          m("th", {
+                            key: field,
+                            className: "ah-capture-th ah-capture-th--sortable ah-capture-th--right",
+                            onclick: () => sort.toggle(field),
+                          }, `${label} ${sort.field === field ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
+                        ];
+                        if (diffMode) {
+                          const dk = SMAPS_DELTA_KEY[field];
+                          cells.push(m("th", {
+                            key: dk,
+                            className: "ah-capture-th ah-capture-th--sortable ah-capture-th--right",
+                            onclick: () => sort.toggle(dk),
+                          }, `\u0394 ${label} ${sort.field === dk ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`));
+                        }
+                        return cells;
+                      }),
                     ]),
                   ]),
                   m("tbody", [
@@ -1384,20 +1434,28 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                         style: { color: "var(--ah-text-secondary)" },
                         colSpan: hasOomLabel ? 4 : 3,
                       }, `Total (${processTotals.count})`),
-                      ROLLUP_COLUMNS.map(([f]) =>
-                        m("td", {
-                          key: f,
-                          className: "ah-capture-td--right",
-                        }, processTotals.values[f] > 0 ? fmtSize(processTotals.values[f] * 1024) : "\u2014"),
-                      ),
-                      diffMode && (() => {
-                        const totalDelta = sortedDiffs ? sortedDiffs.reduce((s, d) => s + d.deltaPssKb, 0) : 0;
-                        return m("td", {
-                          className: "ah-capture-td--right",
-                        }, totalDelta !== 0 ? m("span", {
-                          className: totalDelta > 0 ? "ah-delta-pos" : "ah-delta-neg",
-                        }, fmtDelta(totalDelta)) : "\u2014");
-                      })(),
+                      ROLLUP_COLUMNS.flatMap(([f]) => {
+                        const cells = [
+                          m("td", {
+                            key: f,
+                            className: "ah-capture-td--right",
+                          }, processTotals.values[f] > 0 ? fmtSize(processTotals.values[f] * 1024) : "\u2014"),
+                        ];
+                        if (diffMode) {
+                          const totalDelta = sortedDiffs ? sortedDiffs.reduce((s, d) => {
+                            const r = smapsRollups.get(d.current.pid);
+                            const pr = prevSmapsRollups.get(d.current.pid);
+                            return s + (r && pr ? r[f] - pr[f] : 0);
+                          }, 0) : 0;
+                          cells.push(m("td", {
+                            key: `d-${f}`,
+                            className: "ah-capture-td--right",
+                          }, totalDelta !== 0 ? m("span", {
+                            className: totalDelta > 0 ? "ah-delta-pos" : "ah-delta-neg",
+                          }, fmtDelta(totalDelta)) : "\u2014"));
+                        }
+                        return cells;
+                      }),
                     ]),
                     (diffMode && sortedDiffs ? sortedDiffs : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }))).map(d => {
                       const p = d.current;
@@ -1408,7 +1466,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                       const isSmapsExpanded = isExpanded && hasSmaps;
                       const isSmapsLoading = isExpanded && !hasSmaps && smapsFetchPid === p.pid;
                       const isDiff = diffMode && sortedDiffs !== null;
-                      const colCount = 3 + (hasOomLabel ? 1 : 0) + ROLLUP_COLUMNS.length + (isDiff ? 1 : 0);
+                      const colCount = 3 + (hasOomLabel ? 1 : 0) + ROLLUP_COLUMNS.length + (isDiff ? ROLLUP_COLUMNS.length : 0);
                       const rollup = smapsRollups.get(p.pid);
                       const prevRollup = prevSmapsRollups.get(p.pid);
                       const rowKey = `${d.status}-${p.pid}`;
@@ -1472,27 +1530,25 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                               ),
                             ])
                           ),
-                          ROLLUP_COLUMNS.map(([f]) => {
+                          ROLLUP_COLUMNS.flatMap(([f]) => {
                             const value = getFieldValue(p, f, rollup);
-                            const delta = isDiff && prevRollup && rollup ? rollup[f] - prevRollup[f] : 0;
-                            return m("td", {
-                              key: f,
-                              className: `ah-capture-td--right ${isDiff ? deltaBgClass(delta) : ""}`,
-                            }, [
-                              value > 0 ? fmtSize(value * 1024) : "\u2014",
-                              isDiff && delta !== 0 && (
-                                m("span", {
-                                  className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : "ah-delta-neg"}`,
-                                  style: { fontSize: "10px" },
-                                }, fmtDelta(delta))
-                              ),
-                            ]);
+                            const cells = [
+                              m("td", {
+                                key: f,
+                                className: "ah-capture-td--right",
+                              }, value > 0 ? fmtSize(value * 1024) : "\u2014"),
+                            ];
+                            if (isDiff) {
+                              const delta = prevRollup && rollup ? rollup[f] - prevRollup[f] : 0;
+                              cells.push(m("td", {
+                                key: `d-${f}`,
+                                className: `ah-capture-td--right ${deltaBgClass(delta)}`,
+                              }, delta !== 0 ? m("span", {
+                                className: delta > 0 ? "ah-delta-pos" : "ah-delta-neg",
+                              }, fmtDelta(delta)) : "\u2014"));
+                            }
+                            return cells;
                           }),
-                          isDiff && m("td", {
-                            className: `ah-capture-td--right ${deltaBgClass(d.deltaPssKb)}`,
-                          }, d.deltaPssKb !== 0 ? m("span", {
-                            className: d.deltaPssKb > 0 ? "ah-delta-pos" : "ah-delta-neg",
-                          }, fmtDelta(d.deltaPssKb)) : "\u2014"),
                         ]),
                         isSmapsLoading && (
                           m("tr", [
