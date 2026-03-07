@@ -1291,6 +1291,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
       // Display data: snapshot view or live
       const viewSnap = getViewSnap();
+      const isLive = viewSnapIdx === null;
       const dProcs = viewSnap?.processes ?? processes;
       const dMemInfo = viewSnap?.globalMemInfo ?? globalMemInfo;
       const dRollups = viewSnap?.smapsRollups ?? smapsRollups;
@@ -1756,7 +1757,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                               m(DumpButton, {
                                 pid: p.pid,
                                 job: captureJobs.get(p.pid),
-                                disabled: !connected,
+                                disabled: !connected || !isLive,
                                 onDump: startCapture,
                                 onCancel: cancelCapture,
                               })
@@ -1835,7 +1836,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             vmaSortAsc: vmaSort.asc,
                             onToggleVmaSort: (f: VmaSortFieldType) => vmaSort.toggle(f),
                             onDump: handleVmaDump,
-                            dumpDisabled: !connected || !!vmaDumpStatus,
+                            dumpDisabled: !connected || !isLive || !!vmaDumpStatus,
                             smapsDiffs: isDiff && baseSmapsData?.has(p.pid) ? diffSmaps(baseSmapsData.get(p.pid)!, dSmaps.get(p.pid)!) : null,
                             prevAggregated: isDiff && baseSmapsData?.has(p.pid) ? baseSmapsData.get(p.pid)! : null,
                             showDeltaCols: diffMode,
@@ -1856,7 +1857,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   m("button", {
                     className: "ah-capture-toolbar__btn--accent ah-mb-2",
                     onclick: scanStatus ? cancelSmapsFetch : scanAllSmaps,
-                    disabled: !connected || !!vmaDumpStatus,
+                    disabled: !connected || !isLive || !!vmaDumpStatus,
                   }, scanStatus ? `Cancel Scan (${smapsData.size}/${dProcs?.length ?? 0})` : `Scan All VMAs (${smapsData.size}/${dProcs?.length ?? 0})`)
                 ),
                 sharedMappings && sharedMappings.length > 0 && (
@@ -1867,7 +1868,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     diffs: sharedMappingDiffs,
                     smapsData: dSmaps,
                     onDump: handleVmaDump,
-                    dumpDisabled: !connected || !!vmaDumpStatus,
+                    dumpDisabled: !connected || !isLive || !!vmaDumpStatus,
                   })
                 ),
               ])

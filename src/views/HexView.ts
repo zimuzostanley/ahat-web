@@ -706,8 +706,11 @@ function HexView(): m.Component<HexViewAttrs> {
                   return m("div", {
                     key: i,
                     className: "ah-hex-strings__row",
-                    onclick: () => scrollToOffset(s.offset),
-                    title: `Offset: 0x${s.offset.toString(16)}${vma !== undefined ? ` | VMA: 0x${vma.toString(16)}` : ""}`,
+                    onclick: () => {
+                      scrollToOffset(s.offset);
+                      navigator.clipboard.writeText(s.str).catch(() => {});
+                    },
+                    title: `Click to jump & copy \u2014 0x${s.offset.toString(16)}${vma !== undefined ? ` | VMA: 0x${vma.toString(16)}` : ""}`,
                   },
                     m("span", { className: "ah-hex-strings__offset" },
                       (vma ?? s.offset).toString(16).padStart(vma !== undefined ? (addrWidth ?? 8) : 8, "0")),

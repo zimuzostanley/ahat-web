@@ -813,6 +813,10 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   margin: 0 auto;
 }
 
+.ah-capture-header--compact {
+  padding: 0.5rem 1rem 0;
+}
+
 .ah-capture-header__inner {
   display: flex;
   align-items: center;
@@ -1453,7 +1457,7 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 }
 
 .ah-hex-strings {
-  width: 20rem;
+  width: 30rem;
   border: 1px solid var(--ah-border);
   border-left: none;
   background: var(--ah-surface);
