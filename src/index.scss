@@ -1961,8 +1961,8 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 
 .ah-global-mem__inner {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.5rem;
+  flex-wrap: nowrap;
+  gap: 0 1.5rem;
   font-size: 0.75rem;
   line-height: 1rem;
 }
