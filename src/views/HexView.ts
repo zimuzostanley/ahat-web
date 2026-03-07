@@ -543,202 +543,189 @@ function HexView(): m.Component<HexViewAttrs> {
       const diffRowsForMinimap = diffRows;
       const totalRowsForMinimap = totalRows;
 
-      return (
-        <div>
-          <div className="ah-hex-toolbar">
-            <h2 className="ah-view-heading ah-truncate" style={{ marginBottom: 0 }}>{name}</h2>
-            <span style={{ fontSize: "0.875rem", color: "var(--ah-text-muted)" }}>{fmtSize(data.byteLength)}</span>
-            <span style={{ fontSize: "0.75rem", color: "var(--ah-text-faint)" }}>{totalRows.toLocaleString()} rows</span>
-            <div className="ah-hex-toolbar__actions">
-              {availableDiffs && availableDiffs.length > 0 && (
-                <select
-                  className="ah-hex-select"
-                  value={diffBaselineId ?? ""}
-                  onchange={(e: Event) => { diffBaselineId = (e.target as HTMLSelectElement).value || null; }}
-                >
-                  <option value="">Compare{"\u2026"}</option>
-                  {availableDiffs.map(d => (
-                    <option key={d.id} value={d.id}>{d.name}</option>
-                  ))}
-                </select>
-              )}
-              <button
-                className={`ah-hex-btn${showStrings ? " ah-hex-btn--active" : ""}`}
-                onclick={() => { showStrings = !showStrings; }}
-              >Strings</button>
-              <button
-                className="ah-hex-btn"
-                onclick={() => handleCopy(data, regionMap, addrWidth)}
-              >{copied ? "Copied" : "Copy"}</button>
-              <button
-                className="ah-hex-btn"
-                onclick={() => downloadBlob(name + ".bin", buffer)}
-              >Download</button>
-            </div>
-          </div>
-          {regionMap && regionMap.length > 0 && (
-            <div className="ah-hex-vma-info">
-              {regionMap.length === 1
-                ? <>VMA {regionMap[0].vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}{"\u2013"}{(regionMap[0].vmaBase + regionMap[0].offsetEnd).toString(16).padStart(addrWidth ?? 8, "0")}</>
-                : <>{regionMap.length} VMA regions</>}
-            </div>
-          )}
-          {diffStats && (
-            <div className="ah-hex-stats">
-              <span>
-                <span className="ah-mono" style={{ color: "var(--ah-warning-text)" }}>{diffStats.changed.toLocaleString()}</span> bytes differ
-                {" "}of {fmtSize(diffStats.total)}
-                {diffStats.total !== diffStats.baseTotal && (
-                  <span className="ah-ml-2">(baseline: {fmtSize(diffStats.baseTotal)})</span>
-                )}
-              </span>
-              {diffRows.length > 0 && (<>
-                <span style={{ color: "var(--ah-text-fainter)" }}>|</span>
-                <span className="ah-mono">
-                  {currentDiffIdx >= 0
-                    ? <><span style={{ color: "var(--ah-warning-text)" }}>{currentDiffIdx + 1}</span>{" of "}{diffRows.length.toLocaleString()} diff rows</>
-                    : <>{diffRows.length.toLocaleString()} diff rows</>}
-                </span>
-                <span style={{ color: "var(--ah-text-fainter)", fontSize: "10px" }}>n/p to navigate</span>
-              </>)}
-            </div>
-          )}
-          <div className="ah-hex-container">
-            {/* Hex dump */}
-            <div className="ah-hex-content">
-              <div
-                className="ah-hex-scroll"
-                style={{ height: containerHeight }}
-                oncreate={(vn: m.VnodeDOM) => {
-                  const node = vn.dom as HTMLDivElement;
-                  scrollNode = node;
-                  const h = Math.min(window.innerHeight - 160, totalRows * ROW_HEIGHT);
-                  containerHeight = Math.max(200, h);
-                  m.redraw();
-                }}
-                onscroll={(e: Event) => {
-                  scrollTop = (e.currentTarget as HTMLDivElement).scrollTop;
-                  if (programmaticScroll) programmaticScroll = false;
-                  else currentDiffIdx = -1;
-                }}
-              >
-                <div style={{ height: totalRows * ROW_HEIGHT, position: "relative" }}>
-                  {highlightRow !== null && highlightRow >= startRow && highlightRow < endRow && (
-                    <div
-                      className="ah-hex-highlight"
-                      style={{ top: highlightRow * ROW_HEIGHT, height: ROW_HEIGHT }}
-                    />
-                  )}
-                  {/* VMA region separators */}
-                  {visibleSeparators.map(sep => (
-                    <div
-                      key={`sep-${sep.row}`}
-                      className="ah-hex-separator"
-                      style={{ top: sep.row * ROW_HEIGHT - 1 }}
-                    >
-                      <span className="ah-hex-separator__label">
-                        {sep.vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}
-                      </span>
-                    </div>
-                  ))}
-                  {diffBaseline ? (
-                    // Diff mode: per-row divs with per-byte highlighting
-                    Array.from({ length: endRow - startRow }, (_, idx) => {
-                      const i = startRow + idx;
-                      const offset = i * BYTES_PER_ROW;
-                      const vmaAddr = regionMap ? offsetToVmaAddr(offset, regionMap) : undefined;
-                      const segments = formatRowSegments(data, offset, data.byteLength, diffBaseline, diffBaseline.byteLength, vmaAddr, addrWidth);
-                      return (
-                        <div
-                          key={i}
-                          className="ah-hex-row"
-                          style={{ position: "absolute", top: i * ROW_HEIGHT, height: ROW_HEIGHT, padding: "0 8px" }}
-                        >
-                          {segments.map((s, si) =>
-                            s.diff
-                              ? <span key={si} className="ah-hex-row--diff">{s.text}</span>
-                              : <span key={si}>{s.text}</span>
-                          )}
-                        </div>
-                      );
-                    })
-                  ) : (
-                    // Normal mode: single pre block
-                    <pre
-                      className="ah-hex-row"
-                      style={{ position: "absolute", top: startRow * ROW_HEIGHT, left: 0, padding: "0 8px" }}
-                    >
-                      {lines!.join("\n")}
-                    </pre>
-                  )}
-                </div>
-              </div>
-              {/* Diff minimap gutter */}
-              {diffBaseline && diffRows.length > 0 && (
-                <canvas
-                  className="ah-hex-minimap"
-                  style={{ width: 6, height: containerHeight }}
-                  oncreate={(vn: m.VnodeDOM) => {
-                    diffMinimapCanvas = vn.dom as HTMLCanvasElement;
-                    renderMinimap(diffBaseline, diffRows, totalRows);
-                  }}
-                  onupdate={() => {
-                    renderMinimap(diffBaseline, diffRows, totalRows);
-                  }}
-                  onclick={(e: MouseEvent) => handleMinimapClick(e, diffRowsForMinimap, totalRowsForMinimap)}
-                />
-              )}
-            </div>
-
-            {/* Strings panel */}
-            {showStrings && (
-              <div className="ah-hex-strings" style={{ height: containerHeight }}>
-                <div className="ah-hex-strings__header">
-                  <input
-                    className="ah-hex-strings__input"
-                    placeholder={"Filter strings\u2026"}
-                    value={stringFilter}
-                    oninput={(e: Event) => { stringFilter = (e.target as HTMLInputElement).value; }}
-                    oncreate={(vn: m.VnodeDOM) => { (vn.dom as HTMLInputElement).focus(); }}
-                  />
-                  <div className="ah-hex-strings__count">
-                    {filteredStrings.length === strings.length
-                      ? `${strings.length.toLocaleString()} strings`
-                      : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`}
-                    {` (\u2265${MIN_STRING_LEN} chars)`}
-                  </div>
-                </div>
-                <div className="ah-hex-strings__list">
-                  {displayStrings.map((s, i) => {
-                    const vma = regionMap ? offsetToVmaAddr(s.offset, regionMap) : undefined;
-                    return (
-                      <div
-                        key={i}
-                        className="ah-hex-strings__row"
-                        onclick={() => scrollToOffset(s.offset)}
-                        title={`Offset: 0x${s.offset.toString(16)}${vma !== undefined ? ` | VMA: 0x${vma.toString(16)}` : ""}`}
-                      >
-                        <span className="ah-hex-strings__offset">
-                          {(vma ?? s.offset).toString(16).padStart(vma !== undefined ? (addrWidth ?? 8) : 8, "0")}
-                        </span>
-                        <span className="ah-hex-strings__value">{s.str}</span>
-                      </div>
+      return m("div", null,
+        m("div", { className: "ah-hex-toolbar" },
+          m("h2", { className: "ah-view-heading ah-truncate", style: { marginBottom: 0 } }, name),
+          m("span", { style: { fontSize: "0.875rem", color: "var(--ah-text-muted)" } }, fmtSize(data.byteLength)),
+          m("span", { style: { fontSize: "0.75rem", color: "var(--ah-text-faint)" } }, totalRows.toLocaleString(), " rows"),
+          m("div", { className: "ah-hex-toolbar__actions" },
+            availableDiffs && availableDiffs.length > 0 && (
+              m("select", {
+                className: "ah-hex-select",
+                value: diffBaselineId ?? "",
+                onchange: (e: Event) => { diffBaselineId = (e.target as HTMLSelectElement).value || null; },
+              },
+                m("option", { value: "" }, "Compare", "\u2026"),
+                availableDiffs.map(d =>
+                  m("option", { key: d.id, value: d.id }, d.name)
+                )
+              )
+            ),
+            m("button", {
+              className: `ah-hex-btn${showStrings ? " ah-hex-btn--active" : ""}`,
+              onclick: () => { showStrings = !showStrings; },
+            }, "Strings"),
+            m("button", {
+              className: "ah-hex-btn",
+              onclick: () => handleCopy(data, regionMap, addrWidth),
+            }, copied ? "Copied" : "Copy"),
+            m("button", {
+              className: "ah-hex-btn",
+              onclick: () => downloadBlob(name + ".bin", buffer),
+            }, "Download")
+          )
+        ),
+        regionMap && regionMap.length > 0 && (
+          m("div", { className: "ah-hex-vma-info" },
+            regionMap.length === 1
+              ? m(Fragment, null, "VMA ", regionMap[0].vmaBase.toString(16).padStart(addrWidth ?? 8, "0"), "\u2013", (regionMap[0].vmaBase + regionMap[0].offsetEnd).toString(16).padStart(addrWidth ?? 8, "0"))
+              : m(Fragment, null, regionMap.length, " VMA regions"))
+        ),
+        diffStats && (
+          m("div", { className: "ah-hex-stats" },
+            m("span", null,
+              m("span", { className: "ah-mono", style: { color: "var(--ah-warning-text)" } }, diffStats.changed.toLocaleString()), " bytes differ",
+              " ", "of ", fmtSize(diffStats.total),
+              diffStats.total !== diffStats.baseTotal && (
+                m("span", { className: "ah-ml-2" }, "(baseline: ", fmtSize(diffStats.baseTotal), ")")
+              )
+            ),
+            diffRows.length > 0 && m(Fragment, null,
+              m("span", { style: { color: "var(--ah-text-fainter)" } }, "|"),
+              m("span", { className: "ah-mono" },
+                currentDiffIdx >= 0
+                  ? m(Fragment, null, m("span", { style: { color: "var(--ah-warning-text)" } }, currentDiffIdx + 1), " of ", diffRows.length.toLocaleString(), " diff rows")
+                  : m(Fragment, null, diffRows.length.toLocaleString(), " diff rows")
+              ),
+              m("span", { style: { color: "var(--ah-text-fainter)", fontSize: "10px" } }, "n/p to navigate")
+            )
+          )
+        ),
+        m("div", { className: "ah-hex-container" },
+          // Hex dump
+          m("div", { className: "ah-hex-content" },
+            m("div", {
+              className: "ah-hex-scroll",
+              style: { height: containerHeight },
+              oncreate: (vn: m.VnodeDOM) => {
+                const node = vn.dom as HTMLDivElement;
+                scrollNode = node;
+                const h = Math.min(window.innerHeight - 160, totalRows * ROW_HEIGHT);
+                containerHeight = Math.max(200, h);
+                m.redraw();
+              },
+              onscroll: (e: Event) => {
+                scrollTop = (e.currentTarget as HTMLDivElement).scrollTop;
+                if (programmaticScroll) programmaticScroll = false;
+                else currentDiffIdx = -1;
+              },
+            },
+              m("div", { style: { height: totalRows * ROW_HEIGHT, position: "relative" } },
+                highlightRow !== null && highlightRow >= startRow && highlightRow < endRow && (
+                  m("div", {
+                    className: "ah-hex-highlight",
+                    style: { top: highlightRow * ROW_HEIGHT, height: ROW_HEIGHT },
+                  })
+                ),
+                // VMA region separators
+                visibleSeparators.map(sep =>
+                  m("div", {
+                    key: `sep-${sep.row}`,
+                    className: "ah-hex-separator",
+                    style: { top: sep.row * ROW_HEIGHT - 1 },
+                  },
+                    m("span", { className: "ah-hex-separator__label" },
+                      sep.vmaBase.toString(16).padStart(addrWidth ?? 8, "0"))
+                  )
+                ),
+                diffBaseline ? (
+                  // Diff mode: per-row divs with per-byte highlighting
+                  Array.from({ length: endRow - startRow }, (_, idx) => {
+                    const i = startRow + idx;
+                    const offset = i * BYTES_PER_ROW;
+                    const vmaAddr = regionMap ? offsetToVmaAddr(offset, regionMap) : undefined;
+                    const segments = formatRowSegments(data, offset, data.byteLength, diffBaseline, diffBaseline.byteLength, vmaAddr, addrWidth);
+                    return m("div", {
+                      key: i,
+                      className: "ah-hex-row",
+                      style: { position: "absolute", top: i * ROW_HEIGHT, height: ROW_HEIGHT, padding: "0 8px" },
+                    },
+                      segments.map((s, si) =>
+                        s.diff
+                          ? m("span", { key: si, className: "ah-hex-row--diff" }, s.text)
+                          : m("span", { key: si }, s.text)
+                      )
                     );
-                  })}
-                  {filteredStrings.length > stringShowCount && (
-                    <div style={{ padding: "0.5rem", fontSize: "10px", color: "var(--ah-text-faint)", textAlign: "center" }}>
-                      Showing {stringShowCount.toLocaleString()} of {filteredStrings.length.toLocaleString()}
-                      {" \u2014 "}
-                      <button className="ah-more-link" onclick={() => { stringShowCount = Math.min(stringShowCount + 5_000, filteredStrings.length); }}>show more</button>
-                      {" "}
-                      <button className="ah-more-link" onclick={() => { stringShowCount = filteredStrings.length; }}>show all</button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+                  })
+                ) : (
+                  // Normal mode: single pre block
+                  m("pre", {
+                    className: "ah-hex-row",
+                    style: { position: "absolute", top: startRow * ROW_HEIGHT, left: 0, padding: "0 8px" },
+                  }, lines!.join("\n"))
+                )
+              )
+            ),
+            // Diff minimap gutter
+            diffBaseline && diffRows.length > 0 && (
+              m("canvas", {
+                className: "ah-hex-minimap",
+                style: { width: 6, height: containerHeight },
+                oncreate: (vn: m.VnodeDOM) => {
+                  diffMinimapCanvas = vn.dom as HTMLCanvasElement;
+                  renderMinimap(diffBaseline, diffRows, totalRows);
+                },
+                onupdate: () => {
+                  renderMinimap(diffBaseline, diffRows, totalRows);
+                },
+                onclick: (e: MouseEvent) => handleMinimapClick(e, diffRowsForMinimap, totalRowsForMinimap),
+              })
+            )
+          ),
+
+          // Strings panel
+          showStrings && (
+            m("div", { className: "ah-hex-strings", style: { height: containerHeight } },
+              m("div", { className: "ah-hex-strings__header" },
+                m("input", {
+                  className: "ah-hex-strings__input",
+                  placeholder: "Filter strings\u2026",
+                  value: stringFilter,
+                  oninput: (e: Event) => { stringFilter = (e.target as HTMLInputElement).value; },
+                  oncreate: (vn: m.VnodeDOM) => { (vn.dom as HTMLInputElement).focus(); },
+                }),
+                m("div", { className: "ah-hex-strings__count" },
+                  filteredStrings.length === strings.length
+                    ? `${strings.length.toLocaleString()} strings`
+                    : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`,
+                  ` (\u2265${MIN_STRING_LEN} chars)`)
+              ),
+              m("div", { className: "ah-hex-strings__list" },
+                displayStrings.map((s, i) => {
+                  const vma = regionMap ? offsetToVmaAddr(s.offset, regionMap) : undefined;
+                  return m("div", {
+                    key: i,
+                    className: "ah-hex-strings__row",
+                    onclick: () => scrollToOffset(s.offset),
+                    title: `Offset: 0x${s.offset.toString(16)}${vma !== undefined ? ` | VMA: 0x${vma.toString(16)}` : ""}`,
+                  },
+                    m("span", { className: "ah-hex-strings__offset" },
+                      (vma ?? s.offset).toString(16).padStart(vma !== undefined ? (addrWidth ?? 8) : 8, "0")),
+                    m("span", { className: "ah-hex-strings__value" }, s.str)
+                  );
+                }),
+                filteredStrings.length > stringShowCount && (
+                  m("div", { style: { padding: "0.5rem", fontSize: "10px", color: "var(--ah-text-faint)", textAlign: "center" } },
+                    "Showing ", stringShowCount.toLocaleString(), " of ", filteredStrings.length.toLocaleString(),
+                    " \u2014 ",
+                    m("button", { className: "ah-more-link", onclick: () => { stringShowCount = Math.min(stringShowCount + 5_000, filteredStrings.length); } }, "show more"),
+                    " ",
+                    m("button", { className: "ah-more-link", onclick: () => { stringShowCount = filteredStrings.length; } }, "show all"))
+                )
+              )
+            )
+          )
+        )
       );
     },
   };

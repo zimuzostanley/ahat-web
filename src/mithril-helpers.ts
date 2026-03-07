@@ -1,6 +1,6 @@
 import m from "mithril";
 
-/** JSX Fragment component for Mithril. Used as jsxFragmentFactory in tsconfig/esbuild. */
+/** Fragment component for Mithril. Returns children as-is. */
 export function Fragment(): m.Component<{}> {
   return {
     view(vnode) { return vnode.children as m.Children; },

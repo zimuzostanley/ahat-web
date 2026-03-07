@@ -42,7 +42,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
     view(vnode) {
       const { heaps, navigate, isDiffed } = vnode.attrs;
 
-      if (!data) return <div className="ah-loading">Loading&hellip;</div>;
+      if (!data) return m("div", { className: "ah-loading" }, "Loading\u2026");
       const heapCols = heaps.filter(h => h.java + h.native_ > 0);
       const childDiffed = isDiffed && data.children.some(c => c.baselineTotalJava !== undefined);
       const objDiffed = isDiffed && data.objectsInfos.some(o => o.baselineNumInstances !== undefined);
@@ -50,7 +50,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
       // Build child site columns
       type ChildCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteChildRow) => number; render: (r: SiteChildRow, idx: number) => m.Children };
       const childCols: ChildCol[] = [
-        { label: "Total Size", align: "right", minWidth: "5rem", sortKey: r => r.totalJava + r.totalNative, render: r => <span className="ah-mono">{fmtSize(r.totalJava + r.totalNative)}</span> },
+        { label: "Total Size", align: "right", minWidth: "5rem", sortKey: r => r.totalJava + r.totalNative, render: r => m("span", { className: "ah-mono" }, fmtSize(r.totalJava + r.totalNative)) },
       ];
       if (childDiffed) {
         childCols.push({
@@ -59,7 +59,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
           render: r => {
             const d = (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative));
             if (d === 0) return null;
-            return <span className={`ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}`}>{fmtSizeDelta(d)}</span>;
+            return m("span", { className: `ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}` }, fmtSizeDelta(d));
           },
         });
       }
@@ -67,15 +67,15 @@ function SiteView(): m.Component<SiteViewAttrs> {
         childCols.push({
           label: h.name, align: "right",
           sortKey: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return (s?.java ?? 0) + (s?.native_ ?? 0); },
-          render: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return <span className="ah-mono">{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>; },
+          render: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return m("span", { className: "ah-mono" }, fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))); },
         });
       }
-      childCols.push({ label: "Child Site", render: r => <SiteLinkRaw {...r} navigate={navigate} /> });
+      childCols.push({ label: "Child Site", render: r => m(SiteLinkRaw, { ...r, navigate }) });
 
       // Build objects allocated columns
       type ObjCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteObjectsRow) => number; render: (r: SiteObjectsRow, idx: number) => m.Children };
       const objCols: ObjCol[] = [
-        { label: "Size", align: "right", minWidth: "5rem", sortKey: r => r.java + r.native_, render: r => <span className="ah-mono">{fmtSize(r.java + r.native_)}</span> },
+        { label: "Size", align: "right", minWidth: "5rem", sortKey: r => r.java + r.native_, render: r => m("span", { className: "ah-mono" }, fmtSize(r.java + r.native_)) },
       ];
       if (objDiffed) {
         objCols.push({
@@ -84,19 +84,17 @@ function SiteView(): m.Component<SiteViewAttrs> {
           render: r => {
             const d = (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_));
             if (d === 0) return null;
-            return <span className={`ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}`}>{fmtSizeDelta(d)}</span>;
+            return m("span", { className: `ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}` }, fmtSizeDelta(d));
           },
         });
       }
       objCols.push({
         label: "Instances", align: "right", minWidth: "4rem",
         sortKey: r => r.numInstances,
-        render: r => (
-          <button className="ah-link ah-mono"
-            onclick={() => navigate("objects", { siteId: data!.id, className: r.className, heap: r.heap })}>
-            {r.numInstances.toLocaleString()}
-          </button>
-        ),
+        render: r => m("button", {
+          className: "ah-link ah-mono",
+          onclick: () => navigate("objects", { siteId: data!.id, className: r.className, heap: r.heap }),
+        }, r.numInstances.toLocaleString()),
       });
       if (objDiffed) {
         objCols.push({
@@ -105,42 +103,40 @@ function SiteView(): m.Component<SiteViewAttrs> {
           render: r => {
             const d = r.numInstances - (r.baselineNumInstances ?? r.numInstances);
             if (d === 0) return null;
-            return <span className={`ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}`}>{d > 0 ? "+" : "\u2212"}{Math.abs(d).toLocaleString()}</span>;
+            return m("span", { className: `ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}` }, d > 0 ? "+" : "\u2212", Math.abs(d).toLocaleString());
           },
         });
       }
-      objCols.push({ label: "Heap", render: r => <span>{r.heap}</span> });
+      objCols.push({ label: "Heap", render: r => m("span", null, r.heap) });
       objCols.push({
         label: "Class", render: r => r.classObjId != null
-          ? <InstanceLink row={{ id: r.classObjId, display: r.className }} navigate={navigate} />
-          : <span>{r.className}</span>,
+          ? m(InstanceLink, { row: { id: r.classObjId, display: r.className }, navigate })
+          : m("span", null, r.className),
       });
 
-      return (
-        <div className="ah-view-stack">
-          <div>
-            <h2 className="ah-view-heading" style={{ marginBottom: "0.25rem" }}>Site</h2>
-            <SiteLinkRaw {...data} navigate={navigate} />
-          </div>
+      return m("div", { className: "ah-view-stack" },
+        m("div", null,
+          m("h2", { className: "ah-view-heading", style: { marginBottom: "0.25rem" } }, "Site"),
+          m(SiteLinkRaw, { ...data, navigate })
+        ),
 
-          <Section title="Allocation Site">
-            <div className="ah-view-stack" style={{ gap: "0.125rem" }}>
-              {data.chain.map((s, i) => (
-                <div key={i} style={{ paddingLeft: Math.min(i, 20) * 16 }}>{i > 0 && "\u2192 "}<SiteLinkRaw {...s} navigate={navigate} /></div>
-              ))}
-            </div>
-          </Section>
+        m(Section, { title: "Allocation Site" },
+          m("div", { className: "ah-view-stack", style: { gap: "0.125rem" } },
+            data.chain.map((s, i) =>
+              m("div", { key: i, style: { paddingLeft: Math.min(i, 20) * 16 } }, i > 0 && "\u2192 ", m(SiteLinkRaw, { ...s, navigate }))
+            )
+          )
+        ),
 
-          {data.children.length > 0 && (
-            <Section title="Sites Called from Here">
-              <SortableTable<SiteChildRow> columns={childCols} data={data.children} />
-            </Section>
-          )}
+        data.children.length > 0 && (
+          m(Section, { title: "Sites Called from Here" },
+            m(SortableTable, { columns: childCols, data: data.children })
+          )
+        ),
 
-          <Section title="Objects Allocated">
-            <SortableTable<SiteObjectsRow> columns={objCols} data={data.objectsInfos} />
-          </Section>
-        </div>
+        m(Section, { title: "Objects Allocated" },
+          m(SortableTable, { columns: objCols, data: data.objectsInfos })
+        )
       );
     },
   };

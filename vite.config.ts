@@ -3,11 +3,7 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 
 export default defineConfig({
   plugins: [viteSingleFile()],
-  esbuild: {
-    jsx: 'transform',
-    jsxFactory: 'm',
-    jsxFragment: 'Fragment',
-  },
+  esbuild: {},
   worker: {
     format: 'es',
   },

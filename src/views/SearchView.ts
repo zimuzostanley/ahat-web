@@ -47,28 +47,26 @@ function SearchView(): m.Component<SearchViewAttrs> {
     view(vnode) {
       const { navigate, proxy } = vnode.attrs;
 
-      return (
-        <div>
-          <h2 className="ah-view-heading">Search</h2>
-          <input
-            type="text" value={query} oninput={(e: Event) => handleChange((e.target as HTMLInputElement).value, proxy)}
-            placeholder={"Class name or 0x\u2026 hex id"}
-            className="ah-input"
-          />
-          {results.length > 0 && (
-            <SortableTable<InstanceRow>
-              columns={[
-                { label: "Retained", align: "right", sortKey: (r: InstanceRow) => r.retainedTotal, render: (r: InstanceRow) => <span className="ah-mono">{fmtSize(r.retainedTotal)}</span> },
-                { label: "Object", render: (r: InstanceRow) => <InstanceLink row={r} navigate={navigate} /> },
-              ]}
-              data={results}
-              rowKey={(r: InstanceRow) => r.id}
-            />
-          )}
-          {query.length >= 2 && results.length === 0 && (
-            <div className="ah-info-grid__label">No results found.</div>
-          )}
-        </div>
+      return m("div", null,
+        m("h2", { className: "ah-view-heading" }, "Search"),
+        m("input", {
+          type: "text", value: query, oninput: (e: Event) => handleChange((e.target as HTMLInputElement).value, proxy),
+          placeholder: "Class name or 0x\u2026 hex id",
+          className: "ah-input",
+        }),
+        results.length > 0 && (
+          m(SortableTable, {
+            columns: [
+              { label: "Retained", align: "right", sortKey: (r: InstanceRow) => r.retainedTotal, render: (r: InstanceRow) => m("span", { className: "ah-mono" }, fmtSize(r.retainedTotal)) },
+              { label: "Object", render: (r: InstanceRow) => m(InstanceLink, { row: r, navigate }) },
+            ],
+            data: results,
+            rowKey: (r: InstanceRow) => r.id,
+          })
+        ),
+        query.length >= 2 && results.length === 0 && (
+          m("div", { className: "ah-info-grid__label" }, "No results found.")
+        )
       );
     },
   };

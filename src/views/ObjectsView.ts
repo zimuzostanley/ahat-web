@@ -45,30 +45,28 @@ function ObjectsView(): m.Component<ObjectsViewAttrs> {
       const heap: string | null = vnode.attrs.params.heap ?? null;
       const navigate = vnode.attrs.navigate;
 
-      if (!rows) return <div className="ah-loading">Loading&hellip;</div>;
+      if (!rows) return m("div", { className: "ah-loading" }, "Loading\u2026");
 
-      return (
-        <div>
-          <h2 className="ah-view-heading">Instances</h2>
-          <div className="ah-card--compact ah-mb-3">
-            <div className="ah-info-grid--compact">
-              <span className="ah-info-grid__label">Class:</span>
-              <span className="ah-mono">{className}</span>
-              {heap && <><span className="ah-info-grid__label">Heap:</span><span>{heap}</span></>}
-              <span className="ah-info-grid__label">Count:</span>
-              <span className="ah-mono">{rows.length.toLocaleString()}</span>
-            </div>
-          </div>
-          <SortableTable<InstanceRow>
-            columns={[
-              { label: "Size", align: "right", sortKey: (r: InstanceRow) => r.shallowJava + r.shallowNative, render: (r: InstanceRow) => <span className="ah-mono">{fmtSize(r.shallowJava + r.shallowNative)}</span> },
-              { label: "Heap", render: (r: InstanceRow) => <span>{r.heap}</span> },
-              { label: "Object", render: (r: InstanceRow) => <InstanceLink row={r} navigate={navigate} /> },
-            ]}
-            data={rows}
-            rowKey={(r: InstanceRow) => r.id}
-          />
-        </div>
+      return m("div", null,
+        m("h2", { className: "ah-view-heading" }, "Instances"),
+        m("div", { className: "ah-card--compact ah-mb-3" },
+          m("div", { className: "ah-info-grid--compact" },
+            m("span", { className: "ah-info-grid__label" }, "Class:"),
+            m("span", { className: "ah-mono" }, className),
+            heap && m(Fragment, null, m("span", { className: "ah-info-grid__label" }, "Heap:"), m("span", null, heap)),
+            m("span", { className: "ah-info-grid__label" }, "Count:"),
+            m("span", { className: "ah-mono" }, rows.length.toLocaleString())
+          )
+        ),
+        m(SortableTable, {
+          columns: [
+            { label: "Size", align: "right", sortKey: (r: InstanceRow) => r.shallowJava + r.shallowNative, render: (r: InstanceRow) => m("span", { className: "ah-mono" }, fmtSize(r.shallowJava + r.shallowNative)) },
+            { label: "Heap", render: (r: InstanceRow) => m("span", null, r.heap) },
+            { label: "Object", render: (r: InstanceRow) => m(InstanceLink, { row: r, navigate }) },
+          ],
+          data: rows,
+          rowKey: (r: InstanceRow) => r.id,
+        })
       );
     },
   };
