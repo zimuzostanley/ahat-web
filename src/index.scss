@@ -1597,6 +1597,90 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   line-height: 1rem;
 }
 
+// ─── Snapshot timeline ──────────────────────────────────────────────────────
+.ah-timeline {
+  margin-bottom: 0.75rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ah-timeline__track {
+  display: flex;
+  align-items: center;
+  min-width: max-content;
+  padding: 0.25rem 0;
+}
+
+.ah-timeline__segment {
+  width: 2.5rem;
+  height: 2px;
+  background: var(--ah-border);
+  flex-shrink: 0;
+}
+
+.ah-timeline__dot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  padding: 0.125rem 0.25rem;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+
+  &:hover .ah-timeline__dot-circle {
+    transform: scale(1.3);
+  }
+}
+
+.ah-timeline__dot-circle {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ah-text-faint);
+  transition: transform 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.ah-timeline__dot-label {
+  font-size: 9px;
+  line-height: 1;
+  margin-top: 3px;
+  color: var(--ah-text-faint);
+  white-space: nowrap;
+  font-family: $mono;
+}
+
+.ah-timeline__dot--base {
+  .ah-timeline__dot-circle {
+    background: var(--ah-link);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ah-link) 25%, transparent);
+  }
+  .ah-timeline__dot-label {
+    color: var(--ah-link);
+    font-weight: 600;
+  }
+}
+
+.ah-timeline__dot--live {
+  cursor: default;
+  .ah-timeline__dot-circle {
+    background: var(--ah-badge-string);
+    animation: ah-pulse-dot 2s ease-in-out infinite;
+  }
+  .ah-timeline__dot-label {
+    color: var(--ah-badge-string);
+  }
+  &:hover .ah-timeline__dot-circle {
+    transform: none;
+  }
+}
+
+@keyframes ah-pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .ah-capture-progress {
   margin-bottom: 0.5rem;
   font-size: 0.75rem;

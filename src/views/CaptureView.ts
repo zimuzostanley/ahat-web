@@ -696,39 +696,54 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   const smapsSort = makeSort<SmapsSortFieldType>("pssKb");
   const vmaSort = makeSort<VmaSortFieldType>("pssKb");
 
-  // Diff state
+  // Snapshot history & diff state
+  interface Snapshot {
+    id: number;
+    ts: number;
+    processes: ProcessInfo[];
+    globalMemInfo: GlobalMemInfo | null;
+    smapsRollups: Map<number, SmapsRollup>;
+    smapsData: Map<number, SmapsAggregated[]>;
+  }
+  const snapshots: Snapshot[] = [];
+  let nextSnapId = 0;
   let diffMode = false;
-  let prevProcesses: ProcessInfo[] | null = null;
-  let prevGlobalMemInfo: GlobalMemInfo | null = null;
+  let diffBaseIdx = 0; // index into snapshots for the base (left) side
   let processDiffs: ProcessDiff[] | null = null;
   let globalMemInfoDiff: GlobalMemInfoDiff | null = null;
-  let prevSmapsData = new Map<number, SmapsAggregated[]>();
-  let prevSmapsRollups = new Map<number, SmapsRollup>();
   let diffTriggered = false;
+
+  function getBaseSnap(): Snapshot | null {
+    return diffMode && diffBaseIdx >= 0 && diffBaseIdx < snapshots.length ? snapshots[diffBaseIdx] : null;
+  }
 
   // Cached conn reference
   let conn: AdbConnection;
 
-  function clearDiff() {
+  function hideDiff() {
     diffMode = false;
-    prevProcesses = null;
-    prevGlobalMemInfo = null;
     processDiffs = null;
     globalMemInfoDiff = null;
-    prevSmapsData = new Map();
-    prevSmapsRollups = new Map();
     diffTriggered = false;
+  }
+
+  function clearSnapshots() {
+    snapshots.length = 0;
+    nextSnapId = 0;
+    hideDiff();
   }
 
   // Progressive diff recomputation — skip process diffs while enrichment
   // is still running to avoid showing processes as "GONE" before the full
   // /proc list has been fetched (the initial LRU list is smaller).
   function recomputeDiffs() {
-    if (diffMode && prevProcesses && processes && !enrichStatus) {
-      processDiffs = diffProcesses(prevProcesses, processes);
+    const base = getBaseSnap();
+    if (!base) { processDiffs = null; globalMemInfoDiff = null; return; }
+    if (base.processes && processes && !enrichStatus) {
+      processDiffs = diffProcesses(base.processes, processes);
     }
-    if (diffMode && prevGlobalMemInfo && globalMemInfo) {
-      globalMemInfoDiff = diffGlobalMemInfo(prevGlobalMemInfo, globalMemInfo);
+    if (base.globalMemInfo && globalMemInfo) {
+      globalMemInfoDiff = diffGlobalMemInfo(base.globalMemInfo, globalMemInfo);
     }
   }
 
@@ -773,7 +788,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     if (!conn.connected) return;
     cancelEnrichment();
     cancelSmapsFetch();
-    if (!diffTriggered) clearDiff();
+    if (!diffTriggered) hideDiff();
     diffTriggered = false;
     const ac = new AbortController();
     enrichAbortCtrl = ac;
@@ -931,12 +946,17 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     }
   }
 
-  function handleDiff() {
+  function handleSnapshot() {
     if (!processes) return;
-    prevProcesses = processes.map(p => ({ ...p }));
-    if (globalMemInfo) prevGlobalMemInfo = { ...globalMemInfo };
-    prevSmapsData = new Map(smapsData);
-    prevSmapsRollups = new Map(smapsRollups);
+    snapshots.push({
+      id: nextSnapId++,
+      ts: Date.now(),
+      processes: processes.map(p => ({ ...p })),
+      globalMemInfo: globalMemInfo ? { ...globalMemInfo } : null,
+      smapsRollups: new Map(smapsRollups),
+      smapsData: new Map(smapsData),
+    });
+    diffBaseIdx = snapshots.length - 1;
     diffMode = true;
     diffTriggered = true;
     refreshProcesses();
@@ -1092,6 +1112,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
       recomputeDiffs();
 
+      const baseSnap = getBaseSnap();
+      const baseRollups = baseSnap?.smapsRollups ?? null;
+      const baseSmapsData = baseSnap?.smapsData ?? null;
+      const baseProcesses = baseSnap?.processes ?? null;
+
       const pinProcesses = !sort.userSorted;
 
       const sorted = (() => {
@@ -1119,8 +1144,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             if (!baseField) return 0;
             const aR = smapsRollups.get(a.pid);
             const bR = smapsRollups.get(b.pid);
-            const aPR = prevSmapsRollups.get(a.pid);
-            const bPR = prevSmapsRollups.get(b.pid);
+            const aPR = baseRollups?.get(a.pid);
+            const bPR = baseRollups?.get(b.pid);
             const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
             const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
             return sort.asc ? aD - bD : bD - aD;
@@ -1156,8 +1181,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             if (!baseField) return 0;
             const aR = smapsRollups.get(a.current.pid);
             const bR = smapsRollups.get(b.current.pid);
-            const aPR = prevSmapsRollups.get(a.current.pid);
-            const bPR = prevSmapsRollups.get(b.current.pid);
+            const aPR = baseRollups?.get(a.current.pid);
+            const bPR = baseRollups?.get(b.current.pid);
             const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
             const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
             return sort.asc ? aD - bD : bD - aD;
@@ -1175,8 +1200,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       })();
 
       const prevSharedMappings = (() => {
-        if (prevSmapsData.size === 0 || !prevProcesses) return null;
-        return aggregateSharedMappings(prevSmapsData, prevProcesses);
+        if (!baseSmapsData || baseSmapsData.size === 0 || !baseProcesses) return null;
+        return aggregateSharedMappings(baseSmapsData, baseProcesses);
       })();
 
       const sharedMappingDiffs = (() => {
@@ -1239,14 +1264,21 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
               connected && processes && !enrichStatus && (
                 m("button", {
                   className: "ah-capture-toolbar__btn--accent",
-                  onclick: handleDiff,
+                  onclick: handleSnapshot,
                 }, "Snapshot")
               ),
-              diffMode && !enrichStatus && (
+              snapshots.length > 0 && !enrichStatus && (
                 m("button", {
-                  className: "ah-capture-toolbar__btn--warning",
-                  onclick: clearDiff,
-                }, "Clear")
+                  className: diffMode ? "ah-capture-toolbar__btn--warning" : "ah-capture-toolbar__btn",
+                  onclick: () => { if (diffMode) hideDiff(); else { diffMode = true; } },
+                }, diffMode ? "Hide Diff" : "Show Diff")
+              ),
+              snapshots.length > 0 && !enrichStatus && (
+                m("button", {
+                  className: "ah-capture-toolbar__btn",
+                  onclick: clearSnapshots,
+                  title: "Discard all snapshots",
+                }, "\u00D7")
               ),
               connected ? (
                 m("button", {
@@ -1261,6 +1293,36 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                 }, connectStatus ?? "Reconnect")
               ),
             ]),
+
+            // Snapshot timeline
+            snapshots.length > 0 && (
+              m("div", { className: "ah-timeline" },
+                m("div", { className: "ah-timeline__track" },
+                  snapshots.map((snap, i) => {
+                    const isBase = diffMode && i === diffBaseIdx;
+                    const time = new Date(snap.ts);
+                    const label = `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}:${time.getSeconds().toString().padStart(2, "0")}`;
+                    return m(Fragment, { key: snap.id }, [
+                      i > 0 && m("div", { className: "ah-timeline__segment" }),
+                      m("button", {
+                        className: `ah-timeline__dot${isBase ? " ah-timeline__dot--base" : ""}`,
+                        onclick: () => { diffBaseIdx = i; if (!diffMode) diffMode = true; },
+                        title: `Snapshot ${i + 1} \u2014 ${label}`,
+                      }, [
+                        m("div", { className: "ah-timeline__dot-circle" }),
+                        m("div", { className: "ah-timeline__dot-label" }, label),
+                      ]),
+                    ]);
+                  }),
+                  // Live indicator
+                  m("div", { className: "ah-timeline__segment" }),
+                  m("div", { className: "ah-timeline__dot ah-timeline__dot--live" }, [
+                    m("div", { className: "ah-timeline__dot-circle" }),
+                    m("div", { className: "ah-timeline__dot-label" }, "Live"),
+                  ]),
+                ),
+              )
+            ),
 
             // Non-root banner
             connected && !conn.isRoot && processes && (
@@ -1444,7 +1506,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                         if (diffMode) {
                           const totalDelta = sortedDiffs ? sortedDiffs.reduce((s, d) => {
                             const r = smapsRollups.get(d.current.pid);
-                            const pr = prevSmapsRollups.get(d.current.pid);
+                            const pr = baseRollups?.get(d.current.pid);
                             return s + (r && pr ? r[f] - pr[f] : 0);
                           }, 0) : 0;
                           cells.push(m("td", {
@@ -1468,7 +1530,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                       const isDiff = diffMode && sortedDiffs !== null;
                       const colCount = 3 + (hasOomLabel ? 1 : 0) + ROLLUP_COLUMNS.length + (isDiff ? ROLLUP_COLUMNS.length : 0);
                       const rollup = smapsRollups.get(p.pid);
-                      const prevRollup = prevSmapsRollups.get(p.pid);
+                      const prevRollup = baseRollups?.get(p.pid);
                       const rowKey = `${d.status}-${p.pid}`;
                       return m(Fragment, { key: rowKey }, [
                         m("tr", {
@@ -1574,8 +1636,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             onToggleVmaSort: (f: VmaSortFieldType) => vmaSort.toggle(f),
                             onDump: handleVmaDump,
                             dumpDisabled: !connected || !!vmaDumpStatus,
-                            smapsDiffs: isDiff && prevSmapsData.has(p.pid) ? diffSmaps(prevSmapsData.get(p.pid)!, smapsData.get(p.pid)!) : null,
-                            prevAggregated: isDiff && prevSmapsData.has(p.pid) ? prevSmapsData.get(p.pid)! : null,
+                            smapsDiffs: isDiff && baseSmapsData?.has(p.pid) ? diffSmaps(baseSmapsData.get(p.pid)!, smapsData.get(p.pid)!) : null,
+                            prevAggregated: isDiff && baseSmapsData?.has(p.pid) ? baseSmapsData.get(p.pid)! : null,
                             leadingColCount: 3 + (hasOomLabel ? 1 : 0),
                           })
                         ),
