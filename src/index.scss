@@ -1526,6 +1526,15 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   margin-top: 0.75rem;
 }
 
+.ah-capture-connect__load {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--ah-link);
+  cursor: pointer;
+  &:hover { text-decoration: underline; }
+}
+
 .ah-capture-toolbar {
   display: flex;
   align-items: center;

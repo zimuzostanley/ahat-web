@@ -733,6 +733,104 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     hideDiff();
   }
 
+  // Session serialization — save/load snapshots + current live state
+  interface SerializedSession {
+    version: 1;
+    deviceName: string;
+    serial: string;
+    savedAt: number;
+    snapshots: {
+      id: number;
+      ts: number;
+      processes: ProcessInfo[];
+      globalMemInfo: GlobalMemInfo | null;
+      smapsRollups: [number, SmapsRollup][];
+      smapsData: [number, SmapsAggregated[]][];
+    }[];
+    live: {
+      processes: ProcessInfo[] | null;
+      globalMemInfo: GlobalMemInfo | null;
+      smapsRollups: [number, SmapsRollup][];
+      smapsData: [number, SmapsAggregated[]][];
+      javaPids: number[];
+    };
+  }
+
+  function exportSession() {
+    const session: SerializedSession = {
+      version: 1,
+      deviceName: conn?.productName ?? "",
+      serial: conn?.serial ?? "",
+      savedAt: Date.now(),
+      snapshots: snapshots.map(s => ({
+        id: s.id,
+        ts: s.ts,
+        processes: s.processes,
+        globalMemInfo: s.globalMemInfo,
+        smapsRollups: [...s.smapsRollups],
+        smapsData: [...s.smapsData],
+      })),
+      live: {
+        processes,
+        globalMemInfo,
+        smapsRollups: [...smapsRollups],
+        smapsData: [...smapsData],
+        javaPids: [...javaPids],
+      },
+    };
+    const json = JSON.stringify(session);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+    a.download = `ahat-session-${ts}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importSession(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const session = JSON.parse(reader.result as string) as SerializedSession;
+        if (session.version !== 1) throw new Error("Unsupported session version");
+        // Restore snapshots
+        snapshots.length = 0;
+        for (const s of session.snapshots) {
+          snapshots.push({
+            id: s.id,
+            ts: s.ts,
+            processes: s.processes,
+            globalMemInfo: s.globalMemInfo,
+            smapsRollups: new Map(s.smapsRollups),
+            smapsData: new Map(s.smapsData),
+          });
+        }
+        nextSnapId = snapshots.length > 0 ? Math.max(...snapshots.map(s => s.id)) + 1 : 0;
+        // Restore live state
+        processes = session.live.processes;
+        globalMemInfo = session.live.globalMemInfo;
+        smapsRollups = new Map(session.live.smapsRollups);
+        smapsData = new Map(session.live.smapsData);
+        javaPids = new Set(session.live.javaPids);
+        // Reset diff to latest snapshot
+        if (snapshots.length > 0) {
+          diffBaseIdx = snapshots.length - 1;
+          diffMode = true;
+        } else {
+          hideDiff();
+        }
+        error = null;
+        m.redraw();
+      } catch (e) {
+        error = `Failed to load session: ${e instanceof Error ? e.message : String(e)}`;
+        m.redraw();
+      }
+    };
+    reader.readAsText(file);
+  }
+
   // Progressive diff recomputation — skip process diffs while enrichment
   // is still running to avoid showing processes as "GONE" before the full
   // /proc list has been fetched (the initial LRU list is smaller).
@@ -1244,6 +1342,21 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
               "Enable USB debugging on device. If ADB is running, stop it first: ",
               m("code", "adb kill-server"),
             ]),
+            m("label", {
+              className: "ah-capture-connect__load",
+            }, [
+              "or load a saved session",
+              m("input", {
+                type: "file",
+                accept: ".json",
+                style: { display: "none" },
+                onchange: (e: Event) => {
+                  const file = (e.target as HTMLInputElement).files?.[0];
+                  if (file) importSession(file);
+                  (e.target as HTMLInputElement).value = "";
+                },
+              }),
+            ]),
           ])
         ),
         (connected || processes) && (
@@ -1292,6 +1405,26 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   disabled: connectStatus !== null,
                 }, connectStatus ?? "Reconnect")
               ),
+              processes && (
+                m("button", {
+                  className: "ah-capture-toolbar__btn",
+                  onclick: exportSession,
+                  title: "Save session (snapshots + current state)",
+                }, "\u2193 Save")
+              ),
+              m("label", { className: "ah-capture-toolbar__btn", style: { cursor: "pointer" }, title: "Load a saved session" }, [
+                "\u2191 Load",
+                m("input", {
+                  type: "file",
+                  accept: ".json",
+                  style: { display: "none" },
+                  onchange: (e: Event) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) importSession(file);
+                    (e.target as HTMLInputElement).value = "";
+                  },
+                }),
+              ]),
             ]),
 
             // Snapshot timeline
