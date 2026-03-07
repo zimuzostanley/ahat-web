@@ -545,9 +545,9 @@ function HexView(): m.Component<HexViewAttrs> {
 
       return m("div", null,
         m("div", { className: "ah-hex-toolbar" },
-          m("h2", { className: "ah-view-heading ah-truncate", style: { marginBottom: 0 } }, name),
-          m("span", { style: { fontSize: "0.875rem", color: "var(--ah-text-muted)" } }, fmtSize(data.byteLength)),
-          m("span", { style: { fontSize: "0.75rem", color: "var(--ah-text-faint)" } }, totalRows.toLocaleString(), " rows"),
+          m("h2", { className: "ah-view-heading ah-truncate", style: { marginBottom: 0, minWidth: 0 } }, name),
+          m("span", { style: { fontSize: "0.875rem", color: "var(--ah-text-muted)", whiteSpace: "nowrap" } }, fmtSize(data.byteLength)),
+          m("span", { style: { fontSize: "0.75rem", color: "var(--ah-text-faint)", whiteSpace: "nowrap" } }, totalRows.toLocaleString(), " rows"),
           m("div", { className: "ah-hex-toolbar__actions" },
             availableDiffs && availableDiffs.length > 0 && (
               m("select", {
@@ -606,7 +606,7 @@ function HexView(): m.Component<HexViewAttrs> {
           m("div", { className: "ah-hex-content" },
             m("div", {
               className: "ah-hex-scroll",
-              style: { height: containerHeight },
+              style: { height: containerHeight + "px" },
               oncreate: (vn: m.VnodeDOM) => {
                 const node = vn.dom as HTMLDivElement;
                 scrollNode = node;
@@ -620,11 +620,11 @@ function HexView(): m.Component<HexViewAttrs> {
                 else currentDiffIdx = -1;
               },
             },
-              m("div", { style: { height: totalRows * ROW_HEIGHT, position: "relative" } },
+              m("div", { style: { height: totalRows * ROW_HEIGHT + "px", position: "relative" } },
                 highlightRow !== null && highlightRow >= startRow && highlightRow < endRow && (
                   m("div", {
                     className: "ah-hex-highlight",
-                    style: { top: highlightRow * ROW_HEIGHT, height: ROW_HEIGHT },
+                    style: { top: highlightRow * ROW_HEIGHT + "px", height: ROW_HEIGHT + "px" },
                   })
                 ),
                 // VMA region separators
@@ -632,7 +632,7 @@ function HexView(): m.Component<HexViewAttrs> {
                   m("div", {
                     key: `sep-${sep.row}`,
                     className: "ah-hex-separator",
-                    style: { top: sep.row * ROW_HEIGHT - 1 },
+                    style: { top: sep.row * ROW_HEIGHT - 1 + "px" },
                   },
                     m("span", { className: "ah-hex-separator__label" },
                       sep.vmaBase.toString(16).padStart(addrWidth ?? 8, "0"))
@@ -648,7 +648,7 @@ function HexView(): m.Component<HexViewAttrs> {
                     return m("div", {
                       key: i,
                       className: "ah-hex-row",
-                      style: { position: "absolute", top: i * ROW_HEIGHT, height: ROW_HEIGHT, padding: "0 8px" },
+                      style: { position: "absolute", top: i * ROW_HEIGHT + "px", height: ROW_HEIGHT + "px", padding: "0 8px" },
                     },
                       segments.map((s, si) =>
                         s.diff
@@ -661,7 +661,7 @@ function HexView(): m.Component<HexViewAttrs> {
                   // Normal mode: single pre block
                   m("pre", {
                     className: "ah-hex-row",
-                    style: { position: "absolute", top: startRow * ROW_HEIGHT, left: 0, padding: "0 8px" },
+                    style: { position: "absolute", top: startRow * ROW_HEIGHT + "px", left: 0, padding: "0 8px" },
                   }, lines!.join("\n"))
                 )
               )
@@ -670,7 +670,7 @@ function HexView(): m.Component<HexViewAttrs> {
             diffBaseline && diffRows.length > 0 && (
               m("canvas", {
                 className: "ah-hex-minimap",
-                style: { width: 6, height: containerHeight },
+                style: { width: "6px", height: containerHeight + "px" },
                 oncreate: (vn: m.VnodeDOM) => {
                   diffMinimapCanvas = vn.dom as HTMLCanvasElement;
                   renderMinimap(diffBaseline, diffRows, totalRows);
@@ -685,7 +685,7 @@ function HexView(): m.Component<HexViewAttrs> {
 
           // Strings panel
           showStrings && (
-            m("div", { className: "ah-hex-strings", style: { height: containerHeight } },
+            m("div", { className: "ah-hex-strings", style: { height: containerHeight + "px" } },
               m("div", { className: "ah-hex-strings__header" },
                 m("input", {
                   className: "ah-hex-strings__input",
