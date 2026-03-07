@@ -46,10 +46,10 @@ function BitmapCard(): m.Component<BitmapCardAttrs> {
       const dpH = Math.round(row.height / scale);
 
       return (
-        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700">
+        <div className="ah-bitmap-card">
           {/* Image area */}
           <div
-            className="bg-stone-50 dark:bg-stone-800 flex items-center justify-center overflow-hidden"
+            className="ah-bitmap-card__image"
             style={deviceScale
               ? { maxWidth: dpW, maxHeight: "45vh", aspectRatio: `${row.width} / ${row.height}`, margin: "0 auto" }
               : { width: "100%", maxHeight: "45vh", aspectRatio: `${row.width} / ${row.height}` }
@@ -58,23 +58,23 @@ function BitmapCard(): m.Component<BitmapCardAttrs> {
             {bitmap && typeof bitmap === "object" ? (
               <BitmapImage width={bitmap.width} height={bitmap.height} format={bitmap.format} data={bitmap.data} />
             ) : bitmap === "loading" ? (
-              <span className="text-stone-300 dark:text-stone-600">&hellip;</span>
+              <span style={{ color: "var(--ah-text-fainter)" }}>&hellip;</span>
             ) : bitmap === "error" ? (
-              <span className="text-stone-300 text-sm">no data</span>
+              <span style={{ color: "var(--ah-text-fainter)", fontSize: "0.875rem" }}>no data</span>
             ) : !row.hasPixelData ? (
-              <span className="text-stone-300 text-sm">no pixel data</span>
+              <span style={{ color: "var(--ah-text-fainter)", fontSize: "0.875rem" }}>no pixel data</span>
             ) : null}
           </div>
           {/* Info bar */}
-          <div className="px-3 py-2 border-t border-stone-100 dark:border-stone-800 flex items-center justify-between">
+          <div className="ah-bitmap-card__info">
             <div>
-              <span className="text-xs font-mono text-stone-600 dark:text-stone-300">{row.width}&times;{row.height} px</span>
-              <span className="text-xs text-stone-400 dark:text-stone-500 ml-2">{dpW}&times;{dpH} dp</span>
-              <span className="text-xs text-stone-400 dark:text-stone-500 ml-2">@{dpi}dpi</span>
-              <span className="text-xs text-stone-400 dark:text-stone-500 ml-2">{fmtSize(row.row.retainedTotal)}</span>
+              <span className="ah-bitmap-card__dim">{row.width}&times;{row.height} px</span>
+              <span className="ah-bitmap-card__meta">{dpW}&times;{dpH} dp</span>
+              <span className="ah-bitmap-card__meta">@{dpi}dpi</span>
+              <span className="ah-bitmap-card__meta">{fmtSize(row.row.retainedTotal)}</span>
             </div>
             <button
-              className="text-xs text-sky-700 dark:text-sky-400 underline decoration-sky-300 dark:decoration-sky-600 hover:decoration-sky-500 dark:hover:decoration-sky-400"
+              className="ah-bitmap-card__link"
               onclick={() => navigate("object", { id: row.row.id, label: `Bitmap ${row.width}\u00d7${row.height}` })}
             >Details</button>
           </div>
@@ -108,7 +108,7 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
     view(vnode) {
       const { proxy, navigate } = vnode.attrs;
 
-      if (!rows) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
+      if (!rows) return <div className="ah-loading">Loading&hellip;</div>;
 
       // Duplicate detection — group by buffer hash
       const hashGroups = new Map<string, BitmapListRow[]>();
@@ -139,47 +139,47 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
 
       return (
         <div>
-          <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Bitmaps</h2>
+          <h2 className="ah-view-heading">Bitmaps</h2>
 
           {rows.length === 0 ? (
-            <div className="text-stone-500 dark:text-stone-400">No bitmaps found in this heap dump.</div>
+            <div className="ah-info-grid__label">No bitmaps found in this heap dump.</div>
           ) : (
             <>
-              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-3 mb-4">
-                <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-                  <span className="text-stone-500 dark:text-stone-400">Total bitmaps:</span>
-                  <span className="font-mono">{rows.length}</span>
-                  <span className="text-stone-500 dark:text-stone-400">With pixel data:</span>
-                  <span className="font-mono">{withPixels.length}{withPixels.length === 0 && <span className="text-stone-400 dark:text-stone-500 ml-2">(dump with <code className="bg-stone-100 dark:bg-stone-700 px-1">-b</code> to include pixel data)</span>}</span>
-                  {dupCount > 0 && (<><span className="text-stone-500 dark:text-stone-400">Duplicates:</span><span className="font-mono text-amber-600 dark:text-amber-400">{dupCount}</span></>)}
-                  <span className="text-stone-500 dark:text-stone-400">Total retained:</span>
-                  <span className="font-mono">{fmtSize(totalRetained)}</span>
+              <div className="ah-card ah-mb-4">
+                <div className="ah-info-grid">
+                  <span className="ah-info-grid__label">Total bitmaps:</span>
+                  <span className="ah-mono">{rows.length}</span>
+                  <span className="ah-info-grid__label">With pixel data:</span>
+                  <span className="ah-mono">{withPixels.length}{withPixels.length === 0 && <span style={{ color: "var(--ah-text-faint)", marginLeft: "0.5rem" }}>(dump with <code>-b</code> to include pixel data)</span>}</span>
+                  {dupCount > 0 && (<><span className="ah-info-grid__label">Duplicates:</span><span className="ah-mono" style={{ color: "var(--ah-badge-warning)" }}>{dupCount}</span></>)}
+                  <span className="ah-info-grid__label">Total retained:</span>
+                  <span className="ah-mono">{fmtSize(totalRetained)}</span>
                 </div>
               </div>
 
               {/* Duplicate bitmaps */}
               {dupGroups.length > 0 && (
-                <div className="mb-4">
+                <div className="ah-mb-4">
                   <Section title={`Duplicate bitmaps (${dupGroups.length} groups, ${fmtSize(totalDupWasted)} wasted)`} defaultOpen={false}>
                     <SortableTable<DupBitmapGroup>
                       columns={[
-                        { label: "Wasted", align: "right", sortKey: (r: DupBitmapGroup) => r.wastedBytes, render: (r: DupBitmapGroup) => <span className="font-mono">{fmtSize(r.wastedBytes)}</span> },
-                        { label: "Count", align: "right", sortKey: (r: DupBitmapGroup) => r.count, render: (r: DupBitmapGroup) => <span className="font-mono">{r.count}</span> },
-                        { label: "Size", render: (r: DupBitmapGroup) => <span className="font-mono">{r.width}&times;{r.height}</span> },
-                        { label: "Hash", render: (r: DupBitmapGroup) => <span className="font-mono text-stone-500 dark:text-stone-400">{r.hash.slice(0, 12)}</span> },
+                        { label: "Wasted", align: "right", sortKey: (r: DupBitmapGroup) => r.wastedBytes, render: (r: DupBitmapGroup) => <span className="ah-mono">{fmtSize(r.wastedBytes)}</span> },
+                        { label: "Count", align: "right", sortKey: (r: DupBitmapGroup) => r.count, render: (r: DupBitmapGroup) => <span className="ah-mono">{r.count}</span> },
+                        { label: "Size", render: (r: DupBitmapGroup) => <span className="ah-mono">{r.width}&times;{r.height}</span> },
+                        { label: "Hash", render: (r: DupBitmapGroup) => <span className="ah-mono" style={{ color: "var(--ah-text-muted)" }}>{r.hash.slice(0, 12)}</span> },
                       ]}
                       data={dupGroups}
                       onRowClick={(r: DupBitmapGroup) => { expandedHash = expandedHash === r.hash ? null : r.hash; }}
                     />
                     {expandedHash && hashGroups.has(expandedHash) && (
-                      <div className="mt-2 border-t border-stone-200 dark:border-stone-700 pt-2">
-                        <div className="text-xs text-stone-500 dark:text-stone-400 mb-2">
+                      <div style={{ marginTop: "0.5rem", borderTop: "1px solid var(--ah-border)", paddingTop: "0.5rem" }}>
+                        <div style={{ fontSize: "0.75rem", lineHeight: "1rem", color: "var(--ah-text-muted)", marginBottom: "0.5rem" }}>
                           {hashGroups.get(expandedHash)!.length} allocations of this bitmap:
                         </div>
                         <SortableTable<BitmapListRow>
                           columns={[
-                            { label: "Retained", align: "right", sortKey: (r: BitmapListRow) => r.row.retainedTotal, render: (r: BitmapListRow) => <span className="font-mono">{fmtSize(r.row.retainedTotal)}</span> },
-                            { label: "Heap", render: (r: BitmapListRow) => <span className="text-stone-500 dark:text-stone-400">{r.row.heap}</span> },
+                            { label: "Retained", align: "right", sortKey: (r: BitmapListRow) => r.row.retainedTotal, render: (r: BitmapListRow) => <span className="ah-mono">{fmtSize(r.row.retainedTotal)}</span> },
+                            { label: "Heap", render: (r: BitmapListRow) => <span className="ah-info-grid__label">{r.row.heap}</span> },
                             { label: "Object", render: (r: BitmapListRow) => <InstanceLink row={r.row} navigate={navigate} /> },
                           ]}
                           data={hashGroups.get(expandedHash)!}
@@ -193,23 +193,23 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
 
               {/* Vertical bitmap feed */}
               {withPixels.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider">
+                <div className="ah-mb-4">
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.5rem" }}>
+                    <h3 className="ah-sub-heading" style={{ marginBottom: 0 }}>
                       {withPixels.length} bitmap{withPixels.length > 1 ? "s" : ""} with pixel data
                     </h3>
-                    <div className="inline-flex text-xs border border-stone-200 dark:border-stone-700 divide-x divide-stone-200 dark:divide-stone-700">
+                    <div className="ah-bitmap-scale-toggle">
                       <button
-                        className={`px-2 py-0.5 ${deviceScale ? "bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 font-medium" : "text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300"}`}
+                        className={`ah-bitmap-scale-toggle__btn${deviceScale ? " ah-bitmap-scale-toggle__btn--active" : ""}`}
                         onclick={() => { deviceScale = true; }}
                       >Device size</button>
                       <button
-                        className={`px-2 py-0.5 ${!deviceScale ? "bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-400 font-medium" : "text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300"}`}
+                        className={`ah-bitmap-scale-toggle__btn${!deviceScale ? " ah-bitmap-scale-toggle__btn--active" : ""}`}
                         onclick={() => { deviceScale = false; }}
                       >Full width</button>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-3">
+                  <div className="ah-bitmap-feed">
                     {withPixels.map(r => (
                       <BitmapCard key={r.row.id} row={r} proxy={proxy} navigate={navigate} density={r.density} deviceScale={deviceScale} />
                     ))}
@@ -222,8 +222,8 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
                 <Section title={`Bitmaps without pixel data (${withoutPixels.length})`} defaultOpen={withPixels.length === 0}>
                   <SortableTable<BitmapListRow>
                     columns={[
-                      { label: "Size", render: (r: BitmapListRow) => <span className="font-mono">{r.width}&times;{r.height}</span> },
-                      { label: "Retained", align: "right", sortKey: (r: BitmapListRow) => r.row.retainedTotal, render: (r: BitmapListRow) => <span className="font-mono">{fmtSize(r.row.retainedTotal)}</span> },
+                      { label: "Size", render: (r: BitmapListRow) => <span className="ah-mono">{r.width}&times;{r.height}</span> },
+                      { label: "Retained", align: "right", sortKey: (r: BitmapListRow) => r.row.retainedTotal, render: (r: BitmapListRow) => <span className="ah-mono">{fmtSize(r.row.retainedTotal)}</span> },
                       { label: "Object", render: (r: BitmapListRow) => <InstanceLink row={r.row} navigate={navigate} /> },
                     ]}
                     data={withoutPixels}

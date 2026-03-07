@@ -427,7 +427,7 @@ function HexView(): m.Component<HexViewAttrs> {
     if (!ctx) return;
     ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--color-diff-marker").trim();
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--ah-diff-marker").trim();
     const markH = Math.max(1, h / totalRows);
     for (const row of diffRows) {
       ctx.fillRect(0, (row / totalRows) * h, w, markH);
@@ -545,14 +545,14 @@ function HexView(): m.Component<HexViewAttrs> {
 
       return (
         <div>
-          <div className="flex items-center gap-3 mb-3">
-            <h2 className="text-lg font-semibold text-stone-800 dark:text-stone-100 truncate">{name}</h2>
-            <span className="text-sm text-stone-500 dark:text-stone-400">{fmtSize(data.byteLength)}</span>
-            <span className="text-xs text-stone-400 dark:text-stone-500">{totalRows.toLocaleString()} rows</span>
-            <div className="ml-auto flex items-center gap-2">
+          <div className="ah-hex-toolbar">
+            <h2 className="ah-view-heading ah-truncate" style={{ marginBottom: 0 }}>{name}</h2>
+            <span style={{ fontSize: "0.875rem", color: "var(--ah-text-muted)" }}>{fmtSize(data.byteLength)}</span>
+            <span style={{ fontSize: "0.75rem", color: "var(--ah-text-faint)" }}>{totalRows.toLocaleString()} rows</span>
+            <div className="ah-hex-toolbar__actions">
               {availableDiffs && availableDiffs.length > 0 && (
                 <select
-                  className="text-xs border border-stone-200 dark:border-stone-700 px-1.5 py-0.5 text-stone-500 dark:text-stone-400 bg-white dark:bg-stone-900 cursor-pointer max-w-[160px] truncate"
+                  className="ah-hex-select"
                   value={diffBaselineId ?? ""}
                   onchange={(e: Event) => { diffBaselineId = (e.target as HTMLSelectElement).value || null; }}
                 >
@@ -563,55 +563,51 @@ function HexView(): m.Component<HexViewAttrs> {
                 </select>
               )}
               <button
-                className={`text-xs px-2 py-0.5 border transition-colors ${
-                  showStrings
-                    ? "text-sky-600 dark:text-sky-400 border-sky-300 dark:border-sky-600 bg-sky-50 dark:bg-sky-900/30"
-                    : "text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
-                }`}
+                className={`ah-hex-btn${showStrings ? " ah-hex-btn--active" : ""}`}
                 onclick={() => { showStrings = !showStrings; }}
               >Strings</button>
               <button
-                className="text-xs text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 px-2 py-0.5 border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
+                className="ah-hex-btn"
                 onclick={() => handleCopy(data, regionMap, addrWidth)}
               >{copied ? "Copied" : "Copy"}</button>
               <button
-                className="text-xs text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 px-2 py-0.5 border border-stone-200 dark:border-stone-700 hover:border-stone-400 dark:hover:border-stone-500"
+                className="ah-hex-btn"
                 onclick={() => downloadBlob(name + ".bin", buffer)}
               >Download</button>
             </div>
           </div>
           {regionMap && regionMap.length > 0 && (
-            <div className="text-xs text-stone-400 dark:text-stone-500 mb-2 font-mono">
+            <div className="ah-hex-vma-info">
               {regionMap.length === 1
                 ? <>VMA {regionMap[0].vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}{"\u2013"}{(regionMap[0].vmaBase + regionMap[0].offsetEnd).toString(16).padStart(addrWidth ?? 8, "0")}</>
                 : <>{regionMap.length} VMA regions</>}
             </div>
           )}
           {diffStats && (
-            <div className="text-xs text-stone-400 dark:text-stone-500 mb-2 flex items-center gap-3">
+            <div className="ah-hex-stats">
               <span>
-                <span className="font-mono text-amber-700 dark:text-amber-400">{diffStats.changed.toLocaleString()}</span> bytes differ
+                <span className="ah-mono" style={{ color: "var(--ah-warning-text)" }}>{diffStats.changed.toLocaleString()}</span> bytes differ
                 {" "}of {fmtSize(diffStats.total)}
                 {diffStats.total !== diffStats.baseTotal && (
-                  <span className="ml-2">(baseline: {fmtSize(diffStats.baseTotal)})</span>
+                  <span className="ah-ml-2">(baseline: {fmtSize(diffStats.baseTotal)})</span>
                 )}
               </span>
               {diffRows.length > 0 && (<>
-                <span className="text-stone-300 dark:text-stone-600">|</span>
-                <span className="font-mono">
+                <span style={{ color: "var(--ah-text-fainter)" }}>|</span>
+                <span className="ah-mono">
                   {currentDiffIdx >= 0
-                    ? <><span className="text-amber-700 dark:text-amber-400">{currentDiffIdx + 1}</span>{" of "}{diffRows.length.toLocaleString()} diff rows</>
+                    ? <><span style={{ color: "var(--ah-warning-text)" }}>{currentDiffIdx + 1}</span>{" of "}{diffRows.length.toLocaleString()} diff rows</>
                     : <>{diffRows.length.toLocaleString()} diff rows</>}
                 </span>
-                <span className="text-stone-300 dark:text-stone-600 text-[10px]">n/p to navigate</span>
+                <span style={{ color: "var(--ah-text-fainter)", fontSize: "10px" }}>n/p to navigate</span>
               </>)}
             </div>
           )}
-          <div className="flex">
+          <div className="ah-hex-container">
             {/* Hex dump */}
-            <div className="flex-1 min-w-0 relative">
+            <div className="ah-hex-content">
               <div
-                className="overflow-auto border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900"
+                className="ah-hex-scroll"
                 style={{ height: containerHeight }}
                 oncreate={(vn: m.VnodeDOM) => {
                   const node = vn.dom as HTMLDivElement;
@@ -629,7 +625,7 @@ function HexView(): m.Component<HexViewAttrs> {
                 <div style={{ height: totalRows * ROW_HEIGHT, position: "relative" }}>
                   {highlightRow !== null && highlightRow >= startRow && highlightRow < endRow && (
                     <div
-                      className="absolute left-0 right-0 bg-sky-100 dark:bg-sky-900/40 transition-colors"
+                      className="ah-hex-highlight"
                       style={{ top: highlightRow * ROW_HEIGHT, height: ROW_HEIGHT }}
                     />
                   )}
@@ -637,10 +633,10 @@ function HexView(): m.Component<HexViewAttrs> {
                   {visibleSeparators.map(sep => (
                     <div
                       key={`sep-${sep.row}`}
-                      className="absolute left-0 right-0 border-t border-dashed border-stone-300 dark:border-stone-600 pointer-events-none"
+                      className="ah-hex-separator"
                       style={{ top: sep.row * ROW_HEIGHT - 1 }}
                     >
-                      <span className="absolute -top-3 left-2 text-[10px] text-stone-400 dark:text-stone-500 bg-white dark:bg-stone-900 px-1 font-mono">
+                      <span className="ah-hex-separator__label">
                         {sep.vmaBase.toString(16).padStart(addrWidth ?? 8, "0")}
                       </span>
                     </div>
@@ -655,12 +651,12 @@ function HexView(): m.Component<HexViewAttrs> {
                       return (
                         <div
                           key={i}
-                          className="font-mono text-xs text-stone-800 dark:text-stone-200 leading-5 select-text whitespace-pre"
+                          className="ah-hex-row"
                           style={{ position: "absolute", top: i * ROW_HEIGHT, height: ROW_HEIGHT, padding: "0 8px" }}
                         >
                           {segments.map((s, si) =>
                             s.diff
-                              ? <span key={si} className="bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 rounded-sm">{s.text}</span>
+                              ? <span key={si} className="ah-hex-row--diff">{s.text}</span>
                               : <span key={si}>{s.text}</span>
                           )}
                         </div>
@@ -669,7 +665,7 @@ function HexView(): m.Component<HexViewAttrs> {
                   ) : (
                     // Normal mode: single pre block
                     <pre
-                      className="font-mono text-xs text-stone-800 dark:text-stone-200 leading-5 select-text whitespace-pre relative"
+                      className="ah-hex-row"
                       style={{ position: "absolute", top: startRow * ROW_HEIGHT, left: 0, padding: "0 8px" }}
                     >
                       {lines!.join("\n")}
@@ -680,7 +676,7 @@ function HexView(): m.Component<HexViewAttrs> {
               {/* Diff minimap gutter */}
               {diffBaseline && diffRows.length > 0 && (
                 <canvas
-                  className="absolute top-0 right-0 cursor-pointer z-10"
+                  className="ah-hex-minimap"
                   style={{ width: 6, height: containerHeight }}
                   oncreate={(vn: m.VnodeDOM) => {
                     diffMinimapCanvas = vn.dom as HTMLCanvasElement;
@@ -696,46 +692,46 @@ function HexView(): m.Component<HexViewAttrs> {
 
             {/* Strings panel */}
             {showStrings && (
-              <div className="w-80 border border-l-0 border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 flex flex-col" style={{ height: containerHeight }}>
-                <div className="p-2 border-b border-stone-100 dark:border-stone-800">
+              <div className="ah-hex-strings" style={{ height: containerHeight }}>
+                <div className="ah-hex-strings__header">
                   <input
-                    className="w-full text-xs border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-2 py-1 placeholder:text-stone-300 dark:placeholder:text-stone-600 focus:outline-none focus:border-sky-400"
+                    className="ah-hex-strings__input"
                     placeholder={"Filter strings\u2026"}
                     value={stringFilter}
                     oninput={(e: Event) => { stringFilter = (e.target as HTMLInputElement).value; }}
                     oncreate={(vn: m.VnodeDOM) => { (vn.dom as HTMLInputElement).focus(); }}
                   />
-                  <div className="text-[10px] text-stone-400 dark:text-stone-500 mt-1">
+                  <div className="ah-hex-strings__count">
                     {filteredStrings.length === strings.length
                       ? `${strings.length.toLocaleString()} strings`
                       : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`}
                     {` (\u2265${MIN_STRING_LEN} chars)`}
                   </div>
                 </div>
-                <div className="flex-1 overflow-auto">
+                <div className="ah-hex-strings__list">
                   {displayStrings.map((s, i) => {
                     const vma = regionMap ? offsetToVmaAddr(s.offset, regionMap) : undefined;
                     return (
                       <div
                         key={i}
-                        className="px-2 py-0.5 text-xs hover:bg-sky-50 dark:hover:bg-sky-900/30 cursor-pointer border-b border-stone-50 dark:border-stone-800 flex gap-2 items-baseline"
+                        className="ah-hex-strings__row"
                         onclick={() => scrollToOffset(s.offset)}
                         title={`Offset: 0x${s.offset.toString(16)}${vma !== undefined ? ` | VMA: 0x${vma.toString(16)}` : ""}`}
                       >
-                        <span className="font-mono text-stone-400 dark:text-stone-500 shrink-0 text-[10px]">
+                        <span className="ah-hex-strings__offset">
                           {(vma ?? s.offset).toString(16).padStart(vma !== undefined ? (addrWidth ?? 8) : 8, "0")}
                         </span>
-                        <span className="font-mono text-stone-700 dark:text-stone-200 truncate">{s.str}</span>
+                        <span className="ah-hex-strings__value">{s.str}</span>
                       </div>
                     );
                   })}
                   {filteredStrings.length > stringShowCount && (
-                    <div className="px-2 py-2 text-[10px] text-stone-400 dark:text-stone-500 text-center">
+                    <div style={{ padding: "0.5rem", fontSize: "10px", color: "var(--ah-text-faint)", textAlign: "center" }}>
                       Showing {stringShowCount.toLocaleString()} of {filteredStrings.length.toLocaleString()}
                       {" \u2014 "}
-                      <button className="text-sky-600 dark:text-sky-400 hover:underline" onclick={() => { stringShowCount = Math.min(stringShowCount + 5_000, filteredStrings.length); }}>show more</button>
+                      <button className="ah-more-link" onclick={() => { stringShowCount = Math.min(stringShowCount + 5_000, filteredStrings.length); }}>show more</button>
                       {" "}
-                      <button className="text-sky-600 dark:text-sky-400 ml-1 hover:underline" onclick={() => { stringShowCount = filteredStrings.length; }}>show all</button>
+                      <button className="ah-more-link" onclick={() => { stringShowCount = filteredStrings.length; }}>show all</button>
                     </div>
                   )}
                 </div>

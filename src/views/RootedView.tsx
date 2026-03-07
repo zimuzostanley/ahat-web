@@ -18,7 +18,7 @@ function RootedView(): m.Component<RootedViewAttrs> {
     view(vnode) {
       const { heaps, navigate, isDiffed } = vnode.attrs;
 
-      if (!rows) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
+      if (!rows) return <div className="ah-loading">Loading&hellip;</div>;
 
       const heapCols = heaps.filter(h => h.java + h.native_ > 0);
       const diffed = isDiffed && rows.some(r => r.baselineRetainedTotal !== undefined);
@@ -28,7 +28,7 @@ function RootedView(): m.Component<RootedViewAttrs> {
         {
           label: "Retained", align: "right", minWidth: "5rem",
           sortKey: r => r.retainedTotal,
-          render: r => <span className={`font-mono ${r.isPlaceHolder ? "opacity-60" : ""}`}>{fmtSize(r.retainedTotal)}</span>,
+          render: r => <span className={`ah-mono${r.isPlaceHolder ? " ah-opacity-60" : ""}`}>{fmtSize(r.retainedTotal)}</span>,
         },
       ];
       if (diffed) {
@@ -38,7 +38,7 @@ function RootedView(): m.Component<RootedViewAttrs> {
           render: r => {
             const d = r.retainedTotal - (r.baselineRetainedTotal ?? r.retainedTotal);
             if (r.baselineRetainedTotal === undefined || d === 0) return null;
-            return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
+            return <span className={`ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}`}>{fmtSizeDelta(d)}</span>;
           },
         });
       }
@@ -51,7 +51,7 @@ function RootedView(): m.Component<RootedViewAttrs> {
           },
           render: (r: InstanceRow) => {
             const s = r.retainedByHeap.find(x => x.heap === h.name);
-            return <span className={`font-mono ${r.isPlaceHolder ? "opacity-60" : ""}`}>{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>;
+            return <span className={`ah-mono${r.isPlaceHolder ? " ah-opacity-60" : ""}`}>{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>;
           },
         });
         if (diffed) {
@@ -67,7 +67,7 @@ function RootedView(): m.Component<RootedViewAttrs> {
               const bs = r.baselineRetainedByHeap?.find(x => x.heap === h.name);
               const d = ((s?.java ?? 0) + (s?.native_ ?? 0)) - ((bs?.java ?? 0) + (bs?.native_ ?? 0));
               if (d === 0 || !bs) return null;
-              return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
+              return <span className={`ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}`}>{fmtSizeDelta(d)}</span>;
             },
           });
         }
@@ -75,7 +75,7 @@ function RootedView(): m.Component<RootedViewAttrs> {
       cols.push({
         label: "Object",
         render: r => (
-          <span className={r.isPlaceHolder ? "opacity-60" : ""}>
+          <span className={r.isPlaceHolder ? "ah-opacity-60" : ""}>
             <InstanceLink row={r} navigate={navigate} />
           </span>
         ),
@@ -83,7 +83,7 @@ function RootedView(): m.Component<RootedViewAttrs> {
 
       return (
         <div>
-          <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Rooted</h2>
+          <h2 className="ah-view-heading">Rooted</h2>
           <SortableTable<InstanceRow> columns={cols} data={rows} rowKey={(r: InstanceRow) => r.id} />
         </div>
       );

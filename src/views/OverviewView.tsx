@@ -9,9 +9,9 @@ function DeltaCell(): m.Component<DeltaCellAttrs> {
     view(vnode) {
       const { current, baseline } = vnode.attrs;
       const d = current - baseline;
-      if (d === 0) return <td className="py-1 px-2 text-right font-mono" />;
+      if (d === 0) return <td className="ah-overview-td--right" />;
       return (
-        <td className={`py-1 px-2 text-right font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"} ${deltaBgClassBytes(d)}`}>
+        <td className={`ah-overview-td--right ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"} ${deltaBgClassBytes(d)}`}>
           {fmtSizeDelta(d)}
         </td>
       );
@@ -39,61 +39,61 @@ function OverviewView(): m.Component<OverviewViewAttrs> {
 
     return (
       <div>
-        <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Overview</h2>
+        <h2 className="ah-view-heading">Overview</h2>
 
-        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-4 mb-4">
-          <h3 className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">General Information</h3>
-          <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 max-w-md items-center">
-            <span className="text-stone-500 dark:text-stone-400">Heap Dump:</span>
+        <div className="ah-card ah-mb-4">
+          <h3 className="ah-sub-heading">General Information</h3>
+          <div className="ah-info-grid--wide">
+            <span className="ah-info-grid__label">Heap Dump:</span>
             <span>{name}</span>
-            <span className="text-stone-500 dark:text-stone-400">Total Instances:</span>
-            <span className="font-mono">
+            <span className="ah-info-grid__label">Total Instances:</span>
+            <span className="ah-mono">
               {overview.instanceCount.toLocaleString()}
               {diffed && overview.baselineInstanceCount != null && overview.instanceCount !== overview.baselineInstanceCount && (
-                <span className={`ml-2 whitespace-nowrap ${overview.instanceCount - overview.baselineInstanceCount > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>
+                <span className={`ah-ml-2 ah-nowrap ${overview.instanceCount - overview.baselineInstanceCount > 0 ? "ah-delta-pos" : "ah-delta-neg"}`}>
                   {(overview.instanceCount - overview.baselineInstanceCount > 0 ? "+" : "\u2212") + Math.abs(overview.instanceCount - overview.baselineInstanceCount).toLocaleString()}
                 </span>
               )}
             </span>
-            <span className="text-stone-500 dark:text-stone-400">Heaps:</span>
+            <span className="ah-info-grid__label">Heaps:</span>
             <span>{heaps.map(h => h.name).join(", ")}</span>
           </div>
         </div>
-        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-4">
-          <h3 className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">Bytes Retained by Heap</h3>
-          <table className="w-full">
+        <div className="ah-card">
+          <h3 className="ah-sub-heading">Bytes Retained by Heap</h3>
+          <table className="ah-overview-table">
             <thead>
               <tr>
-                <th className="text-left py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">Heap</th>
-                <th className="text-right py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">Java Size</th>
-                {diffed && <th className="text-right py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">{"\u0394"}</th>}
-                <th className="text-right py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">Native Size</th>
-                {diffed && <th className="text-right py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">{"\u0394"}</th>}
-                <th className="text-right py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">Total Size</th>
-                {diffed && <th className="text-right py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">{"\u0394"}</th>}
+                <th className="ah-overview-th">Heap</th>
+                <th className="ah-overview-th--right">Java Size</th>
+                {diffed && <th className="ah-overview-th--right">{"\u0394"}</th>}
+                <th className="ah-overview-th--right">Native Size</th>
+                {diffed && <th className="ah-overview-th--right">{"\u0394"}</th>}
+                <th className="ah-overview-th--right">Total Size</th>
+                {diffed && <th className="ah-overview-th--right">{"\u0394"}</th>}
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b-2 border-stone-300 dark:border-stone-600 font-semibold">
-                <td className="py-1 px-2">Total</td>
-                <td className="py-1 px-2 text-right font-mono">{fmtSize(totalJava)}</td>
+              <tr className="ah-overview-total">
+                <td className="ah-overview-td">Total</td>
+                <td className="ah-overview-td--right">{fmtSize(totalJava)}</td>
                 {diffed && <DeltaCell current={totalJava} baseline={baseTotalJava} />}
-                <td className="py-1 px-2 text-right font-mono">{fmtSize(totalNative)}</td>
+                <td className="ah-overview-td--right">{fmtSize(totalNative)}</td>
                 {diffed && <DeltaCell current={totalNative} baseline={baseTotalNative} />}
-                <td className="py-1 px-2 text-right font-mono">{fmtSize(totalJava + totalNative)}</td>
+                <td className="ah-overview-td--right">{fmtSize(totalJava + totalNative)}</td>
                 {diffed && <DeltaCell current={totalJava + totalNative} baseline={baseTotalJava + baseTotalNative} />}
               </tr>
               {heapIndices.map(i => {
                 const h = overview.heaps[i];
                 const bh = baseHeaps?.[i];
                 return (
-                  <tr key={h.name} className="border-t border-stone-100 dark:border-stone-800 hover:bg-stone-50 dark:hover:bg-stone-800">
-                    <td className="py-1 px-2">{h.name}</td>
-                    <td className="py-1 px-2 text-right font-mono">{fmtSize(h.java)}</td>
+                  <tr key={h.name} className="ah-overview-row">
+                    <td className="ah-overview-td">{h.name}</td>
+                    <td className="ah-overview-td--right">{fmtSize(h.java)}</td>
                     {diffed && <DeltaCell current={h.java} baseline={bh ? bh.java : 0} />}
-                    <td className="py-1 px-2 text-right font-mono">{fmtSize(h.native_)}</td>
+                    <td className="ah-overview-td--right">{fmtSize(h.native_)}</td>
                     {diffed && <DeltaCell current={h.native_} baseline={bh ? bh.native_ : 0} />}
-                    <td className="py-1 px-2 text-right font-mono font-semibold">{fmtSize(h.java + h.native_)}</td>
+                    <td className="ah-overview-td--total">{fmtSize(h.java + h.native_)}</td>
                     {diffed && <DeltaCell current={h.java + h.native_} baseline={bh ? bh.java + bh.native_ : 0} />}
                   </tr>
                 );
@@ -102,29 +102,29 @@ function OverviewView(): m.Component<OverviewViewAttrs> {
           </table>
         </div>
         {overview.duplicateBitmaps && overview.duplicateBitmaps.length > 0 && (
-          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 p-4 mt-4">
-            <h3 className="text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2">Heap Analysis Results</h3>
-            <p className="text-sm text-stone-700 dark:text-stone-200 mb-2">
+          <div className="ah-card ah-mt-4">
+            <h3 className="ah-sub-heading">Heap Analysis Results</h3>
+            <p style={{ fontSize: "0.875rem", lineHeight: "1.25rem", color: "var(--ah-text-secondary)", marginBottom: "0.5rem" }}>
               {overview.duplicateBitmaps.length} group{overview.duplicateBitmaps.length > 1 ? "s" : ""} of duplicate bitmaps detected, wasting{" "}
-              <span className="font-mono font-semibold">{fmtSize(overview.duplicateBitmaps.reduce((a, g) => a + g.wastedBytes, 0))}</span>.{" "}
-              <button className="text-sky-600 dark:text-sky-400 hover:underline" onclick={() => navigate("bitmaps")}>View Bitmaps</button>
+              <span className="ah-mono ah-semibold">{fmtSize(overview.duplicateBitmaps.reduce((a, g) => a + g.wastedBytes, 0))}</span>.{" "}
+              <button className="ah-link--alt" onclick={() => navigate("bitmaps")}>View Bitmaps</button>
             </p>
-            <table className="w-full text-sm">
+            <table className="ah-overview-table" style={{ fontSize: "0.875rem", lineHeight: "1.25rem" }}>
               <thead>
                 <tr>
-                  <th className="text-left py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">Dimensions</th>
-                  <th className="text-right py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">Copies</th>
-                  <th className="text-right py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">Total</th>
-                  <th className="text-right py-1 px-2 text-stone-600 dark:text-stone-300 text-xs font-medium">Wasted</th>
+                  <th className="ah-overview-th">Dimensions</th>
+                  <th className="ah-overview-th--right">Copies</th>
+                  <th className="ah-overview-th--right">Total</th>
+                  <th className="ah-overview-th--right">Wasted</th>
                 </tr>
               </thead>
               <tbody>
                 {overview.duplicateBitmaps.map((g, i) => (
-                  <tr key={i} className="border-t border-stone-100 dark:border-stone-800 hover:bg-stone-50 dark:hover:bg-stone-800">
-                    <td className="py-1 px-2 font-mono">{g.width} {"\u00d7"} {g.height}</td>
-                    <td className="py-1 px-2 text-right font-mono">{g.count}</td>
-                    <td className="py-1 px-2 text-right font-mono">{fmtSize(g.totalBytes)}</td>
-                    <td className="py-1 px-2 text-right font-mono text-rose-600 dark:text-rose-400">{fmtSize(g.wastedBytes)}</td>
+                  <tr key={i} className="ah-overview-row">
+                    <td className="ah-overview-td ah-mono">{g.width} {"\u00d7"} {g.height}</td>
+                    <td className="ah-overview-td--right">{g.count}</td>
+                    <td className="ah-overview-td--right">{fmtSize(g.totalBytes)}</td>
+                    <td className="ah-overview-td--right ah-delta-pos">{fmtSize(g.wastedBytes)}</td>
                   </tr>
                 ))}
               </tbody>

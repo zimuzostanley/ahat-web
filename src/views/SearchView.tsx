@@ -49,16 +49,16 @@ function SearchView(): m.Component<SearchViewAttrs> {
 
       return (
         <div>
-          <h2 className="text-lg font-semibold mb-3 text-stone-800 dark:text-stone-100">Search</h2>
+          <h2 className="ah-view-heading">Search</h2>
           <input
             type="text" value={query} oninput={(e: Event) => handleChange((e.target as HTMLInputElement).value, proxy)}
             placeholder={"Class name or 0x\u2026 hex id"}
-            className="w-full px-3 py-2 border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 mb-3 focus:outline-none focus:ring-2 focus:ring-sky-400"
+            className="ah-input"
           />
           {results.length > 0 && (
             <SortableTable<InstanceRow>
               columns={[
-                { label: "Retained", align: "right", sortKey: (r: InstanceRow) => r.retainedTotal, render: (r: InstanceRow) => <span className="font-mono">{fmtSize(r.retainedTotal)}</span> },
+                { label: "Retained", align: "right", sortKey: (r: InstanceRow) => r.retainedTotal, render: (r: InstanceRow) => <span className="ah-mono">{fmtSize(r.retainedTotal)}</span> },
                 { label: "Object", render: (r: InstanceRow) => <InstanceLink row={r} navigate={navigate} /> },
               ]}
               data={results}
@@ -66,7 +66,7 @@ function SearchView(): m.Component<SearchViewAttrs> {
             />
           )}
           {query.length >= 2 && results.length === 0 && (
-            <div className="text-stone-500 dark:text-stone-400">No results found.</div>
+            <div className="ah-info-grid__label">No results found.</div>
           )}
         </div>
       );

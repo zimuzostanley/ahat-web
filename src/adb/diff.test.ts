@@ -146,25 +146,25 @@ describe("deltaBgClass", () => {
     expect(deltaBgClass(-999)).toBe("");
   });
 
-  it("returns red-50 at 1 MB threshold (increase = bad)", () => {
-    expect(deltaBgClass(1000)).toBe("bg-red-50 dark:bg-red-950");
-    expect(deltaBgClass(9999)).toBe("bg-red-50 dark:bg-red-950");
+  it("returns pos-light at 1 MB threshold (increase = bad)", () => {
+    expect(deltaBgClass(1000)).toBe("ah-delta-bg-pos-light");
+    expect(deltaBgClass(9999)).toBe("ah-delta-bg-pos-light");
   });
 
-  it("returns red-100 at 10 MB threshold", () => {
-    expect(deltaBgClass(10_000)).toBe("bg-red-100 dark:bg-red-900/50");
-    expect(deltaBgClass(49_999)).toBe("bg-red-100 dark:bg-red-900/50");
+  it("returns pos-medium at 10 MB threshold", () => {
+    expect(deltaBgClass(10_000)).toBe("ah-delta-bg-pos-medium");
+    expect(deltaBgClass(49_999)).toBe("ah-delta-bg-pos-medium");
   });
 
-  it("returns red-200 at 50 MB threshold", () => {
-    expect(deltaBgClass(50_000)).toBe("bg-red-200 dark:bg-red-900");
-    expect(deltaBgClass(500_000)).toBe("bg-red-200 dark:bg-red-900");
+  it("returns pos-heavy at 50 MB threshold", () => {
+    expect(deltaBgClass(50_000)).toBe("ah-delta-bg-pos-heavy");
+    expect(deltaBgClass(500_000)).toBe("ah-delta-bg-pos-heavy");
   });
 
-  it("returns green classes for negative deltas (decrease = good)", () => {
-    expect(deltaBgClass(-1000)).toBe("bg-green-50 dark:bg-green-950");
-    expect(deltaBgClass(-10_000)).toBe("bg-green-100 dark:bg-green-900/50");
-    expect(deltaBgClass(-50_000)).toBe("bg-green-200 dark:bg-green-900");
+  it("returns neg classes for negative deltas (decrease = good)", () => {
+    expect(deltaBgClass(-1000)).toBe("ah-delta-bg-neg-light");
+    expect(deltaBgClass(-10_000)).toBe("ah-delta-bg-neg-medium");
+    expect(deltaBgClass(-50_000)).toBe("ah-delta-bg-neg-heavy");
   });
 });
 

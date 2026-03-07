@@ -51,15 +51,17 @@ const VmaEntries: m.Component<{
     })();
 
     return m(Fragment, [
-      m("tr", { className: "bg-stone-100 dark:bg-stone-700" }, [
-        m("td", { colSpan: leadingColCount, className: "py-0.5 px-2 pl-8" }, [
+      m("tr", { className: "ah-vma-header" }, [
+        m("td", { colSpan: leadingColCount, className: "ah-vma-th", style: { paddingLeft: "2rem" } }, [
           m("span", {
-            className: "text-stone-500 dark:text-stone-400 text-[10px] font-medium cursor-pointer hover:text-stone-700 dark:hover:text-stone-200",
+            className: "ah-smaps-action",
+            style: { cursor: "pointer", fontWeight: 500 },
             onclick: () => onToggleSort("addrStart"),
           }, `Address ${sortField === "addrStart" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
-          m("span", { className: "ml-3 text-stone-400 dark:text-stone-500 text-[10px]" }, "Perms"),
+          m("span", { style: { marginLeft: "0.75rem", color: "var(--ah-text-faint)", fontSize: "10px" } }, "Perms"),
           m("button", {
-            className: "ml-3 text-[10px] text-stone-400 dark:text-stone-500 hover:text-sky-600 dark:hover:text-sky-400 disabled:text-stone-300 dark:disabled:text-stone-600",
+            className: "ah-smaps-action",
+            style: { marginLeft: "0.75rem" },
             disabled: dumpDisabled,
             title: "Dump all VMA memory in this group",
             onclick: () => onDump(pid, processName, groupName, entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }))),
@@ -68,7 +70,8 @@ const VmaEntries: m.Component<{
         SMAPS_COLUMNS.map(([f, label]) =>
           m("td", {
             key: f,
-            className: "py-0.5 px-2 text-right text-stone-500 dark:text-stone-400 text-[10px] font-medium cursor-pointer hover:text-stone-700 dark:hover:text-stone-200",
+            className: "ah-vma-td--right ah-smaps-th--sortable",
+            style: { fontWeight: 500 },
             onclick: () => onToggleSort(f),
           }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
         ),
@@ -77,24 +80,27 @@ const VmaEntries: m.Component<{
         const ed = diffByAddr?.get(e.addrStart);
         return m("tr", {
           key: i,
-          className: `border-t border-stone-50 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 ${
-            ed?.status === "removed" ? "opacity-60" :
-            ed?.status === "added" ? "bg-green-50/50 dark:bg-green-900/30" : ""
+          className: `ah-vma-row${
+            ed?.status === "removed" ? " ah-vma-row--removed" :
+            ed?.status === "added" ? " ah-vma-row--added" : ""
           }`,
         }, [
           m("td", {
             colSpan: leadingColCount,
-            className: `py-0.5 px-2 pl-8 font-mono text-[10px] text-stone-500 dark:text-stone-400 whitespace-nowrap ${ed?.status === "removed" ? "line-through" : ""}`,
+            className: `ah-vma-td${ed?.status === "removed" ? " ah-line-through" : ""}`,
+            style: { paddingLeft: "2rem" },
           }, [
             `${e.addrStart}-${e.addrEnd}`,
-            m("span", { className: "ml-2 text-stone-400 dark:text-stone-500" }, e.perms),
+            m("span", { style: { marginLeft: "0.5rem", color: "var(--ah-text-faint)" } }, e.perms),
             ed && ed.status !== "matched" && (
               m("span", {
-                className: `ml-2 font-medium ${ed.status === "added" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`,
+                className: ed.status === "added" ? "ah-status-new" : "ah-status-gone",
+                style: { marginLeft: "0.5rem" },
               }, ed.status === "added" ? "NEW" : "GONE")
             ),
             m("button", {
-              className: "ml-2 text-stone-400 dark:text-stone-500 hover:text-sky-600 dark:hover:text-sky-400 disabled:text-stone-300 dark:disabled:text-stone-600",
+              className: "ah-smaps-action",
+              style: { marginLeft: "0.5rem" },
               disabled: dumpDisabled || ed?.status === "removed",
               title: "Dump this VMA",
               onclick: () => onDump(pid, processName, `${groupName}_${e.addrStart}-${e.addrEnd}`, [{ addrStart: e.addrStart, addrEnd: e.addrEnd }]),
@@ -104,12 +110,13 @@ const VmaEntries: m.Component<{
             const delta = ed ? ed[SMAPS_DELTA_KEY[f]] : 0;
             return m("td", {
               key: f,
-              className: `py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap ${ed ? deltaBgClass(delta) : ""}`,
+              className: `ah-vma-td--right ${ed ? deltaBgClass(delta) : ""}`,
             }, [
               e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014",
               ed && (
                 m("span", {
-                  className: `ml-1 inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`,
+                  className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
+                  style: { display: "inline-block", minWidth: "4rem", textAlign: "right" },
                 }, delta !== 0 ? fmtDelta(delta) : "")
               ),
             ]);
@@ -160,39 +167,44 @@ const SmapsSubTable: m.Component<{
 
     return m(Fragment, [
       // Sub-table header
-      m("tr", { className: "bg-stone-50 dark:bg-stone-800 border-t border-stone-200 dark:border-stone-700" }, [
+      m("tr", { className: "ah-smaps-header" }, [
         m("td", {
           colSpan: leadingColCount - 1,
-          className: "text-left py-1 px-2 pl-6 text-stone-500 dark:text-stone-400 text-xs font-medium",
+          className: "ah-smaps-th",
+          style: { paddingLeft: "1.5rem" },
         }, "Mapping"),
         m("td", {
-          className: "text-right py-1 px-1 text-stone-400 dark:text-stone-500 text-xs font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200",
+          className: "ah-smaps-th--right ah-smaps-th--sortable",
+          style: { paddingRight: "0.25rem" },
           onclick: () => onToggleSort("count"),
         }, `# ${sortField === "count" ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
         SMAPS_COLUMNS.map(([f, label]) =>
           m("td", {
             key: f,
-            className: "text-right py-1 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200 whitespace-nowrap",
+            className: "ah-smaps-th--right ah-smaps-th--sortable",
             onclick: () => onToggleSort(f),
           }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
         ),
       ]),
       // Totals row
-      m("tr", { className: "border-b-2 border-stone-300 dark:border-stone-600 font-semibold bg-stone-50 dark:bg-stone-800" }, [
+      m("tr", { className: "ah-smaps-total-row" }, [
         m("td", {
           colSpan: leadingColCount,
-          className: "py-0.5 px-2 pl-6 text-stone-600 dark:text-stone-300 text-xs",
+          className: "ah-smaps-td",
+          style: { paddingLeft: "1.5rem", color: "var(--ah-text-secondary)", fontSize: "0.75rem" },
         }, "Total"),
         SMAPS_COLUMNS.map(([f]) => {
           const delta = totals[SMAPS_DELTA_KEY[f]];
           return m("td", {
             key: f,
-            className: `py-0.5 px-2 text-right font-mono text-xs whitespace-nowrap ${smapsDiffs ? deltaBgClass(delta) : ""}`,
+            className: `ah-smaps-td--right ${smapsDiffs ? deltaBgClass(delta) : ""}`,
+            style: { fontSize: "0.75rem" },
           }, [
             totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014",
             smapsDiffs && (
               m("span", {
-                className: `ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`,
+                className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
+                style: { fontSize: "10px", fontWeight: "normal", display: "inline-block", minWidth: "4rem", textAlign: "right" },
               }, delta !== 0 ? fmtDelta(delta) : "")
             ),
           ]);
@@ -203,44 +215,46 @@ const SmapsSubTable: m.Component<{
         const prevEntries = sd && sd.status === "matched" && prevByName ? prevByName.get(g.name)?.entries ?? null : null;
         return m(Fragment, { key: g.name }, [
           m("tr", {
-            className: `border-t border-stone-100 dark:border-stone-800 cursor-pointer hover:bg-stone-100 dark:hover:bg-stone-700 bg-stone-50 dark:bg-stone-800 text-xs ${
-              sd?.status === "removed" ? "opacity-60" :
-              sd?.status === "added" ? "bg-green-50/50 dark:bg-green-900/30" : ""
+            className: `ah-smaps-row${
+              sd?.status === "removed" ? " ah-smaps-row--removed" :
+              sd?.status === "added" ? " ah-smaps-row--added" : ""
             }`,
             onclick: () => sd?.status !== "removed" && onToggleGroup(g.name),
           }, [
             m("td", {
               colSpan: leadingColCount - 1,
-              className: `py-0.5 px-2 pl-6 font-mono text-stone-700 dark:text-stone-200 ${sd?.status === "removed" ? "line-through" : ""}`,
+              className: `ah-smaps-td--name${sd?.status === "removed" ? " ah-line-through" : ""}`,
+              style: { paddingLeft: "1.5rem" },
               title: g.name,
             }, [
-              m("div", { className: "flex items-center gap-1" }, [
-                m("span", { className: "text-stone-400 dark:text-stone-500 shrink-0" }, expandedGroup === g.name ? "\u25BC" : "\u25B6"),
-                m("span", { className: "truncate max-w-[280px]" }, g.name),
+              m("div", { className: "ah-smaps-td--name-inner" }, [
+                m("span", { className: "ah-expander" }, expandedGroup === g.name ? "\u25BC" : "\u25B6"),
+                m("span", { className: "ah-truncate", style: { maxWidth: "280px" } }, g.name),
                 sd && sd.status !== "matched" && (
                   m("span", {
-                    className: `text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`,
+                    className: sd.status === "added" ? "ah-status-new" : "ah-status-gone",
                   }, sd.status === "added" ? "NEW" : "GONE")
                 ),
                 m("button", {
-                  className: "text-[10px] text-stone-400 dark:text-stone-500 hover:text-sky-600 dark:hover:text-sky-400 disabled:text-stone-300 dark:disabled:text-stone-600 shrink-0",
+                  className: "ah-smaps-action",
                   disabled: dumpDisabled || sd?.status === "removed",
                   title: `Dump ${g.name} memory`,
                   onclick: (e: Event) => { e.stopPropagation(); onDump(pid, processName, g.name, g.entries.map(en => ({ addrStart: en.addrStart, addrEnd: en.addrEnd }))); },
                 }, "dump"),
               ]),
             ]),
-            m("td", { className: "py-0.5 px-1 text-right font-mono text-stone-400 dark:text-stone-500" }, String(g.count)),
+            m("td", { className: "ah-smaps-td--count" }, String(g.count)),
             SMAPS_COLUMNS.map(([f]) => {
               const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
               return m("td", {
                 key: f,
-                className: `py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`,
+                className: `ah-smaps-td--right ${sd ? deltaBgClass(delta) : ""}`,
               }, [
                 g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014",
                 sd && (
                   m("span", {
-                    className: `ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`,
+                    className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
+                    style: { fontSize: "10px", display: "inline-block", minWidth: "4rem", textAlign: "right" },
                   }, delta !== 0 ? fmtDelta(delta) : "")
                 ),
               ]);
@@ -298,46 +312,48 @@ function SharedMappingsTable(): m.Component<{
 
       const totals = computeSmapsTotals(mappings, diffs);
 
-      return m("div", { className: "mt-4" }, [
-        m("h3", { className: "text-xs font-semibold text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-2" }, [
+      return m("div", { className: "ah-shared-mappings" }, [
+        m("h3", { className: "ah-sub-heading" }, [
           "Shared Mappings",
-          m("span", { className: "font-normal ml-2" },
+          m("span", { style: { fontWeight: "normal", marginLeft: "0.5rem" } },
             `(${mappings.length} mappings across ${loadedCount} processes)`,
           ),
-          loading && m("span", { className: "ml-2 text-sky-600 dark:text-sky-400 animate-pulse" }, "loading\u2026"),
+          loading && m("span", { className: "ah-animate-pulse", style: { marginLeft: "0.5rem", color: "var(--ah-link-alt)" } }, "loading\u2026"),
         ]),
-        m("div", { className: "bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 max-h-[500px] overflow-y-auto" }, [
-          m("table", { className: "w-full text-xs" }, [
-            m("thead", { className: "sticky top-0 bg-stone-50 dark:bg-stone-800 z-10" }, [
-              m("tr", { className: "border-b border-stone-200 dark:border-stone-700" }, [
-                m("th", { className: "text-left py-1 px-2 text-stone-500 dark:text-stone-400 font-medium" }, "Mapping"),
+        m("div", { className: "ah-shared-mappings__table-wrap" }, [
+          m("table", { className: "ah-shared-mappings__table" }, [
+            m("thead", { className: "ah-shared-mappings__thead" }, [
+              m("tr", { style: { borderBottom: "1px solid var(--ah-border)" } }, [
+                m("th", { className: "ah-smaps-th" }, "Mapping"),
                 m("th", {
-                  className: "text-right py-1 px-1 text-stone-400 dark:text-stone-500 font-medium w-8 cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200",
+                  className: "ah-smaps-th--right ah-smaps-th--sortable",
+                  style: { width: "2rem", paddingRight: "0.25rem" },
                   onclick: () => sort.toggle("processCount"),
                 }, `Procs ${sort.field === "processCount" ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
                 SMAPS_COLUMNS.map(([f, label]) =>
                   m("th", {
                     key: f,
-                    className: "text-right py-1 px-2 text-stone-500 dark:text-stone-400 font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200 whitespace-nowrap",
+                    className: "ah-smaps-th--right ah-smaps-th--sortable",
                     onclick: () => sort.toggle(f),
                   }, `${label} ${sort.field === f ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
                 ),
               ]),
             ]),
             m("tbody", [
-              m("tr", { className: "border-b-2 border-stone-300 dark:border-stone-600 font-semibold" }, [
-                m("td", { className: "py-0.5 px-2 text-stone-600 dark:text-stone-300" }, "Total"),
+              m("tr", { className: "ah-smaps-total-row" }, [
+                m("td", { className: "ah-smaps-td", style: { color: "var(--ah-text-secondary)" } }, "Total"),
                 m("td"),
                 SMAPS_COLUMNS.map(([f]) => {
                   const delta = totals[SMAPS_DELTA_KEY[f]];
                   return m("td", {
                     key: f,
-                    className: `py-0.5 px-2 text-right font-mono whitespace-nowrap ${diffs ? deltaBgClass(delta) : ""}`,
+                    className: `ah-smaps-td--right ${diffs ? deltaBgClass(delta) : ""}`,
                   }, [
                     totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014",
                     diffs && (
                       m("span", {
-                        className: `ml-1 text-[10px] font-normal inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`,
+                        className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
+                        style: { fontSize: "10px", fontWeight: "normal", display: "inline-block", minWidth: "4rem", textAlign: "right" },
                       }, delta !== 0 ? fmtDelta(delta) : "")
                     ),
                   ]);
@@ -347,50 +363,51 @@ function SharedMappingsTable(): m.Component<{
                 const sd = diffByName?.get(mp.name);
                 return m(Fragment, { key: `${mp.name}-${i}` }, [
                   m("tr", {
-                    className: `border-t border-stone-100 dark:border-stone-800 cursor-pointer hover:bg-stone-50 dark:hover:bg-stone-800 ${
-                      sd?.status === "removed" ? "opacity-60" :
-                      sd?.status === "added" ? "bg-green-50/50 dark:bg-green-900/30" : ""
+                    className: `ah-smaps-row${
+                      sd?.status === "removed" ? " ah-smaps-row--removed" :
+                      sd?.status === "added" ? " ah-smaps-row--added" : ""
                     }`,
                     onclick: () => sd?.status !== "removed" && (expandedMapping = expandedMapping === mp.name ? null : mp.name),
                   }, [
                     m("td", {
-                      className: `py-0.5 px-2 font-mono text-stone-700 dark:text-stone-200 ${sd?.status === "removed" ? "line-through" : ""}`,
+                      className: `ah-smaps-td--name${sd?.status === "removed" ? " ah-line-through" : ""}`,
                       title: mp.name,
                     }, [
-                      m("div", { className: "flex items-center gap-1" }, [
-                        m("span", { className: "text-stone-400 dark:text-stone-500 shrink-0" }, expandedMapping === mp.name ? "\u25BC" : "\u25B6"),
-                        m("span", { className: "truncate max-w-[280px]" }, mp.name),
+                      m("div", { className: "ah-smaps-td--name-inner" }, [
+                        m("span", { className: "ah-expander" }, expandedMapping === mp.name ? "\u25BC" : "\u25B6"),
+                        m("span", { className: "ah-truncate", style: { maxWidth: "280px" } }, mp.name),
                         sd && sd.status !== "matched" && (
                           m("span", {
-                            className: `text-[10px] font-medium shrink-0 ${sd.status === "added" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`,
+                            className: sd.status === "added" ? "ah-status-new" : "ah-status-gone",
                           }, sd.status === "added" ? "NEW" : "GONE")
                         ),
                       ]),
                     ]),
-                    m("td", { className: "py-0.5 px-1 text-right font-mono text-stone-400 dark:text-stone-500" }, String(mp.processCount)),
+                    m("td", { className: "ah-smaps-td--count" }, String(mp.processCount)),
                     SMAPS_COLUMNS.map(([f]) => {
                       const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
                       return m("td", {
                         key: f,
-                        className: `py-0.5 px-2 text-right font-mono whitespace-nowrap ${sd ? deltaBgClass(delta) : ""}`,
+                        className: `ah-smaps-td--right ${sd ? deltaBgClass(delta) : ""}`,
                       }, [
                         mp[f] > 0 ? fmtSize(mp[f] * 1024) : "\u2014",
                         sd && (
                           m("span", {
-                            className: `ml-1 text-[10px] inline-block min-w-[4rem] text-right ${delta > 0 ? "text-red-700 dark:text-red-400" : delta < 0 ? "text-green-700 dark:text-green-400" : ""}`,
+                            className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : delta < 0 ? "ah-delta-neg" : ""}`,
+                            style: { fontSize: "10px", display: "inline-block", minWidth: "4rem", textAlign: "right" },
                           }, delta !== 0 ? fmtDelta(delta) : "")
                         ),
                       ]);
                     }),
                   ]),
                   expandedMapping === mp.name && sd?.status !== "removed" && m(Fragment, [
-                    m("tr", { className: "bg-stone-100 dark:bg-stone-700" }, [
-                      m("td", { className: "py-0.5 px-2 pl-6 text-stone-500 dark:text-stone-400 text-[10px] font-medium" }, "Process (PID)"),
+                    m("tr", { className: "ah-vma-header" }, [
+                      m("td", { className: "ah-smaps-th", style: { paddingLeft: "1.5rem" } }, "Process (PID)"),
                       m("td"),
                       SMAPS_COLUMNS.map(([, label]) =>
                         m("td", {
                           key: label,
-                          className: "py-0.5 px-2 text-right text-stone-500 dark:text-stone-400 text-[10px] font-medium",
+                          className: "ah-smaps-th--right",
                         }, label),
                       ),
                     ]),
@@ -400,16 +417,16 @@ function SharedMappingsTable(): m.Component<{
                       const regions = matchedGroup?.entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }));
                       return m("tr", {
                         key: p.pid,
-                        className: "border-t border-stone-50 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700",
+                        className: "ah-vma-row",
                       }, [
-                        m("td", { className: "py-0.5 px-2 pl-6 text-[10px] text-stone-600 dark:text-stone-300 whitespace-nowrap" }, [
-                          m("div", { className: "flex items-center gap-1" }, [
+                        m("td", { className: "ah-vma-td", style: { paddingLeft: "1.5rem", color: "var(--ah-text-secondary)" } }, [
+                          m("div", { className: "ah-smaps-td--name-inner" }, [
                             m("span", [
                               `${p.name} `,
-                              m("span", { className: "text-stone-400 dark:text-stone-500" }, `(${p.pid})`),
+                              m("span", { style: { color: "var(--ah-text-faint)" } }, `(${p.pid})`),
                             ]),
                             m("button", {
-                              className: "text-[10px] text-stone-400 dark:text-stone-500 hover:text-sky-600 dark:hover:text-sky-400 disabled:text-stone-300 dark:disabled:text-stone-600 shrink-0",
+                              className: "ah-smaps-action",
                               disabled: dumpDisabled || !regions?.length,
                               title: `Dump ${mp.name} from ${p.name} (${p.pid})`,
                               onclick: () => regions && onDump(p.pid, p.name, mp.name, regions),
@@ -420,7 +437,7 @@ function SharedMappingsTable(): m.Component<{
                         SMAPS_COLUMNS.map(([f]) =>
                           m("td", {
                             key: f,
-                            className: "py-0.5 px-2 text-right font-mono text-[10px] whitespace-nowrap",
+                            className: "ah-vma-td--right",
                           }, p[f] > 0 ? fmtSize(p[f] * 1024) : "\u2014"),
                         ),
                       ]);
@@ -476,24 +493,24 @@ function DumpButton(): m.Component<{
           ? `${Math.round(job.progress.done / job.progress.total * 100)}%`
           : null;
         return m("button", {
-          className: "text-xs text-amber-700 dark:text-amber-400 hover:text-rose-700 dark:hover:text-rose-400 px-2 py-0.5 border border-amber-300 dark:border-amber-600 hover:border-rose-400 dark:hover:border-rose-500 whitespace-nowrap w-[104px] truncate",
+          className: "ah-dump-btn--active",
           title: "Click to cancel",
           onclick: (e: Event) => { e.stopPropagation(); onCancel(pid); },
         }, pct ?? job.status);
       }
 
       return m("div", {
-        className: "relative inline-flex w-[104px]",
+        className: "ah-dump-btn-wrap",
         oncreate: (v: m.VnodeDOM) => { containerEl = v.dom as HTMLDivElement; },
       }, [
         m("button", {
-          className: "flex-1 text-xs text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 disabled:text-stone-300 dark:disabled:text-stone-600 disabled:cursor-not-allowed px-2 py-0.5 border border-r-0 border-sky-200 dark:border-sky-700 hover:border-sky-400 dark:hover:border-sky-500 disabled:border-stone-200 dark:disabled:border-stone-700 whitespace-nowrap rounded-l",
+          className: "ah-dump-btn",
           disabled,
           title: "Dump Java heap",
           onclick: (e: Event) => { e.stopPropagation(); onDump(pid, false); },
         }, "Dump"),
         m("button", {
-          className: "text-xs text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 disabled:text-stone-300 dark:disabled:text-stone-600 disabled:cursor-not-allowed px-1 py-0.5 border border-sky-200 dark:border-sky-700 hover:border-sky-400 dark:hover:border-sky-500 disabled:border-stone-200 dark:disabled:border-stone-700 rounded-r",
+          className: "ah-dump-btn__caret",
           disabled,
           title: "More options",
           oncreate: (v: m.VnodeDOM) => { caretEl = v.dom as HTMLButtonElement; },
@@ -515,11 +532,11 @@ function DumpButton(): m.Component<{
         }, "\u25BE"),
         open && menuPos && (
           m("div", {
-            className: "fixed z-50 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 shadow-lg rounded text-xs w-[160px]",
+            className: "ah-dump-btn__menu",
             style: { top: `${menuPos.top}px`, left: `${menuPos.left}px` },
           }, [
             m("button", {
-              className: "block w-full text-left px-3 py-1.5 hover:bg-sky-50 dark:hover:bg-sky-900/30 text-stone-700 dark:text-stone-200 rounded-t",
+              className: "ah-dump-btn__menu-item",
               onclick: (e: Event) => {
                 e.stopPropagation();
                 open = false;
@@ -529,7 +546,7 @@ function DumpButton(): m.Component<{
               },
             }, "Java dump"),
             m("button", {
-              className: "block w-full text-left px-3 py-1.5 hover:bg-sky-50 dark:hover:bg-sky-900/30 text-stone-700 dark:text-stone-200 border-t border-stone-100 dark:border-stone-800 rounded-b",
+              className: "ah-dump-btn__menu-item",
               onclick: (e: Event) => {
                 e.stopPropagation();
                 open = false;
@@ -700,7 +717,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     error = null;
     m.redraw();
     try {
-      // Step 1: Fast Java process list from `dumpsys activity lru` + pinned system processes
       const lruList = await conn.getLruProcesses(ac.signal);
       if (ac.signal.aborted) return;
       const lruPids = new Set(lruList.map(p => p.pid));
@@ -715,7 +731,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       m.redraw();
 
       if (!conn.isRoot) {
-        // Non-root: check debuggable packages, then stop
         if (!ac.signal.aborted) {
           try {
             const debuggable = await conn.getDebuggablePackages(ac.signal);
@@ -729,18 +744,14 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         return;
       }
 
-      // Step 2 (root, bg): Get ALL processes + smaps_rollup from /proc
       if (!ac.signal.aborted) {
         const { list: procList, rollups, javaPids: procJavaPids } = await conn.getProcessesFromProc(ac.signal);
         if (ac.signal.aborted) return;
-
-        // Merge: keep OOM labels from LRU, add all /proc processes
         const oomByPid = new Map(lruList.map(p => [p.pid, p.oomLabel]));
         for (const p of procList) {
           const oom = oomByPid.get(p.pid);
           if (oom) p.oomLabel = oom;
         }
-        // Java PIDs: union of LRU (authoritative) + /proc heuristic
         const mergedJavaPids = new Set([...lruJavaPids, ...procJavaPids]);
         processes = procList;
         smapsRollups = rollups;
@@ -749,7 +760,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         m.redraw();
       }
 
-      // Step 3 (root, bg): /proc/meminfo for global memory stats
       if (!ac.signal.aborted) {
         try {
           const procInfo = await conn.getProcMeminfo(ac.signal);
@@ -786,7 +796,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     }
   }
 
-  // On-demand smaps fetch for a single process
   async function fetchSmapsOnDemand(pid: number) {
     if (smapsData.has(pid) || !conn.connected || !conn.isRoot) return;
     cancelSmapsFetch();
@@ -812,7 +821,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     }
   }
 
-  // Scan all processes for full smaps data (populates shared mappings table)
   async function scanAllSmaps() {
     if (!conn.connected || !conn.isRoot || !processes) return;
     cancelSmapsFetch();
@@ -886,7 +894,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   }
 
   async function startCapture(pid: number, withBitmaps: boolean) {
-    if (captureAbortCtrls.has(pid)) return; // already in flight
+    if (captureAbortCtrls.has(pid)) return;
     const ac = new AbortController();
     captureAbortCtrls.set(pid, ac);
     captureJobs = new Map(captureJobs).set(pid, { status: "Starting\u2026", progress: null, error: null });
@@ -1011,14 +1019,12 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
 
-      // Recompute diffs if needed (equivalent to useEffect on deps)
       recomputeDiffs();
 
       const sorted = (() => {
         if (!processes) return null;
         const copy = [...processes];
         copy.sort((a, b) => {
-          // Pin "System" processes at top
           const aPin = PINNED_PROCESSES.has(a.name) ? 0 : 1;
           const bPin = PINNED_PROCESSES.has(b.name) ? 0 : 1;
           if (aPin !== bPin) return aPin - bPin;
@@ -1061,7 +1067,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         return copy;
       })();
 
-      // Cross-process shared mappings -- from full smaps data (populated by Scan All or on-demand)
       const sharedMappings = (() => {
         if (smapsData.size === 0 || !processes) return null;
         return aggregateSharedMappings(smapsData, processes);
@@ -1093,62 +1098,62 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       const hasWebUsb = typeof navigator !== "undefined" && "usb" in navigator;
 
       if (!hasWebUsb) {
-        return m("div", { className: "text-center py-8" }, [
-          m("p", { className: "text-stone-600 dark:text-stone-300 mb-2" }, "WebUSB is not available."),
-          m("p", { className: "text-stone-400 dark:text-stone-500 text-sm" }, "Use Chrome or Edge over HTTPS/localhost."),
+        return m("div", { className: "ah-no-webusb" }, [
+          m("p", { className: "ah-no-webusb__title" }, "WebUSB is not available."),
+          m("p", { className: "ah-no-webusb__hint" }, "Use Chrome or Edge over HTTPS/localhost."),
         ]);
       }
 
       return m("div", [
         // Connection
         !connected && !processes && (
-          m("div", { className: "text-center py-8" }, [
+          m("div", { className: "ah-capture-connect" }, [
             m("button", {
-              className: "px-6 py-3 bg-stone-800 dark:bg-stone-700 text-white hover:bg-stone-700 dark:hover:bg-stone-600 transition-colors disabled:opacity-50",
+              className: "ah-capture-connect__btn",
               onclick: handleConnect,
               disabled: connectStatus !== null,
             }, connectStatus ?? "Connect USB Device"),
-            m("p", { className: "text-stone-400 dark:text-stone-500 text-xs mt-3" }, [
+            m("p", { className: "ah-capture-connect__hint" }, [
               "Enable USB debugging on device. If ADB is running, stop it first: ",
-              m("code", { className: "bg-stone-100 dark:bg-stone-700 px-1" }, "adb kill-server"),
+              m("code", "adb kill-server"),
             ]),
           ])
         ),
         (connected || processes) && (
           m("div", [
-            m("div", { className: "flex items-center gap-3 mb-4 flex-wrap" }, [
+            m("div", { className: "ah-capture-toolbar" }, [
               connected ? m(Fragment, [
-                m("span", { className: "text-stone-600 dark:text-stone-300" }, conn.productName),
-                m("span", { className: "text-stone-400 dark:text-stone-500 font-mono text-xs" }, conn.serial),
+                m("span", { className: "ah-capture-toolbar__device" }, conn.productName),
+                m("span", { className: "ah-capture-toolbar__serial" }, conn.serial),
               ]) : (
-                m("span", { className: "text-amber-600 dark:text-amber-400 text-xs" }, "Disconnected")
+                m("span", { className: "ah-capture-toolbar__disconnected" }, "Disconnected")
               ),
-              m("span", { className: "ml-auto" }),
+              m("span", { className: "ah-capture-toolbar__spacer" }),
               m("button", {
-                className: `text-xs ${connected ? "text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300" : "text-stone-300 dark:text-stone-600 cursor-not-allowed"}`,
+                className: "ah-capture-toolbar__btn",
                 onclick: refreshProcesses,
                 disabled: !connected,
               }, enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Diffing\u2026" : "Refresh"),
               connected && processes && !enrichStatus && (
                 m("button", {
-                  className: "text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 text-xs border border-sky-300 dark:border-sky-600 px-2 py-0.5",
+                  className: "ah-capture-toolbar__btn--accent",
                   onclick: handleDiff,
                 }, "Diff")
               ),
               diffMode && !enrichStatus && (
                 m("button", {
-                  className: "text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-300 text-xs border border-amber-300 dark:border-amber-600 px-2 py-0.5",
+                  className: "ah-capture-toolbar__btn--warning",
                   onclick: clearDiff,
                 }, "Clear Diff")
               ),
               connected ? (
                 m("button", {
-                  className: "text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-300 text-xs",
+                  className: "ah-capture-toolbar__btn",
                   onclick: handleDisconnect,
                 }, "Disconnect")
               ) : (
                 m("button", {
-                  className: "px-3 py-0.5 text-xs bg-stone-800 dark:bg-stone-700 text-white hover:bg-stone-700 dark:hover:bg-stone-600 transition-colors disabled:opacity-50",
+                  className: "ah-capture-toolbar__btn--connect",
                   onclick: handleConnect,
                   disabled: connectStatus !== null,
                 }, connectStatus ?? "Reconnect")
@@ -1157,18 +1162,16 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
             // Non-root banner
             connected && !conn.isRoot && processes && (
-              m("div", {
-                className: "bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 text-xs px-3 py-2 mb-3",
-              }, "Non-rooted device \u2014 only debuggable apps can be captured")
+              m("div", { className: "ah-warning-banner" }, "Non-rooted device \u2014 only debuggable apps can be captured")
             ),
 
             // VMA dump progress
             vmaDumpStatus && (
-              m("div", { className: "mb-2 text-xs text-stone-500 dark:text-stone-400" }, [
-                m("div", { className: "flex items-center gap-2" }, [
-                  m("span", { className: "truncate" }, vmaDumpStatus),
+              m("div", { className: "ah-capture-progress" }, [
+                m("div", { className: "ah-capture-progress__row" }, [
+                  m("span", { className: "ah-capture-progress__text" }, vmaDumpStatus),
                   m("button", {
-                    className: "text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 ml-auto",
+                    className: "ah-capture-progress__cancel",
                     onclick: cancelVmaDump,
                   }, "Cancel"),
                 ]),
@@ -1177,19 +1180,19 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
             // Enrichment progress
             enrichStatus && (
-              m("div", { className: "mb-2 text-xs text-stone-500 dark:text-stone-400" }, [
-                m("div", { className: "flex items-center gap-2 mb-1" }, [
-                  m("span", { className: "truncate" }, diffMode ? `Diffing: ${enrichStatus}` : enrichStatus),
-                  enrichProgress && m("span", { className: "text-stone-400 dark:text-stone-500 whitespace-nowrap" }, `${enrichProgress.done}/${enrichProgress.total}`),
+              m("div", { className: "ah-capture-progress" }, [
+                m("div", { className: "ah-capture-progress__row" }, [
+                  m("span", { className: "ah-capture-progress__text" }, diffMode ? `Diffing: ${enrichStatus}` : enrichStatus),
+                  enrichProgress && m("span", { className: "ah-capture-progress__count" }, `${enrichProgress.done}/${enrichProgress.total}`),
                   m("button", {
-                    className: "text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 ml-auto",
+                    className: "ah-capture-progress__cancel",
                     onclick: cancelEnrichment,
                   }, "Cancel"),
                 ]),
                 enrichProgress && enrichProgress.total > 0 && (
-                  m("div", { className: "h-1 bg-stone-100 dark:bg-stone-700 rounded overflow-hidden" }, [
+                  m("div", { className: "ah-capture-progress-bar" }, [
                     m("div", {
-                      className: "h-full bg-sky-500 transition-all",
+                      className: "ah-capture-progress-bar__fill ah-capture-progress-bar__fill--accent",
                       style: { width: `${(enrichProgress.done / enrichProgress.total) * 100}%` },
                     }),
                   ])
@@ -1199,19 +1202,19 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
             // VMA scan progress
             scanStatus && (
-              m("div", { className: "mb-2 text-xs text-stone-500 dark:text-stone-400" }, [
-                m("div", { className: "flex items-center gap-2 mb-1" }, [
-                  m("span", { className: "truncate" }, `Scanning: ${scanStatus}`),
-                  scanProgress && m("span", { className: "text-stone-400 dark:text-stone-500 whitespace-nowrap" }, `${scanProgress.done}/${scanProgress.total}`),
+              m("div", { className: "ah-capture-progress" }, [
+                m("div", { className: "ah-capture-progress__row" }, [
+                  m("span", { className: "ah-capture-progress__text" }, `Scanning: ${scanStatus}`),
+                  scanProgress && m("span", { className: "ah-capture-progress__count" }, `${scanProgress.done}/${scanProgress.total}`),
                   m("button", {
-                    className: "text-rose-500 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 ml-auto",
+                    className: "ah-capture-progress__cancel",
                     onclick: cancelSmapsFetch,
                   }, "Cancel"),
                 ]),
                 scanProgress && scanProgress.total > 0 && (
-                  m("div", { className: "h-1 bg-stone-100 dark:bg-stone-700 rounded overflow-hidden" }, [
+                  m("div", { className: "ah-capture-progress-bar" }, [
                     m("div", {
-                      className: "h-full bg-amber-500 transition-all",
+                      className: "ah-capture-progress-bar__fill ah-capture-progress-bar__fill--warning",
                       style: { width: `${(scanProgress.done / scanProgress.total) * 100}%` },
                     }),
                   ])
@@ -1221,8 +1224,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
             // Global memory summary
             globalMemInfo && (
-              m("div", { className: "mb-3 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 px-3 py-2 overflow-x-auto" }, [
-                m("div", { className: "flex flex-wrap gap-x-6 gap-y-1 text-xs" }, [
+              m("div", { className: "ah-global-mem" }, [
+                m("div", { className: "ah-global-mem__inner" }, [
                   ([
                     ["Total", globalMemInfo.totalRamKb, globalMemInfoDiff?.deltaTotalRamKb, false],
                     ["Free", globalMemInfo.freeRamKb, globalMemInfoDiff?.deltaFreeRamKb, true],
@@ -1230,27 +1233,27 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     ...(globalMemInfo.memAvailableKb > 0 ? [["Available", globalMemInfo.memAvailableKb, globalMemInfoDiff?.deltaMemAvailableKb, true] as const] : []),
                     ...(globalMemInfo.lostRamKb > 0 ? [["Lost", globalMemInfo.lostRamKb, globalMemInfoDiff?.deltaLostRamKb, false] as const] : []),
                   ] as const).map(([label, value, delta, inverted]) =>
-                    m("span", { key: label, className: "text-stone-500 dark:text-stone-400 whitespace-nowrap" }, [
+                    m("span", { key: label, className: "ah-global-mem__item" }, [
                       `${label} `,
-                      m("span", { className: "font-mono text-stone-800 dark:text-stone-100" }, fmtSize(value * 1024)),
+                      m("span", { className: "ah-global-mem__value" }, fmtSize(value * 1024)),
                       delta != null && delta !== 0 && (
                         m("span", {
-                          className: `font-mono ml-1 ${(inverted ? -delta : delta) > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`,
+                          className: `ah-mono ah-ml-1 ${(inverted ? -delta : delta) > 0 ? "ah-delta-pos" : "ah-delta-neg"}`,
                         }, fmtDelta(delta))
                       ),
                     ]),
                   ),
                   globalMemInfo.swapTotalKb > 0 && (
-                    m("span", { className: "text-stone-500 dark:text-stone-400 whitespace-nowrap" }, [
+                    m("span", { className: "ah-global-mem__item" }, [
                       "ZRAM ",
-                      m("span", { className: "font-mono text-stone-800 dark:text-stone-100" }, [
+                      m("span", { className: "ah-global-mem__value" }, [
                         fmtSize(globalMemInfo.zramPhysicalKb * 1024),
                         " / ",
                         fmtSize(globalMemInfo.swapTotalKb * 1024),
                       ]),
                       globalMemInfoDiff && globalMemInfoDiff.deltaZramPhysicalKb !== 0 && (
                         m("span", {
-                          className: `font-mono ml-1 ${globalMemInfoDiff.deltaZramPhysicalKb > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`,
+                          className: `ah-mono ah-ml-1 ${globalMemInfoDiff.deltaZramPhysicalKb > 0 ? "ah-delta-pos" : "ah-delta-neg"}`,
                         }, fmtDelta(globalMemInfoDiff.deltaZramPhysicalKb))
                       ),
                     ])
@@ -1261,39 +1264,42 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
             // Process list
             sorted === null ? (
-              m("div", { className: "text-stone-400 dark:text-stone-500 p-4" }, "Loading processes\u2026")
+              m("div", { className: "ah-loading" }, "Loading processes\u2026")
             ) : sorted.length === 0 ? (
-              m("div", { className: "text-stone-400 dark:text-stone-500 p-4 flex items-center gap-3" }, [
+              m("div", { className: "ah-loading", style: { display: "flex", alignItems: "center", gap: "0.75rem" } }, [
                 "No processes found.",
                 m("button", {
-                  className: "text-sky-700 dark:text-sky-400 underline decoration-sky-300 dark:decoration-sky-600",
+                  className: "ah-link",
                   onclick: refreshProcesses,
                 }, "Refresh"),
               ])
             ) : (
-              m("div", { className: "bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 overflow-x-auto" }, [
-                m("table", { className: "w-full min-w-[700px] text-sm" }, [
+              m("div", { className: "ah-capture-table-wrap" }, [
+                m("table", { className: "ah-capture-table" }, [
                   m("thead", [
-                    m("tr", { className: "bg-stone-50 dark:bg-stone-800 border-b border-stone-200 dark:border-stone-700" }, [
-                      m("th", { className: "py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium w-[120px]" }),
+                    m("tr", { className: "ah-capture-table-header" }, [
+                      m("th", { className: "ah-capture-th", style: { width: "120px" } }),
                       m("th", {
-                        className: "text-left py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium w-14 cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200",
+                        className: "ah-capture-th ah-capture-th--sortable",
+                        style: { textAlign: "left", width: "3.5rem" },
                         onclick: () => sort.toggle("pid"),
                       }, `PID ${sort.field === "pid" ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
                       m("th", {
-                        className: "text-left py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200",
+                        className: "ah-capture-th ah-capture-th--sortable",
+                        style: { textAlign: "left" },
                         onclick: () => sort.toggle("name"),
                       }, `Process ${sort.field === "name" ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
                       hasOomLabel && (
                         m("th", {
-                          className: "text-left py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium cursor-pointer select-none hover:text-stone-700 dark:hover:text-stone-200",
+                          className: "ah-capture-th ah-capture-th--sortable",
+                          style: { textAlign: "left" },
                           onclick: () => sort.toggle("oomLabel"),
                         }, `State ${sort.field === "oomLabel" ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`)
                       ),
                       ROLLUP_COLUMNS.map(([field, label]) =>
                         m("th", {
                           key: field,
-                          className: "text-right py-1.5 px-2 text-stone-500 dark:text-stone-400 text-xs font-medium w-20 cursor-pointer select-none whitespace-nowrap hover:text-stone-700 dark:hover:text-stone-200",
+                          className: "ah-capture-th ah-capture-th--sortable ah-capture-th--right",
                           onclick: () => sort.toggle(field),
                         }, `${label} ${sort.field === field ? (sort.asc ? "\u25B2" : "\u25BC") : ""}`),
                       ),
@@ -1301,15 +1307,16 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   ]),
                   m("tbody", [
                     // Totals row
-                    m("tr", { className: "border-b-2 border-stone-300 dark:border-stone-600 font-semibold bg-stone-50 dark:bg-stone-800" }, [
+                    m("tr", { className: "ah-capture-totals-row" }, [
                       m("td", {
-                        className: "py-1 px-2 text-stone-600 dark:text-stone-300",
+                        className: "ah-capture-td",
+                        style: { color: "var(--ah-text-secondary)" },
                         colSpan: hasOomLabel ? 4 : 3,
                       }, `Total (${processTotals.count})`),
                       ROLLUP_COLUMNS.map(([f]) =>
                         m("td", {
                           key: f,
-                          className: "py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem]",
+                          className: "ah-capture-td--right",
                         }, processTotals.values[f] > 0 ? fmtSize(processTotals.values[f] * 1024) : "\u2014"),
                       ),
                     ]),
@@ -1328,10 +1335,10 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                       const rowKey = `${d.status}-${p.pid}`;
                       return m(Fragment, { key: rowKey }, [
                         m("tr", {
-                          className: `border-t border-stone-100 dark:border-stone-800 cursor-pointer ${
-                            d.status === "removed" ? "opacity-60" :
-                            d.status === "added" ? "bg-green-50/50 dark:bg-green-900/30" :
-                            isSmapsExpanded ? "bg-sky-50 dark:bg-sky-900/20" : "hover:bg-stone-50 dark:hover:bg-stone-800"
+                          className: `ah-capture-row${
+                            d.status === "removed" ? " ah-capture-row--removed" :
+                            d.status === "added" ? " ah-capture-row--added" :
+                            isSmapsExpanded ? " ah-capture-row--expanded" : ""
                           }`,
                           onclick: () => {
                             if (d.status === "removed") return;
@@ -1345,7 +1352,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             }
                           },
                         }, [
-                          m("td", { className: "py-1 px-2 text-center whitespace-nowrap" }, [
+                          m("td", { className: "ah-capture-td--center" }, [
                             d.status !== "removed" && canCapture && (
                               m(DumpButton, {
                                 pid: p.pid,
@@ -1356,30 +1363,32 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                               })
                             ),
                           ]),
-                          m("td", { className: "py-1 px-2 font-mono text-stone-400 dark:text-stone-500 whitespace-nowrap" }, [
+                          m("td", { className: "ah-capture-td--pid" }, [
                             conn.isRoot && d.status !== "removed" && (
-                              m("span", { className: "text-stone-400 dark:text-stone-500 mr-1" }, isSmapsExpanded ? "\u25BC" : isSmapsLoading ? "\u2026" : "\u25B6")
+                              m("span", { className: isSmapsLoading ? "ah-expander--loading" : "ah-expander", style: { marginRight: "0.25rem" } }, isSmapsExpanded ? "\u25BC" : isSmapsLoading ? "\u2026" : "\u25B6")
                             ),
                             String(p.pid),
                           ]),
                           m("td", {
-                            className: `py-1 px-2 text-stone-800 dark:text-stone-100 truncate max-w-[400px] ${d.status === "removed" ? "line-through" : ""}`,
+                            className: `ah-capture-td--name${d.status === "removed" ? " ah-line-through" : ""}`,
                             title: p.name,
                           }, [
                             p.name,
                             isDiff && d.status !== "matched" && (
                               m("span", {
-                                className: `ml-2 text-[10px] font-medium ${d.status === "added" ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`,
+                                className: d.status === "added" ? "ah-status-new" : "ah-status-gone",
+                                style: { marginLeft: "0.5rem" },
                               }, d.status === "added" ? "NEW" : "GONE")
                             ),
                           ]),
                           hasOomLabel && (
-                            m("td", { className: "py-1 px-2 text-stone-500 dark:text-stone-400 text-xs whitespace-nowrap" }, [
+                            m("td", { className: "ah-capture-td", style: { color: "var(--ah-text-muted)", fontSize: "0.75rem", whiteSpace: "nowrap" } }, [
                               p.oomLabel,
                               isDiff && d.prev && d.prev.oomLabel !== p.oomLabel && (
                                 m("span", {
-                                  className: "ml-1 text-amber-600 dark:text-amber-400",
+                                  className: "ah-status-changed",
                                   title: `was: ${d.prev.oomLabel || "(none)"}`,
+                                  style: { marginLeft: "0.25rem" },
                                 }, `\u2190 ${d.prev.oomLabel || "\u2014"}`)
                               ),
                             ])
@@ -1389,12 +1398,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             const delta = isDiff && prevRollup && rollup ? rollup[f] - prevRollup[f] : 0;
                             return m("td", {
                               key: f,
-                              className: `py-1 px-2 text-right font-mono whitespace-nowrap min-w-[5rem] ${isDiff ? deltaBgClass(delta) : ""}`,
+                              className: `ah-capture-td--right ${isDiff ? deltaBgClass(delta) : ""}`,
                             }, [
                               value > 0 ? fmtSize(value * 1024) : "\u2014",
                               isDiff && delta !== 0 && (
                                 m("span", {
-                                  className: `ml-1 text-[10px] ${delta > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`,
+                                  className: `ah-ml-1 ${delta > 0 ? "ah-delta-pos" : "ah-delta-neg"}`,
+                                  style: { fontSize: "10px" },
                                 }, fmtDelta(delta))
                               ),
                             ]);
@@ -1404,7 +1414,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           m("tr", [
                             m("td", {
                               colSpan: colCount,
-                              className: "p-2 text-xs text-stone-400 dark:text-stone-500 animate-pulse border-t border-stone-200 dark:border-stone-700",
+                              className: "ah-capture-td ah-animate-pulse",
+                              style: { fontSize: "0.75rem", color: "var(--ah-text-faint)", borderTop: "1px solid var(--ah-border)" },
                             }, "Fetching process smaps\u2026"),
                           ])
                         ),
@@ -1437,10 +1448,10 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
             // Scan All VMAs / Shared Mappings
             conn.isRoot && processes && processes.length > 0 && (
-              m("div", { className: "mt-4" }, [
+              m("div", { className: "ah-mt-4" }, [
                 smapsData.size < (processes?.length ?? 0) && (
                   m("button", {
-                    className: "text-xs text-sky-600 dark:text-sky-400 hover:text-sky-800 dark:hover:text-sky-300 border border-sky-300 dark:border-sky-600 px-2 py-0.5 mb-2",
+                    className: "ah-capture-toolbar__btn--accent ah-mb-2",
                     onclick: scanStatus ? cancelSmapsFetch : scanAllSmaps,
                     disabled: !connected || !!vmaDumpStatus,
                   }, scanStatus ? `Cancel Scan (${smapsData.size}/${processes?.length ?? 0})` : `Scan All VMAs (${smapsData.size}/${processes?.length ?? 0})`)
@@ -1462,9 +1473,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         ),
 
         error && (
-          m("div", {
-            className: "mt-4 p-3 bg-rose-50 dark:bg-rose-950 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 text-sm",
-          }, error)
+          m("div", { className: "ah-error-banner ah-mt-4" }, error)
         ),
       ]);
     },

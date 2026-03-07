@@ -42,7 +42,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
     view(vnode) {
       const { heaps, navigate, isDiffed } = vnode.attrs;
 
-      if (!data) return <div className="text-stone-400 dark:text-stone-500 p-4">Loading&hellip;</div>;
+      if (!data) return <div className="ah-loading">Loading&hellip;</div>;
       const heapCols = heaps.filter(h => h.java + h.native_ > 0);
       const childDiffed = isDiffed && data.children.some(c => c.baselineTotalJava !== undefined);
       const objDiffed = isDiffed && data.objectsInfos.some(o => o.baselineNumInstances !== undefined);
@@ -50,7 +50,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
       // Build child site columns
       type ChildCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteChildRow) => number; render: (r: SiteChildRow, idx: number) => m.Children };
       const childCols: ChildCol[] = [
-        { label: "Total Size", align: "right", minWidth: "5rem", sortKey: r => r.totalJava + r.totalNative, render: r => <span className="font-mono">{fmtSize(r.totalJava + r.totalNative)}</span> },
+        { label: "Total Size", align: "right", minWidth: "5rem", sortKey: r => r.totalJava + r.totalNative, render: r => <span className="ah-mono">{fmtSize(r.totalJava + r.totalNative)}</span> },
       ];
       if (childDiffed) {
         childCols.push({
@@ -59,7 +59,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
           render: r => {
             const d = (r.totalJava + r.totalNative) - ((r.baselineTotalJava ?? r.totalJava) + (r.baselineTotalNative ?? r.totalNative));
             if (d === 0) return null;
-            return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
+            return <span className={`ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}`}>{fmtSizeDelta(d)}</span>;
           },
         });
       }
@@ -67,7 +67,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
         childCols.push({
           label: h.name, align: "right",
           sortKey: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return (s?.java ?? 0) + (s?.native_ ?? 0); },
-          render: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return <span className="font-mono">{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>; },
+          render: (r: SiteChildRow) => { const s = r.byHeap.find(x => x.heap === h.name); return <span className="ah-mono">{fmtSize((s?.java ?? 0) + (s?.native_ ?? 0))}</span>; },
         });
       }
       childCols.push({ label: "Child Site", render: r => <SiteLinkRaw {...r} navigate={navigate} /> });
@@ -75,7 +75,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
       // Build objects allocated columns
       type ObjCol = { label: string; align?: string; minWidth?: string; sortKey?: (r: SiteObjectsRow) => number; render: (r: SiteObjectsRow, idx: number) => m.Children };
       const objCols: ObjCol[] = [
-        { label: "Size", align: "right", minWidth: "5rem", sortKey: r => r.java + r.native_, render: r => <span className="font-mono">{fmtSize(r.java + r.native_)}</span> },
+        { label: "Size", align: "right", minWidth: "5rem", sortKey: r => r.java + r.native_, render: r => <span className="ah-mono">{fmtSize(r.java + r.native_)}</span> },
       ];
       if (objDiffed) {
         objCols.push({
@@ -84,7 +84,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
           render: r => {
             const d = (r.java + r.native_) - ((r.baselineJava ?? r.java) + (r.baselineNative ?? r.native_));
             if (d === 0) return null;
-            return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{fmtSizeDelta(d)}</span>;
+            return <span className={`ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}`}>{fmtSizeDelta(d)}</span>;
           },
         });
       }
@@ -92,7 +92,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
         label: "Instances", align: "right", minWidth: "4rem",
         sortKey: r => r.numInstances,
         render: r => (
-          <button className="text-sky-700 dark:text-sky-400 underline decoration-sky-300 dark:decoration-sky-600 hover:decoration-sky-500 dark:hover:decoration-sky-400 font-mono"
+          <button className="ah-link ah-mono"
             onclick={() => navigate("objects", { siteId: data!.id, className: r.className, heap: r.heap })}>
             {r.numInstances.toLocaleString()}
           </button>
@@ -105,7 +105,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
           render: r => {
             const d = r.numInstances - (r.baselineNumInstances ?? r.numInstances);
             if (d === 0) return null;
-            return <span className={`font-mono whitespace-nowrap ${d > 0 ? "text-red-700 dark:text-red-400" : "text-green-700 dark:text-green-400"}`}>{d > 0 ? "+" : "\u2212"}{Math.abs(d).toLocaleString()}</span>;
+            return <span className={`ah-mono ah-nowrap ${d > 0 ? "ah-delta-pos" : "ah-delta-neg"}`}>{d > 0 ? "+" : "\u2212"}{Math.abs(d).toLocaleString()}</span>;
           },
         });
       }
@@ -117,14 +117,14 @@ function SiteView(): m.Component<SiteViewAttrs> {
       });
 
       return (
-        <div className="space-y-3">
+        <div className="ah-view-stack">
           <div>
-            <h2 className="text-lg font-semibold mb-1 text-stone-800 dark:text-stone-100">Site</h2>
+            <h2 className="ah-view-heading" style={{ marginBottom: "0.25rem" }}>Site</h2>
             <SiteLinkRaw {...data} navigate={navigate} />
           </div>
 
           <Section title="Allocation Site">
-            <div className="space-y-0.5">
+            <div className="ah-view-stack" style={{ gap: "0.125rem" }}>
               {data.chain.map((s, i) => (
                 <div key={i} style={{ paddingLeft: Math.min(i, 20) * 16 }}>{i > 0 && "\u2192 "}<SiteLinkRaw {...s} navigate={navigate} /></div>
               ))}

@@ -18,27 +18,27 @@ export function InstanceLink(): m.Component<InstanceLinkAttrs> {
   return {
     view(vnode) {
       const { row, navigate } = vnode.attrs;
-      if (!row || row.id === 0) return <span className="text-stone-500 dark:text-stone-400">ROOT</span>;
+      if (!row || row.id === 0) return <span className="ah-badge-referent">ROOT</span>;
       const full = "className" in row ? row : null;
       return (
         <span>
           {full && full.reachabilityName !== "unreachable" && full.reachabilityName !== "strong" && (
-            <span className="text-amber-600 dark:text-amber-400 text-xs mr-1">{full.reachabilityName}</span>
+            <span className="ah-badge-reachability">{full.reachabilityName}</span>
           )}
-          {full?.isRoot && <span className="text-rose-500 dark:text-rose-400 text-xs mr-1">root</span>}
+          {full?.isRoot && <span className="ah-badge-root">root</span>}
           <button
-            className="text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300 underline decoration-sky-300 hover:decoration-sky-500 dark:decoration-sky-600 dark:hover:decoration-sky-400"
+            className="ah-link"
             onclick={() => navigate("object", { id: row.id, label: row.display })}
           >
             {row.display}
           </button>
           {row.str != null && (
-            <span className="text-emerald-700 dark:text-emerald-400 ml-1" title={row.str.length > 80 ? row.str : undefined}>
+            <span className="ah-badge-string" title={row.str.length > 80 ? row.str : undefined}>
               "{row.str.length > 80 ? row.str.slice(0, 80) + "\u2026" : row.str}"
             </span>
           )}
           {full?.referent && (
-            <span className="text-stone-500 dark:text-stone-400 ml-1">
+            <span className="ah-badge-referent">
               {" "}for <InstanceLink row={full.referent} navigate={navigate} />
             </span>
           )}
@@ -58,7 +58,7 @@ export function SiteLinkRaw(): m.Component<SiteLinkRawAttrs> {
       const text = `${method}${signature} - ${filename}${line > 0 ? ":" + line : ""}`;
       return (
         <button
-          className="text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300 underline decoration-sky-300 hover:decoration-sky-500 dark:decoration-sky-600 dark:hover:decoration-sky-400"
+          className="ah-link"
           onclick={() => navigate("site", { id })}
         >{text}</button>
       );
@@ -73,18 +73,18 @@ export function Section(): m.Component<SectionAttrs> {
     oninit(vnode) { open = vnode.attrs.defaultOpen !== false; },
     view(vnode) {
       return (
-        <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700">
+        <div className="ah-section">
           <button
-            className="w-full px-4 py-2 flex justify-between items-center text-left hover:bg-stone-50 dark:hover:bg-stone-800"
+            className="ah-section__toggle"
             onclick={() => { open = !open; }}
             aria-expanded={open}
           >
-            <span className="text-sm font-semibold text-stone-700 dark:text-stone-200">{vnode.attrs.title}</span>
-            <svg className={`w-3 h-3 text-stone-400 dark:text-stone-500 transition-transform ${open ? "rotate-90" : ""}`} viewBox="0 0 20 20" fill="currentColor">
+            <span className="ah-section__title">{vnode.attrs.title}</span>
+            <svg className={`ah-section__chevron${open ? " ah-section__chevron--open" : ""}`} viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd" />
             </svg>
           </button>
-          {open && <div className="px-4 pb-3 border-t border-stone-100 dark:border-stone-800 pt-3 overflow-x-auto">{vnode.children}</div>}
+          {open && <div className="ah-section__body">{vnode.children}</div>}
         </div>
       );
     },
@@ -130,14 +130,14 @@ export function SortableTable<T>(): m.Component<SortableTableAttrs<T>> {
       const visible = sorted.slice(0, showCount);
 
       return (
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse">
+        <div className="ah-table-wrap">
+          <table className="ah-table">
             <thead>
               <tr>
                 {columns.map((c, i) => (
                   <th
                     key={i}
-                    className={`px-2 py-1.5 ${c.align === "right" ? "text-right" : "text-left"} bg-stone-700 dark:bg-stone-700 text-stone-200 text-xs font-medium cursor-pointer select-none whitespace-nowrap border-b border-stone-600`}
+                    className={`ah-th${c.align === "right" ? " ah-th--right" : ""}`}
                     style={c.minWidth ? { minWidth: c.minWidth } : undefined}
                     onclick={() => { if (sortCol === i) sortAsc = !sortAsc; else { sortCol = i; sortAsc = false; } }}
                   >
@@ -148,9 +148,9 @@ export function SortableTable<T>(): m.Component<SortableTableAttrs<T>> {
             </thead>
             <tbody>
               {visible.map((row, ri) => (
-                <tr key={rowKey ? rowKey(row, ri) : ri} className={`border-b border-stone-200 dark:border-stone-700 hover:bg-stone-50 dark:hover:bg-stone-800${onRowClick ? " cursor-pointer" : ""}`} onclick={onRowClick ? () => onRowClick(row) : undefined}>
+                <tr key={rowKey ? rowKey(row, ri) : ri} className={`ah-tr${onRowClick ? " ah-tr--clickable" : ""}`} onclick={onRowClick ? () => onRowClick(row) : undefined}>
                   {columns.map((c, ci) => (
-                    <td key={ci} className={`px-2 py-1 ${c.align === "right" ? "text-right font-mono whitespace-nowrap" : ""}`} style={c.minWidth ? { minWidth: c.minWidth } : undefined}>
+                    <td key={ci} className={`ah-td${c.align === "right" ? " ah-td--right" : ""}`} style={c.minWidth ? { minWidth: c.minWidth } : undefined}>
                       {c.render(row, ri)}
                     </td>
                   ))}
@@ -159,12 +159,12 @@ export function SortableTable<T>(): m.Component<SortableTableAttrs<T>> {
             </tbody>
           </table>
           {sorted.length > showCount && (
-            <div className="text-xs text-stone-500 dark:text-stone-400 py-2">
+            <div className="ah-table__more">
               Showing {showCount} of {sorted.length}
               {" \u2014 "}
-              <button className="text-sky-600 dark:text-sky-400 ml-1 hover:underline" onclick={() => { showCount = Math.min(showCount + 500, sorted.length); }}>show more</button>
+              <button className="ah-more-link" onclick={() => { showCount = Math.min(showCount + 500, sorted.length); }}>show more</button>
               {" "}
-              <button className="text-sky-600 dark:text-sky-400 ml-2 hover:underline" onclick={() => { showCount = sorted.length; }}>show all</button>
+              <button className="ah-more-link" onclick={() => { showCount = sorted.length; }}>show all</button>
             </div>
           )}
         </div>
@@ -181,7 +181,7 @@ export function PrimOrRefCell(): m.Component<PrimOrRefCellAttrs> {
       if (v.kind === "ref") {
         return <InstanceLink row={{ id: v.id, display: v.display, str: v.str }} navigate={navigate} />;
       }
-      return <span className="font-mono">{v.v}</span>;
+      return <span className="ah-mono">{v.v}</span>;
     },
   };
 }
@@ -248,29 +248,29 @@ export function Breadcrumbs(): m.Component<BreadcrumbsAttrs> {
       const { trail, activeIndex, onNavigate } = vnode.attrs;
       if (trail.length <= 1) return null;
       return (
-        <nav className="flex items-center gap-1 text-xs overflow-x-auto pb-1 mb-2 scrollbar-thin" aria-label="Breadcrumb">
+        <nav className="ah-breadcrumbs" aria-label="Breadcrumb">
           <button
-            className="shrink-0 text-stone-400 hover:text-stone-600 dark:text-stone-500 dark:hover:text-stone-300 pr-1"
+            className="ah-breadcrumbs__back"
             onclick={() => history.back()}
             title="Back"
             aria-label="Back"
           >
-            <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor">
+            <svg className="ah-breadcrumbs__back-icon" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M12.79 5.23a.75.75 0 01-.02 1.06L8.832 10l3.938 3.71a.75.75 0 11-1.04 1.08l-4.5-4.25a.75.75 0 010-1.08l4.5-4.25a.75.75 0 011.06.02z" clipRule="evenodd" />
             </svg>
           </button>
           {trail.map((crumb, i) => {
             const isActive = i === activeIndex;
             return (
-              <span key={i} className="flex items-center gap-1 shrink-0">
-                {i > 0 && <span className="text-stone-400 dark:text-stone-500">/</span>}
+              <span key={i} className="ah-breadcrumbs__item">
+                {i > 0 && <span className="ah-breadcrumbs__sep">/</span>}
                 {isActive ? (
-                  <span className="text-stone-700 dark:text-stone-200 font-medium">{crumb.label}</span>
+                  <span className="ah-breadcrumbs__active">{crumb.label}</span>
                 ) : (
                   <button
-                    className={`hover:underline ${i > activeIndex
-                      ? "text-stone-400 hover:text-stone-600 dark:text-stone-500 dark:hover:text-stone-300"
-                      : "text-sky-700 hover:text-sky-500 dark:text-sky-400 dark:hover:text-sky-300"}`}
+                    className={`ah-breadcrumbs__link ${i > activeIndex
+                      ? "ah-breadcrumbs__link--future"
+                      : "ah-breadcrumbs__link--past"}`}
                     onclick={() => onNavigate(i)}
                   >{crumb.label}</button>
                 )}
