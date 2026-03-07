@@ -1255,6 +1255,12 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       conn = vnode.attrs.conn;
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
+      if (vnode.attrs.captureRef) {
+        const ref = vnode.attrs.captureRef;
+        ref.save = exportSession;
+        ref.import = importSession;
+        Object.defineProperty(ref, "hasData", { get: () => processes !== null, configurable: true });
+      }
       if (vnode.attrs.sessionFile) {
         _importedSessionFile = vnode.attrs.sessionFile;
         importSession(vnode.attrs.sessionFile);
@@ -1271,12 +1277,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       conn = vnode.attrs.conn;
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
-      // Populate ref for parent to access save/load
-      if (vnode.attrs.captureRef) {
-        vnode.attrs.captureRef.save = exportSession;
-        vnode.attrs.captureRef.import = importSession;
-        vnode.attrs.captureRef.hasData = processes !== null;
-      }
       if (vnode.attrs.sessionFile && vnode.attrs.sessionFile !== _importedSessionFile) {
         _importedSessionFile = vnode.attrs.sessionFile;
         importSession(vnode.attrs.sessionFile);
