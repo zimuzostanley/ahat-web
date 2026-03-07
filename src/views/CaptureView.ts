@@ -1231,13 +1231,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     const d = globalMemInfoDiff;
                     const usedKb = g.totalRamKb - g.memAvailableKb;
                     const deltaUsedKb = d ? d.deltaTotalRamKb - d.deltaMemAvailableKb : 0;
-                    // inverted: true = up is good (green), false = up is bad (red)
-                    const items: [string, number, number, boolean][] = [
-                      ["Total", g.totalRamKb, d?.deltaTotalRamKb ?? 0, false],
+                    // inverted: true = up is good (green), false = up is bad (red), null = neutral
+                    const items: [string, number, number, boolean | null][] = [
+                      ["Total", g.totalRamKb, d?.deltaTotalRamKb ?? 0, null],
                       ["Used", usedKb, deltaUsedKb, false],
                       ["Free", g.freeRamKb, d?.deltaFreeRamKb ?? 0, true],
                       ["Available", g.memAvailableKb, d?.deltaMemAvailableKb ?? 0, true],
-                      ["Cached", g.cachedKb + g.buffersKb, d ? d.deltaCachedKb + d.deltaBuffersKb : 0, true],
+                      ["Cached", g.cachedKb + g.buffersKb, d ? d.deltaCachedKb + d.deltaBuffersKb : 0, null],
                       ["Shmem", g.shmemKb, d?.deltaShmemKb ?? 0, false],
                       ["Slab", g.slabKb, d?.deltaSlabKb ?? 0, false],
                     ];
@@ -1247,7 +1247,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                         m("span", { className: "ah-global-mem__value" }, fmtSize(value * 1024)),
                         delta !== 0 && (
                           m("span", {
-                            className: `ah-mono ah-ml-1 ${(inverted ? -delta : delta) > 0 ? "ah-delta-pos" : "ah-delta-neg"}`,
+                            className: `ah-mono ah-ml-1${inverted !== null ? ` ${(inverted ? -delta : delta) > 0 ? "ah-delta-pos" : "ah-delta-neg"}` : ""}`,
                           }, fmtDelta(delta))
                         ),
                       ]),
@@ -1262,9 +1262,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                         fmtSize(globalMemInfo.swapTotalKb * 1024),
                       ]),
                       globalMemInfoDiff && globalMemInfoDiff.deltaSwapFreeKb !== 0 && (
-                        m("span", {
-                          className: `ah-mono ah-ml-1 ${-globalMemInfoDiff.deltaSwapFreeKb > 0 ? "ah-delta-pos" : "ah-delta-neg"}`,
-                        }, fmtDelta(-globalMemInfoDiff.deltaSwapFreeKb))
+                        m("span", { className: "ah-mono ah-ml-1" }, fmtDelta(-globalMemInfoDiff.deltaSwapFreeKb))
                       ),
                     ])
                   ),
