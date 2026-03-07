@@ -730,27 +730,28 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       javaPids = lruJavaPids;
       m.redraw();
 
-      // Fire meminfo fetch immediately — it's cheap and shouldn't wait for enrichment
-      const meminfoPromise = conn.isRoot
-        ? conn.getProcMeminfo(ac.signal).catch(() => ({} as Partial<GlobalMemInfo>))
-        : Promise.resolve({} as Partial<GlobalMemInfo>);
-      meminfoPromise.then(procInfo => {
-        if (ac.signal.aborted || !procInfo.totalRamKb) return;
-        globalMemInfo = {
-          totalRamKb: procInfo.totalRamKb ?? 0,
-          freeRamKb: procInfo.freeRamKb ?? 0,
-          usedPssKb: 0,
-          lostRamKb: 0,
-          zramPhysicalKb: 0,
-          swapTotalKb: procInfo.swapTotalKb ?? 0,
-          swapFreeKb: procInfo.swapFreeKb ?? 0,
-          memAvailableKb: procInfo.memAvailableKb ?? 0,
-          buffersKb: procInfo.buffersKb ?? 0,
-          cachedKb: procInfo.cachedKb ?? 0,
-        };
-        recomputeDiffs();
-        m.redraw();
-      });
+      // Fetch meminfo right away — it's cheap (single cat /proc/meminfo)
+      if (conn.isRoot && !ac.signal.aborted) {
+        try {
+          const procInfo = await conn.getProcMeminfo(ac.signal);
+          if (!ac.signal.aborted && procInfo.totalRamKb) {
+            globalMemInfo = {
+              totalRamKb: procInfo.totalRamKb ?? 0,
+              freeRamKb: procInfo.freeRamKb ?? 0,
+              usedPssKb: 0,
+              lostRamKb: 0,
+              zramPhysicalKb: 0,
+              swapTotalKb: procInfo.swapTotalKb ?? 0,
+              swapFreeKb: procInfo.swapFreeKb ?? 0,
+              memAvailableKb: procInfo.memAvailableKb ?? 0,
+              buffersKb: procInfo.buffersKb ?? 0,
+              cachedKb: procInfo.cachedKb ?? 0,
+            };
+            recomputeDiffs();
+            m.redraw();
+          }
+        } catch { /* best-effort */ }
+      }
 
       if (!conn.isRoot) {
         if (!ac.signal.aborted) {
