@@ -8,7 +8,7 @@ import { Breadcrumbs } from "./components";
 import { downloadBuffer, downloadBlob } from "./utils";
 import { getTheme, toggleTheme } from "./theme";
 import { nav, trail, trailIndex, navigate, navigateTop, onBreadcrumbNavigate, resetToUrl, resetToOverview } from "./navigation";
-import CaptureView from "./views/CaptureView";
+import CaptureView, { type CaptureViewRef } from "./views/CaptureView";
 import HexView from "./views/HexView";
 import OverviewView from "./views/OverviewView";
 import RootedView from "./views/RootedView";
@@ -85,6 +85,7 @@ export default function App(): m.Component {
   let error: string | null = null;
   let captureUsed = false;
   let pendingSessionFile: File | null = null;
+  const captureRef: CaptureViewRef = { save: () => {}, import: () => {}, hasData: false };
   let menuOpen = false;
   let baselineSessionId: string | null = null;
   let diffing = false;
@@ -579,12 +580,36 @@ export default function App(): m.Component {
                     m("div", { className: "ah-header__logo-icon" }, "A"),
                     m("span", { className: "ah-capture-header__title" }, "Capture from device")
                   ),
-                  m(ThemeToggle, { variant: "landing" })
+                  m("div", { className: "ah-capture-header__actions" }, [
+                    captureRef.hasData && (
+                      m("button", {
+                        className: "ah-capture-header__action",
+                        onclick: () => captureRef.save(),
+                      }, "Save")
+                    ),
+                    captureRef.hasData && !adbConn.connected && (
+                      m("span", { className: "ah-capture-toolbar__divider" })
+                    ),
+                    !adbConn.connected && m("label", { className: "ah-capture-header__action ah-capture-header__file-label" }, [
+                      "Load",
+                      m("input", {
+                        type: "file",
+                        accept: ".json",
+                        style: { display: "none" },
+                        onchange: (e: Event) => {
+                          const file = (e.target as HTMLInputElement).files?.[0];
+                          if (file) captureRef.import(file);
+                          (e.target as HTMLInputElement).value = "";
+                        },
+                      }),
+                    ]),
+                    m(ThemeToggle, { variant: "landing" }),
+                  ])
                 )
               )
             ),
             m("div", { className: sessions.length > 0 ? "ah-capture-wrap--compact" : "ah-capture-wrap" },
-              m(CaptureView, { onCaptured: loadBuffer, onVmaDump: loadVmaDump, conn: adbConn, sessionFile: pendingSessionFile })
+              m(CaptureView, { onCaptured: loadBuffer, onVmaDump: loadVmaDump, conn: adbConn, sessionFile: pendingSessionFile, captureRef })
             )
           )
         ),

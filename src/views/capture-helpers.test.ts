@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, type SmapsNumericField } from "./capture-helpers";
+import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, timelineClick, deleteSnapshotState, type SmapsNumericField, type TimelineState } from "./capture-helpers";
 
 // ─── sortWithDiffPinning ─────────────────────────────────────────────────────
 
@@ -194,5 +194,246 @@ describe("computeSmapsTotals", () => {
     expect(totals.deltaPrivateCleanKb).toBe(10);
     expect(totals.deltaPrivateDirtyKb).toBe(12);
     expect(totals.deltaSwapKb).toBe(14);
+  });
+});
+
+// ─── timelineClick ──────────────────────────────────────────────────────────
+
+describe("timelineClick", () => {
+  function s(view: number | null, base: number | null, diff: boolean, count = 3): TimelineState {
+    return { viewSnapIdx: view, diffBaseIdx: base, diffMode: diff, count };
+  }
+
+  // ── Click grey → becomes blue ─────────────────────────────────────────
+
+  it("click grey from Live → becomes blue, Live stays green", () => {
+    const result = timelineClick(s(null, 0, false), 1);
+    expect(result.viewSnapIdx).toBeNull(); // Live still green
+    expect(result.diffBaseIdx).toBe(1);    // clicked → blue
+    expect(result.diffMode).toBe(true);
+  });
+
+  it("click grey from snapshot green → becomes blue, green stays", () => {
+    const result = timelineClick(s(0, 0, false), 2);
+    expect(result.viewSnapIdx).toBe(0);    // green unchanged
+    expect(result.diffBaseIdx).toBe(2);    // clicked → blue
+    expect(result.diffMode).toBe(true);
+  });
+
+  it("click grey replaces existing blue", () => {
+    // snap 0 blue, Live green. Click snap 2 (grey) → snap 2 blue, snap 0 grey
+    const result = timelineClick(s(null, 0, true), 2);
+    expect(result.diffBaseIdx).toBe(2);    // new blue
+    expect(result.viewSnapIdx).toBeNull(); // Live still green
+    expect(result.diffMode).toBe(true);
+  });
+
+  it("blue can appear before or after green", () => {
+    // snap 1 green, click snap 2 (grey, after green) → blue after green
+    let result = timelineClick(s(1, 0, false), 2);
+    expect(result).toMatchObject({ viewSnapIdx: 1, diffBaseIdx: 2, diffMode: true });
+
+    // snap 1 green, click snap 0 (grey, before green) → blue before green
+    result = timelineClick(s(1, 0, false), 0);
+    expect(result).toMatchObject({ viewSnapIdx: 1, diffBaseIdx: 0, diffMode: true });
+  });
+
+  // ── Click blue → becomes green ────────────────────────────────────────
+
+  it("click blue → becomes green, diff cleared", () => {
+    const result = timelineClick(s(null, 1, true), 1);
+    expect(result.viewSnapIdx).toBe(1);
+    expect(result.diffMode).toBe(false);
+  });
+
+  it("click blue with snapshot green → blue becomes green, diff cleared", () => {
+    const result = timelineClick(s(2, 0, true), 0);
+    expect(result.viewSnapIdx).toBe(0);
+    expect(result.diffMode).toBe(false);
+  });
+
+  // ── Click green → deselect ────────────────────────────────────────────
+
+  it("click green → back to Live, diff cleared", () => {
+    const result = timelineClick(s(1, 0, true), 1);
+    expect(result.viewSnapIdx).toBeNull();
+    expect(result.diffMode).toBe(false);
+  });
+
+  it("click green (no diff) → back to Live", () => {
+    const result = timelineClick(s(2, 0, false), 2);
+    expect(result.viewSnapIdx).toBeNull();
+    expect(result.diffMode).toBe(false);
+  });
+
+  // ── Live follows the same rules ─────────────────────────────────────
+
+  it("click Live (green) → no-op", () => {
+    const state = s(null, 0, false);
+    const result = timelineClick(state, null);
+    expect(result).toBe(state);
+  });
+
+  it("click Live (grey, snapshot is green) → Live becomes blue", () => {
+    // snap 2 green, Live grey. Click Live → Live blue, snap 2 stays green.
+    const result = timelineClick(s(2, 0, false), null);
+    expect(result.viewSnapIdx).toBe(2);    // green unchanged
+    expect(result.diffBaseIdx).toBeNull(); // Live is blue
+    expect(result.diffMode).toBe(true);
+  });
+
+  it("click Live (blue) → Live becomes green", () => {
+    // snap 1 green, Live blue. Click Live → Live green, diff cleared.
+    const result = timelineClick(s(1, null, true), null);
+    expect(result.viewSnapIdx).toBeNull(); // Live green
+    expect(result.diffMode).toBe(false);
+  });
+
+  // ── Invariants ────────────────────────────────────────────────────────
+
+  it("never two greens — only viewSnapIdx or Live", () => {
+    let state = s(null, 0, false);
+    state = timelineClick(state, 0);
+    expect(state.viewSnapIdx).toBeNull(); // Live is still green
+    expect(state.diffBaseIdx).toBe(0);    // snap 0 is blue
+    expect(state.diffMode).toBe(true);
+  });
+
+  it("never two blues — clicking grey replaces blue", () => {
+    let state = s(null, 0, true); // snap 0 blue
+    state = timelineClick(state, 1); // click snap 1 (grey)
+    expect(state.diffBaseIdx).toBe(1); // new blue, old blue gone
+  });
+
+  // ── User scenarios ────────────────────────────────────────────────────
+
+  it("user scenario: A B(Live). Click A (blue), click B (stays green)", () => {
+    let state = s(null, 0, false, 1);
+
+    // Click A (grey) → A blue, Live green
+    state = timelineClick(state, 0);
+    expect(state).toMatchObject({ viewSnapIdx: null, diffBaseIdx: 0, diffMode: true });
+
+    // Click A (blue) → A green, diff cleared
+    state = timelineClick(state, 0);
+    expect(state).toMatchObject({ viewSnapIdx: 0, diffMode: false });
+  });
+
+  it("user scenario: A(green) B(Live). Click B → B blue, diff A vs B", () => {
+    // A is green (viewSnapIdx=0), Live is grey
+    let state = s(0, 0, false, 1);
+
+    // Click Live (grey) → Live blue, A stays green
+    state = timelineClick(state, null);
+    expect(state.viewSnapIdx).toBe(0);     // A still green
+    expect(state.diffBaseIdx).toBeNull();  // Live is blue
+    expect(state.diffMode).toBe(true);
+  });
+
+  // ── Full workflows ────────────────────────────────────────────────────
+
+  it("diff in either direction", () => {
+    // Live green. Click snap 0 → snap 0 blue. Diff: snap0(base) → Live(view)
+    let state = timelineClick(s(null, 0, false, 2), 0);
+    expect(state).toMatchObject({ viewSnapIdx: null, diffBaseIdx: 0, diffMode: true });
+
+    // Click snap 0 (blue) → snap 0 green. Click snap 1 → snap 1 blue.
+    // Diff: snap1(base) → snap0(view). Blue follows green.
+    state = timelineClick(state, 0); // snap 0 green
+    state = timelineClick(state, 1); // snap 1 blue
+    expect(state).toMatchObject({ viewSnapIdx: 0, diffBaseIdx: 1, diffMode: true });
+  });
+
+  it("Live can be blue (diff base)", () => {
+    // snap 0 green. Click Live (grey) → Live blue.
+    let state = timelineClick(s(0, 0, false, 2), null);
+    expect(state).toMatchObject({ viewSnapIdx: 0, diffBaseIdx: null, diffMode: true });
+
+    // Click Live (blue) → Live green, diff cleared
+    state = timelineClick(state, null);
+    expect(state).toMatchObject({ viewSnapIdx: null, diffMode: false });
+  });
+
+  it("swap blue and green via click blue", () => {
+    // snap 0 green, snap 1 blue
+    let state = s(0, 1, true);
+
+    // Click blue (snap 1) → snap 1 green, diff cleared
+    state = timelineClick(state, 1);
+    expect(state).toMatchObject({ viewSnapIdx: 1, diffMode: false });
+
+    // Click snap 0 (grey) → snap 0 blue, snap 1 green
+    state = timelineClick(state, 0);
+    expect(state).toMatchObject({ viewSnapIdx: 1, diffBaseIdx: 0, diffMode: true });
+  });
+});
+
+// ─── deleteSnapshotState ────────────────────────────────────────────────────
+
+describe("deleteSnapshotState", () => {
+  function s(view: number | null, base: number | null, diff: boolean, count: number): TimelineState {
+    return { viewSnapIdx: view, diffBaseIdx: base, diffMode: diff, count };
+  }
+
+  it("deleting last snapshot resets everything", () => {
+    const result = deleteSnapshotState(s(0, 0, true, 1), 0);
+    expect(result).toEqual({ viewSnapIdx: null, diffBaseIdx: null, diffMode: false, count: 0 });
+  });
+
+  it("deleting viewed snapshot → back to live", () => {
+    const result = deleteSnapshotState(s(1, 0, true, 3), 1);
+    expect(result.viewSnapIdx).toBeNull();
+    expect(result.diffBaseIdx).toBe(0);
+    expect(result.diffMode).toBe(true);
+  });
+
+  it("deleting diff base → diff cleared", () => {
+    const result = deleteSnapshotState(s(null, 1, true, 3), 1);
+    expect(result.diffMode).toBe(false);
+  });
+
+  it("deleting a grey snapshot before view → index adjusted", () => {
+    const result = deleteSnapshotState(s(2, 0, false, 3), 0);
+    expect(result.viewSnapIdx).toBe(1); // shifted down
+    expect(result.count).toBe(2);
+  });
+
+  it("deleting a grey snapshot after view → no adjustment needed", () => {
+    const result = deleteSnapshotState(s(0, 0, false, 3), 2);
+    expect(result.viewSnapIdx).toBe(0); // unchanged
+    expect(result.count).toBe(2);
+  });
+
+  it("deleting before diff base → base adjusted", () => {
+    const result = deleteSnapshotState(s(null, 2, true, 4), 0);
+    expect(result.diffBaseIdx).toBe(1); // shifted down
+    expect(result.diffMode).toBe(true);
+  });
+
+  it("deleting at end when base is last → base clamped", () => {
+    const result = deleteSnapshotState(s(null, 2, true, 3), 2);
+    // base was pointing to deleted item → diff cleared
+    expect(result.diffMode).toBe(false);
+  });
+
+  it("adjusts both view and base when both are after deleted", () => {
+    const result = deleteSnapshotState(s(3, 2, true, 5), 0);
+    expect(result.viewSnapIdx).toBe(2);
+    expect(result.diffBaseIdx).toBe(1);
+    expect(result.diffMode).toBe(true);
+    expect(result.count).toBe(4);
+  });
+
+  it("preserves Live as diff base (null) when deleting a snapshot", () => {
+    // snap 0 green, Live blue (diffBaseIdx=null)
+    const result = deleteSnapshotState(s(0, null, true, 2), 1);
+    expect(result.viewSnapIdx).toBe(0);
+    expect(result.diffBaseIdx).toBeNull(); // Live still blue
+    expect(result.diffMode).toBe(true);
+  });
+
+  it("deleting viewed snap with Live base → back to Live, diff cleared", () => {
+    const result = deleteSnapshotState(s(0, null, true, 1), 0);
+    expect(result).toEqual({ viewSnapIdx: null, diffBaseIdx: null, diffMode: false, count: 0 });
   });
 });

@@ -836,6 +836,28 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   color: var(--ah-text);
 }
 
+.ah-capture-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ah-capture-header__action {
+  font-size: 0.75rem;
+  color: var(--ah-text-muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  &:hover { color: var(--ah-text); }
+}
+
+.ah-capture-header__file-label {
+  display: inline-flex;
+  align-items: center;
+}
+
 .ah-capture-wrap {
   max-width: 95%;
   margin: 0 auto;
@@ -1663,9 +1685,14 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   border: none;
   background: none;
   font-family: inherit;
+  position: relative;
 
   &:hover .ah-timeline__dot-circle {
     transform: scale(1.3);
+  }
+
+  &:hover .ah-timeline__dot-delete {
+    display: block;
   }
 }
 
@@ -1686,6 +1713,17 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   font-family: $mono;
 }
 
+.ah-timeline__dot--active {
+  .ah-timeline__dot-circle {
+    background: var(--ah-badge-string);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ah-badge-string) 25%, transparent);
+  }
+  .ah-timeline__dot-label {
+    color: var(--ah-badge-string);
+    font-weight: 600;
+  }
+}
+
 .ah-timeline__dot--base {
   .ah-timeline__dot-circle {
     background: var(--ah-link);
@@ -1697,23 +1735,29 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   }
 }
 
-.ah-timeline__dot--live {
-  cursor: default;
-  .ah-timeline__dot-circle {
-    background: var(--ah-badge-string);
-    animation: ah-pulse-dot 2s ease-in-out infinite;
-  }
-  .ah-timeline__dot-label {
-    color: var(--ah-badge-string);
-  }
-  &:hover .ah-timeline__dot-circle {
-    transform: none;
-  }
-}
+.ah-timeline__dot-delete {
+  display: none;
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: none;
+  color: var(--ah-text-faint);
+  font-size: 9px;
+  line-height: 12px;
+  text-align: center;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0.6;
+  transition: opacity 0.15s, color 0.15s;
 
-@keyframes ah-pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  &:hover {
+    opacity: 1;
+    color: var(--ah-error-text);
+  }
 }
 
 .ah-capture-progress {

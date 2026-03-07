@@ -2,7 +2,7 @@ import m from "mithril";
 import { Fragment } from "../mithril-helpers";
 import { AdbConnection, PINNED_PROCESSES, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
-import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, type SmapsNumericField, type SmapsDeltaKey } from "./capture-helpers";
+import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, timelineClick, deleteSnapshotState, type TimelineState, type SmapsNumericField, type SmapsDeltaKey } from "./capture-helpers";
 
 type SmapsSortFieldType = SmapsNumericField | SmapsDeltaKey | "count";
 type VmaSortFieldType = SmapsNumericField | SmapsDeltaKey | "addrStart";
@@ -37,10 +37,11 @@ const VmaEntries: m.Component<{
   onDump: (pid: number, processName: string, label: string, regions: { addrStart: string; addrEnd: string }[]) => void;
   dumpDisabled: boolean;
   entryDiffs?: SmapsEntryDiff[] | null;
+  showDeltaCols: boolean;
   leadingColCount: number;
 }> = {
   view(vnode) {
-    const { entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, onDump, dumpDisabled, entryDiffs, leadingColCount } = vnode.attrs;
+    const { entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, onDump, dumpDisabled, entryDiffs, showDeltaCols, leadingColCount } = vnode.attrs;
 
     const diffByAddr: Map<string, SmapsEntryDiff> | null = entryDiffs
       ? new Map(entryDiffs.map(d => [d.current.addrStart, d] as const))
@@ -89,7 +90,7 @@ const VmaEntries: m.Component<{
               onclick: () => onToggleSort(f),
             }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
           ];
-          if (entryDiffs) {
+          if (showDeltaCols) {
             const dk = SMAPS_DELTA_KEY[f];
             cells.push(m("td", {
               key: dk,
@@ -138,7 +139,7 @@ const VmaEntries: m.Component<{
                 className: "ah-vma-td--right",
               }, e[f] > 0 ? fmtSize(e[f] * 1024) : "\u2014"),
             ];
-            if (entryDiffs) {
+            if (showDeltaCols) {
               const delta = ed ? ed[SMAPS_DELTA_KEY[f]] : 0;
               cells.push(m("td", {
                 key: `d-${f}`,
@@ -171,10 +172,11 @@ const SmapsSubTable: m.Component<{
   dumpDisabled: boolean;
   smapsDiffs?: SmapsDiff[] | null;
   prevAggregated?: SmapsAggregated[] | null;
+  showDeltaCols: boolean;
   leadingColCount: number;
 }> = {
   view(vnode) {
-    const { pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated, leadingColCount } = vnode.attrs;
+    const { pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated, showDeltaCols, leadingColCount } = vnode.attrs;
 
     const diffByName: Map<string, SmapsDiff> | null = smapsDiffs
       ? new Map(smapsDiffs.map(d => [d.current.name, d] as const))
@@ -221,7 +223,7 @@ const SmapsSubTable: m.Component<{
               onclick: () => onToggleSort(f),
             }, `${label} ${sortField === f ? (sortAsc ? "\u25B2" : "\u25BC") : ""}`),
           ];
-          if (smapsDiffs) {
+          if (showDeltaCols) {
             const dk = SMAPS_DELTA_KEY[f];
             cells.push(m("td", {
               key: dk,
@@ -247,7 +249,7 @@ const SmapsSubTable: m.Component<{
               style: { fontSize: "0.75rem" },
             }, totals[f] > 0 ? fmtSize(totals[f] * 1024) : "\u2014"),
           ];
-          if (smapsDiffs) {
+          if (showDeltaCols) {
             const delta = totals[SMAPS_DELTA_KEY[f]];
             cells.push(m("td", {
               key: `d-${f}`,
@@ -301,7 +303,7 @@ const SmapsSubTable: m.Component<{
                   className: "ah-smaps-td--right",
                 }, g[f] > 0 ? fmtSize(g[f] * 1024) : "\u2014"),
               ];
-              if (smapsDiffs) {
+              if (showDeltaCols) {
                 const delta = sd ? sd[SMAPS_DELTA_KEY[f]] : 0;
                 cells.push(m("td", {
                   key: `d-${f}`,
@@ -325,6 +327,7 @@ const SmapsSubTable: m.Component<{
               onDump,
               dumpDisabled,
               entryDiffs: prevEntries ? diffSmapsEntries(prevEntries, g.entries) : null,
+              showDeltaCols,
               leadingColCount,
             })
           ),
@@ -651,11 +654,18 @@ function getFieldValue(p: ProcessInfo, field: SmapsNumericField, rollup?: SmapsR
   return 0;
 }
 
+export interface CaptureViewRef {
+  save: () => void;
+  import: (file: File) => void;
+  hasData: boolean;
+}
+
 interface CaptureViewAttrs {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
   onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
   conn: AdbConnection;
   sessionFile?: File | null;
+  captureRef?: CaptureViewRef;
 }
 
 function CaptureView(): m.Component<CaptureViewAttrs> {
@@ -709,13 +719,24 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   const snapshots: Snapshot[] = [];
   let nextSnapId = 0;
   let diffMode = false;
-  let diffBaseIdx = 0; // index into snapshots for the base (left) side
+  let diffBaseIdx: number | null = null; // index into snapshots for base (null = live)
+  let viewSnapIdx: number | null = null; // which snapshot to display (null = live)
   let processDiffs: ProcessDiff[] | null = null;
   let globalMemInfoDiff: GlobalMemInfoDiff | null = null;
   let diffTriggered = false;
 
   function getBaseSnap(): Snapshot | null {
-    return diffMode && diffBaseIdx >= 0 && diffBaseIdx < snapshots.length ? snapshots[diffBaseIdx] : null;
+    if (!diffMode) return null;
+    if (diffBaseIdx === null) {
+      // Live is the diff base
+      if (!processes) return null;
+      return { id: -1, ts: Date.now(), processes, globalMemInfo, smapsRollups, smapsData };
+    }
+    return diffBaseIdx >= 0 && diffBaseIdx < snapshots.length ? snapshots[diffBaseIdx] : null;
+  }
+
+  function getViewSnap(): Snapshot | null {
+    return viewSnapIdx !== null && viewSnapIdx >= 0 && viewSnapIdx < snapshots.length ? snapshots[viewSnapIdx] : null;
   }
 
   // Cached conn reference
@@ -728,10 +749,36 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     diffTriggered = false;
   }
 
-  function clearSnapshots() {
-    snapshots.length = 0;
-    nextSnapId = 0;
-    hideDiff();
+  /** Build current timeline state from closure vars. */
+  function currentTimeline(): TimelineState {
+    return { viewSnapIdx, diffBaseIdx, diffMode, count: snapshots.length };
+  }
+
+  /** CSS modifier for a timeline dot: green (active), blue (base), or none. */
+  function dotColorClass(idx: number | null): string {
+    const isViewing = viewSnapIdx === idx;
+    const isBase = diffMode && diffBaseIdx === idx;
+    return isViewing ? " ah-timeline__dot--active" : isBase ? " ah-timeline__dot--base" : "";
+  }
+
+  /** Is this dot the green (active) one? Used to short-circuit no-op clicks. */
+  function isGreenDot(idx: number | null): boolean {
+    return viewSnapIdx === idx && !(diffMode && diffBaseIdx === idx);
+  }
+
+  /** Apply a TimelineState result from timelineClick / deleteSnapshotState. */
+  function applyTimelineState(next: { viewSnapIdx: number | null; diffBaseIdx: number | null; diffMode: boolean }) {
+    viewSnapIdx = next.viewSnapIdx;
+    diffBaseIdx = next.diffBaseIdx;
+    if (!next.diffMode && diffMode) hideDiff();
+    else diffMode = next.diffMode;
+  }
+
+  function deleteSnapshot(idx: number) {
+    if (idx < 0 || idx >= snapshots.length) return;
+    const next = deleteSnapshotState(currentTimeline(), idx);
+    snapshots.splice(idx, 1);
+    applyTimelineState(next);
   }
 
   // Session serialization — save/load snapshots + current live state
@@ -815,7 +862,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         smapsRollups = new Map(session.live.smapsRollups);
         smapsData = new Map(session.live.smapsData);
         javaPids = new Set(session.live.javaPids);
-        // Reset diff to latest snapshot
+        // Reset: view live, diff against latest snapshot
+        viewSnapIdx = null;
         if (snapshots.length > 0) {
           diffBaseIdx = snapshots.length - 1;
           diffMode = true;
@@ -838,11 +886,14 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   function recomputeDiffs() {
     const base = getBaseSnap();
     if (!base) { processDiffs = null; globalMemInfoDiff = null; return; }
-    if (base.processes && processes && !enrichStatus) {
-      processDiffs = diffProcesses(base.processes, processes);
+    const viewSnap = getViewSnap();
+    const rightProcs = viewSnap?.processes ?? processes;
+    const rightMem = viewSnap?.globalMemInfo ?? globalMemInfo;
+    if (base.processes && rightProcs && !enrichStatus) {
+      processDiffs = diffProcesses(base.processes, rightProcs);
     }
-    if (base.globalMemInfo && globalMemInfo) {
-      globalMemInfoDiff = diffGlobalMemInfo(base.globalMemInfo, globalMemInfo);
+    if (base.globalMemInfo && rightMem) {
+      globalMemInfoDiff = diffGlobalMemInfo(base.globalMemInfo, rightMem);
     }
   }
 
@@ -1055,8 +1106,10 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       smapsRollups: new Map(smapsRollups),
       smapsData: new Map(smapsData),
     });
+    // New snapshot becomes the diff base; live is the active view
     diffBaseIdx = snapshots.length - 1;
     diffMode = true;
+    viewSnapIdx = null;
     diffTriggered = true;
     refreshProcesses();
   }
@@ -1064,6 +1117,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   async function handleConnect() {
     connectStatus = "Connecting\u2026";
     error = null;
+    // Clear all snapshot state on reconnect
+    snapshots.length = 0;
+    nextSnapId = 0;
+    viewSnapIdx = null;
+    hideDiff();
     m.redraw();
     try {
       await conn.requestAndConnect((msg) => { connectStatus = msg; m.redraw(); });
@@ -1213,6 +1271,12 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       conn = vnode.attrs.conn;
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
+      // Populate ref for parent to access save/load
+      if (vnode.attrs.captureRef) {
+        vnode.attrs.captureRef.save = exportSession;
+        vnode.attrs.captureRef.import = importSession;
+        vnode.attrs.captureRef.hasData = processes !== null;
+      }
       if (vnode.attrs.sessionFile && vnode.attrs.sessionFile !== _importedSessionFile) {
         _importedSessionFile = vnode.attrs.sessionFile;
         importSession(vnode.attrs.sessionFile);
@@ -1225,11 +1289,17 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       const baseSmapsData = baseSnap?.smapsData ?? null;
       const baseProcesses = baseSnap?.processes ?? null;
 
+      // Display data: snapshot view or live
+      const viewSnap = getViewSnap();
+      const dProcs = viewSnap?.processes ?? processes;
+      const dMemInfo = viewSnap?.globalMemInfo ?? globalMemInfo;
+      const dRollups = viewSnap?.smapsRollups ?? smapsRollups;
+      const dSmaps = viewSnap?.smapsData ?? smapsData;
       const pinProcesses = !sort.userSorted;
 
       const sorted = (() => {
-        if (!processes) return null;
-        const copy = [...processes];
+        if (!dProcs) return null;
+        const copy = [...dProcs];
         copy.sort((a, b) => {
           if (pinProcesses) {
             const aPin = PINNED_PROCESSES.has(a.name) ? 0 : 1;
@@ -1250,16 +1320,16 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             // Find the base field from the delta key
             const baseField = Object.entries(SMAPS_DELTA_KEY).find(([, dk]) => dk === sf)?.[0] as SmapsNumericField | undefined;
             if (!baseField) return 0;
-            const aR = smapsRollups.get(a.pid);
-            const bR = smapsRollups.get(b.pid);
+            const aR = dRollups.get(a.pid);
+            const bR = dRollups.get(b.pid);
             const aPR = baseRollups?.get(a.pid);
             const bPR = baseRollups?.get(b.pid);
             const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
             const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
             return sort.asc ? aD - bD : bD - aD;
           }
-          const aVal = getFieldValue(a, sort.field, smapsRollups.get(a.pid));
-          const bVal = getFieldValue(b, sort.field, smapsRollups.get(b.pid));
+          const aVal = getFieldValue(a, sort.field, dRollups.get(a.pid));
+          const bVal = getFieldValue(b, sort.field, dRollups.get(b.pid));
           return sort.asc ? aVal - bVal : bVal - aVal;
         });
         return copy;
@@ -1287,24 +1357,24 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             const sf = sort.field;
             const baseField = Object.entries(SMAPS_DELTA_KEY).find(([, dk]) => dk === sf)?.[0] as SmapsNumericField | undefined;
             if (!baseField) return 0;
-            const aR = smapsRollups.get(a.current.pid);
-            const bR = smapsRollups.get(b.current.pid);
+            const aR = dRollups.get(a.current.pid);
+            const bR = dRollups.get(b.current.pid);
             const aPR = baseRollups?.get(a.current.pid);
             const bPR = baseRollups?.get(b.current.pid);
             const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
             const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
             return sort.asc ? aD - bD : bD - aD;
           }
-          const aVal = getFieldValue(a.current, sort.field, smapsRollups.get(a.current.pid));
-          const bVal = getFieldValue(b.current, sort.field, smapsRollups.get(b.current.pid));
+          const aVal = getFieldValue(a.current, sort.field, dRollups.get(a.current.pid));
+          const bVal = getFieldValue(b.current, sort.field, dRollups.get(b.current.pid));
           return sort.asc ? aVal - bVal : bVal - aVal;
         });
         return copy;
       })();
 
       const sharedMappings = (() => {
-        if (smapsData.size === 0 || !processes) return null;
-        return aggregateSharedMappings(smapsData, processes);
+        if (dSmaps.size === 0 || !dProcs) return null;
+        return aggregateSharedMappings(dSmaps, dProcs);
       })();
 
       const prevSharedMappings = (() => {
@@ -1317,14 +1387,14 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         return diffSharedMappings(prevSharedMappings, sharedMappings);
       })();
 
-      const hasOomLabel = processes ? processes.some(p => p.oomLabel !== "") : false;
+      const hasOomLabel = dProcs ? dProcs.some(p => p.oomLabel !== "") : false;
 
       const processTotals = (() => {
         const activeProcs = (sorted ?? []).filter(p => !(diffMode && sortedDiffs?.find(d => d.current.pid === p.pid && d.status === "removed")));
         const totals: Record<string, number> = {};
         for (const [f] of ROLLUP_COLUMNS) totals[f] = 0;
         for (const p of activeProcs) {
-          const r = smapsRollups.get(p.pid);
+          const r = dRollups.get(p.pid);
           for (const [f] of ROLLUP_COLUMNS) totals[f] += getFieldValue(p, f, r);
         }
         return { count: activeProcs.length, values: totals };
@@ -1393,15 +1463,12 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
               snapshots.length > 0 && !enrichStatus && (
                 m("button", {
                   className: diffMode ? "ah-capture-toolbar__btn--warning" : "ah-capture-toolbar__btn",
-                  onclick: () => { if (diffMode) hideDiff(); else { diffMode = true; } },
+                  onclick: () => {
+                    if (diffMode) { hideDiff(); return; }
+                    if (diffBaseIdx === null || diffBaseIdx >= snapshots.length) diffBaseIdx = snapshots.length - 1;
+                    diffMode = true;
+                  },
                 }, diffMode ? "Hide Diff" : "Show Diff")
-              ),
-              snapshots.length > 0 && !enrichStatus && (
-                m("button", {
-                  className: "ah-capture-toolbar__btn",
-                  onclick: clearSnapshots,
-                  title: "Discard all snapshots",
-                }, "\u00D7")
               ),
               connected ? (
                 m("button", {
@@ -1415,29 +1482,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   disabled: connectStatus !== null,
                 }, connectStatus ?? "Reconnect")
               ),
-              processes && m(Fragment, [
-                m("span", { className: "ah-capture-toolbar__divider" }),
-                m("button", {
-                  className: "ah-capture-toolbar__btn",
-                  onclick: exportSession,
-                }, "Save"),
-              ]),
-              !connected && m(Fragment, [
-                m("span", { className: "ah-capture-toolbar__divider" }),
-                m("label", { className: "ah-capture-toolbar__btn ah-capture-toolbar__file-label" }, [
-                  "Load",
-                  m("input", {
-                    type: "file",
-                    accept: ".json",
-                    style: { display: "none" },
-                    onchange: (e: Event) => {
-                      const file = (e.target as HTMLInputElement).files?.[0];
-                      if (file) importSession(file);
-                      (e.target as HTMLInputElement).value = "";
-                    },
-                  }),
-                ]),
-              ]),
             ]),
 
             // Snapshot timeline
@@ -1445,24 +1489,35 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
               m("div", { className: "ah-timeline" },
                 m("div", { className: "ah-timeline__track" },
                   snapshots.map((snap, i) => {
-                    const isBase = diffMode && i === diffBaseIdx;
                     const time = new Date(snap.ts);
                     const label = `${time.getHours().toString().padStart(2, "0")}:${time.getMinutes().toString().padStart(2, "0")}:${time.getSeconds().toString().padStart(2, "0")}`;
+                    const color = dotColorClass(i);
                     return m(Fragment, { key: snap.id }, [
                       i > 0 && m("div", { className: "ah-timeline__segment" }),
                       m("button", {
-                        className: `ah-timeline__dot${isBase ? " ah-timeline__dot--base" : ""}`,
-                        onclick: () => { diffBaseIdx = i; if (!diffMode) diffMode = true; },
-                        title: `Snapshot ${i + 1} \u2014 ${label}`,
+                        className: `ah-timeline__dot${color}`,
+                        onclick: () => applyTimelineState(timelineClick(currentTimeline(), i)),
+                        title: `Snapshot ${i + 1} \u2014 ${label}${color ? ` (${color.includes("active") ? "viewing" : "diff base"})` : ""}`,
                       }, [
                         m("div", { className: "ah-timeline__dot-circle" }),
                         m("div", { className: "ah-timeline__dot-label" }, label),
+                        m("button", {
+                          className: "ah-timeline__dot-delete",
+                          onclick: (e: Event) => { e.stopPropagation(); deleteSnapshot(i); },
+                          title: "Delete snapshot",
+                        }, "\u00D7"),
                       ]),
                     ]);
                   }),
-                  // Live indicator
+                  // Live dot — same click rules as snapshot dots
                   m("div", { className: "ah-timeline__segment" }),
-                  m("div", { className: "ah-timeline__dot ah-timeline__dot--live" }, [
+                  m("button", {
+                    className: `ah-timeline__dot${dotColorClass(null)}`,
+                    onclick: () => {
+                      if (isGreenDot(null)) return; // already viewing live, no-op
+                      applyTimelineState(timelineClick(currentTimeline(), null));
+                    },
+                  }, [
                     m("div", { className: "ah-timeline__dot-circle" }),
                     m("div", { className: "ah-timeline__dot-label" }, "Live"),
                   ]),
@@ -1533,15 +1588,14 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             ),
 
             // Global memory summary
-            globalMemInfo && (
+            dMemInfo && (
               m("div", { className: "ah-global-mem" }, [
                 m("div", { className: "ah-global-mem__inner" }, [
                   (() => {
-                    const g = globalMemInfo!;
+                    const g = dMemInfo!;
                     const d = globalMemInfoDiff;
                     const usedKb = g.totalRamKb - g.memAvailableKb;
                     const deltaUsedKb = d ? d.deltaTotalRamKb - d.deltaMemAvailableKb : 0;
-                    // inverted: true = up is good (green), false = up is bad (red), null = neutral
                     const items: [string, number, number, boolean | null][] = [
                       ["Total", g.totalRamKb, d?.deltaTotalRamKb ?? 0, null],
                       ["Used", usedKb, deltaUsedKb, false],
@@ -1563,13 +1617,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                       ]),
                     );
                   })(),
-                  globalMemInfo.swapTotalKb > 0 && (
+                  dMemInfo.swapTotalKb > 0 && (
                     m("span", { className: "ah-global-mem__item" }, [
                       "Swap ",
                       m("span", { className: "ah-global-mem__value" }, [
-                        fmtSize((globalMemInfo.swapTotalKb - globalMemInfo.swapFreeKb) * 1024),
+                        fmtSize((dMemInfo.swapTotalKb - dMemInfo.swapFreeKb) * 1024),
                         " / ",
-                        fmtSize(globalMemInfo.swapTotalKb * 1024),
+                        fmtSize(dMemInfo.swapTotalKb * 1024),
                       ]),
                       globalMemInfoDiff && globalMemInfoDiff.deltaSwapFreeKb !== 0 && (
                         m("span", { className: "ah-mono ah-ml-1" }, fmtDelta(-globalMemInfoDiff.deltaSwapFreeKb))
@@ -1651,7 +1705,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                         ];
                         if (diffMode) {
                           const totalDelta = sortedDiffs ? sortedDiffs.reduce((s, d) => {
-                            const r = smapsRollups.get(d.current.pid);
+                            const r = dRollups.get(d.current.pid);
                             const pr = baseRollups?.get(d.current.pid);
                             return s + (r && pr ? r[f] - pr[f] : 0);
                           }, 0) : 0;
@@ -1669,13 +1723,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                       const p = d.current;
                       const isJava = javaPids.has(p.pid);
                       const canCapture = isJava && (conn.isRoot || p.debuggable !== false);
-                      const hasSmaps = smapsData.has(p.pid);
+                      const hasSmaps = dSmaps.has(p.pid);
                       const isExpanded = expandedSmapsPid === p.pid;
                       const isSmapsExpanded = isExpanded && hasSmaps;
                       const isSmapsLoading = isExpanded && !hasSmaps && smapsFetchPid === p.pid;
-                      const isDiff = diffMode && sortedDiffs !== null;
+                      const isDiff = diffMode;
                       const colCount = 3 + (hasOomLabel ? 1 : 0) + ROLLUP_COLUMNS.length + (isDiff ? ROLLUP_COLUMNS.length : 0);
-                      const rollup = smapsRollups.get(p.pid);
+                      const rollup = dRollups.get(p.pid);
                       const prevRollup = baseRollups?.get(p.pid);
                       const rowKey = `${d.status}-${p.pid}`;
                       return m(Fragment, { key: rowKey }, [
@@ -1771,7 +1825,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           m(SmapsSubTable, {
                             pid: p.pid,
                             processName: p.name,
-                            aggregated: smapsData.get(p.pid)!,
+                            aggregated: dSmaps.get(p.pid)!,
                             expandedGroup: expandedSmapsGroup,
                             onToggleGroup: (name: string) => { expandedSmapsGroup = expandedSmapsGroup === name ? null : name; },
                             sortField: smapsSort.field,
@@ -1782,8 +1836,9 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             onToggleVmaSort: (f: VmaSortFieldType) => vmaSort.toggle(f),
                             onDump: handleVmaDump,
                             dumpDisabled: !connected || !!vmaDumpStatus,
-                            smapsDiffs: isDiff && baseSmapsData?.has(p.pid) ? diffSmaps(baseSmapsData.get(p.pid)!, smapsData.get(p.pid)!) : null,
+                            smapsDiffs: isDiff && baseSmapsData?.has(p.pid) ? diffSmaps(baseSmapsData.get(p.pid)!, dSmaps.get(p.pid)!) : null,
                             prevAggregated: isDiff && baseSmapsData?.has(p.pid) ? baseSmapsData.get(p.pid)! : null,
+                            showDeltaCols: diffMode,
                             leadingColCount: 3 + (hasOomLabel ? 1 : 0),
                           })
                         ),
@@ -1795,22 +1850,22 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             ),
 
             // Scan All VMAs / Shared Mappings
-            (conn.isRoot || smapsData.size > 0) && processes && processes.length > 0 && (
+            (conn.isRoot || dSmaps.size > 0) && dProcs && dProcs.length > 0 && (
               m("div", { className: "ah-mt-4" }, [
-                conn.isRoot && smapsData.size < (processes?.length ?? 0) && (
+                conn.isRoot && smapsData.size < (dProcs?.length ?? 0) && (
                   m("button", {
                     className: "ah-capture-toolbar__btn--accent ah-mb-2",
                     onclick: scanStatus ? cancelSmapsFetch : scanAllSmaps,
                     disabled: !connected || !!vmaDumpStatus,
-                  }, scanStatus ? `Cancel Scan (${smapsData.size}/${processes?.length ?? 0})` : `Scan All VMAs (${smapsData.size}/${processes?.length ?? 0})`)
+                  }, scanStatus ? `Cancel Scan (${smapsData.size}/${dProcs?.length ?? 0})` : `Scan All VMAs (${smapsData.size}/${dProcs?.length ?? 0})`)
                 ),
                 sharedMappings && sharedMappings.length > 0 && (
                   m(SharedMappingsTable, {
                     mappings: sharedMappings,
-                    loadedCount: smapsData.size,
+                    loadedCount: dSmaps.size,
                     loading: scanStatus !== null,
                     diffs: sharedMappingDiffs,
-                    smapsData,
+                    smapsData: dSmaps,
                     onDump: handleVmaDump,
                     dumpDisabled: !connected || !!vmaDumpStatus,
                   })

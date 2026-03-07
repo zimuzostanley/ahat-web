@@ -34,6 +34,78 @@ export const SMAPS_DELTA_KEY: Record<SmapsNumericField, SmapsDeltaKey> = {
   swapKb: "deltaSwapKb",
 };
 
+// ── Snapshot timeline state machine ──────────────────────────────────────────
+
+export interface TimelineState {
+  /** Index of snapshot being viewed (null = live). Green dot. */
+  viewSnapIdx: number | null;
+  /** Index of snapshot used as diff base (null = live). Blue dot. */
+  diffBaseIdx: number | null;
+  /** Whether diff mode is active. */
+  diffMode: boolean;
+  /** Total number of snapshots. */
+  count: number;
+}
+
+/**
+ * Compute next timeline state after clicking a dot.
+ *
+ * Every dot (including Live) follows the same rules:
+ *   green = viewSnapIdx (null = Live)
+ *   blue  = diffBaseIdx when diffMode (null = Live)
+ *   grey  = everything else
+ *
+ *   click grey  → becomes blue, green stays, diff enabled
+ *   click blue  → becomes green, diff cleared
+ *   click green → deselect (back to Live green), diff cleared
+ */
+export function timelineClick(state: TimelineState, clickedIdx: number | null): TimelineState {
+  const isViewing = state.viewSnapIdx === clickedIdx;
+  const isBase = state.diffMode && state.diffBaseIdx === clickedIdx;
+
+  if (isViewing) {
+    // Click green → deselect. If already Live, no-op.
+    if (clickedIdx === null) return state;
+    return { ...state, viewSnapIdx: null, diffMode: false };
+  }
+
+  if (isBase) {
+    // Click blue → becomes green, diff cleared
+    return { ...state, viewSnapIdx: clickedIdx, diffMode: false };
+  }
+
+  // Click grey → becomes blue, green stays, diff enabled
+  return { ...state, diffBaseIdx: clickedIdx, diffMode: true };
+}
+
+/**
+ * Adjust timeline state after deleting a snapshot at `idx`.
+ * Returns updated state. Caller should splice the snapshot array.
+ */
+export function deleteSnapshotState(state: TimelineState, idx: number): TimelineState {
+  const newCount = state.count - 1;
+  if (newCount === 0) {
+    return { viewSnapIdx: null, diffBaseIdx: null, diffMode: false, count: 0 };
+  }
+
+  let { viewSnapIdx, diffBaseIdx, diffMode } = state;
+
+  // Adjust viewSnapIdx
+  if (viewSnapIdx !== null) {
+    if (viewSnapIdx === idx) viewSnapIdx = null;
+    else if (viewSnapIdx > idx) viewSnapIdx--;
+  }
+
+  // Adjust diffBaseIdx (null = live, no adjustment needed)
+  if (diffBaseIdx !== null) {
+    if (diffMode && diffBaseIdx === idx) { diffMode = false; diffBaseIdx = null; }
+    else if (diffBaseIdx >= newCount) diffBaseIdx = newCount - 1;
+    else if (diffBaseIdx > idx) diffBaseIdx--;
+  }
+
+  return { viewSnapIdx, diffBaseIdx, diffMode, count: newCount };
+}
+
 /** Compute column totals with optional diff deltas — type-safe, no casts. */
 export function computeSmapsTotals(
   items: Record<SmapsNumericField, number>[],
