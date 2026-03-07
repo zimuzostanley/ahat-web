@@ -214,6 +214,7 @@ export function BitmapImage(): m.Component<{ width: number; height: number; form
 export interface BreadcrumbEntry {
   state: NavState;
   label: string;
+  scrollY?: number;
 }
 
 /** Build a BreadcrumbEntry from a NavState. */

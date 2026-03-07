@@ -5,8 +5,8 @@ export type NavState =
   | { view: "objects"; params: { siteId: number; className: string; heap: string | null } }
   | { view: "site"; params: { id: number } }
   | { view: "search"; params: { q: string } }
-  | { view: "bitmaps"; params: { id?: number } }
-  | { view: "strings"; params: { q?: string } };
+  | { view: "bitmaps"; params: { id?: number; dupKey?: string } }
+  | { view: "strings"; params: { q?: string; exact?: boolean; heap?: string } };
 
 /** Short human-readable label for a nav state (used in breadcrumbs). */
 export function navLabel(state: NavState): string {
@@ -44,12 +44,19 @@ export function stateToUrl(state: NavState): string {
       return q ? `/search?q=${encodeURIComponent(q)}` : "/search";
     }
     case "bitmaps": {
-      const id = state.params.id;
-      return id ? `/bitmaps?id=0x${id.toString(16)}` : "/bitmaps";
+      const sp = new URLSearchParams();
+      if (state.params.id) sp.set("id", `0x${state.params.id.toString(16)}`);
+      if (state.params.dupKey) sp.set("dup", state.params.dupKey);
+      const qs = sp.toString();
+      return qs ? `/bitmaps?${qs}` : "/bitmaps";
     }
     case "strings": {
-      const q = state.params.q;
-      return q ? `/strings?q=${encodeURIComponent(q)}` : "/strings";
+      const sp = new URLSearchParams();
+      if (state.params.q) sp.set("q", state.params.q);
+      if (state.params.exact) sp.set("exact", "1");
+      if (state.params.heap) sp.set("heap", state.params.heap);
+      const qs = sp.toString();
+      return qs ? `/strings?${qs}` : "/strings";
     }
   }
 }
@@ -85,11 +92,21 @@ export function urlToState(url: URL): NavState {
     case "/bitmaps": {
       const raw = sp.get("id") ?? "";
       const selectedId = raw.startsWith("0x") ? parseInt(raw.slice(2), 16) : (raw ? parseInt(raw, 10) : 0);
-      return { view: "bitmaps", params: selectedId ? { id: selectedId } : {} };
+      const dupKey = sp.get("dup") ?? undefined;
+      const params: { id?: number; dupKey?: string } = {};
+      if (selectedId) params.id = selectedId;
+      if (dupKey) params.dupKey = dupKey;
+      return { view: "bitmaps", params };
     }
     case "/strings": {
       const q = sp.get("q") ?? "";
-      return { view: "strings", params: q ? { q } : {} };
+      const exact = sp.get("exact") === "1";
+      const heap = sp.get("heap") ?? undefined;
+      const params: { q?: string; exact?: boolean; heap?: string } = {};
+      if (q) params.q = q;
+      if (exact) params.exact = true;
+      if (heap) params.heap = heap;
+      return { view: "strings", params };
     }
     default:
       return { view: "overview", params: {} };

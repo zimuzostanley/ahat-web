@@ -12,8 +12,16 @@ export let trailIndex = 0;
 
 export type NavFn = (view: string, params?: Record<string, unknown>) => void;
 
+/** Save current scroll position into the current history entry. */
+function saveScroll(): void {
+  const cur = window.history.state;
+  if (cur) window.history.replaceState({ ...cur, scrollY: window.scrollY }, "");
+}
+
 /** Navigate from within a view — truncate trail after current position, append new crumb. */
 export function navigate(v: string, p: Record<string, unknown> = {}): void {
+  saveScroll();
+  trail[trailIndex] = { ...trail[trailIndex], scrollY: window.scrollY };
   const state = { view: v, params: p } as NavState;
   trail = [...trail.slice(0, trailIndex + 1), makeCrumb(state)];
   trailIndex = trail.length - 1;
@@ -25,6 +33,7 @@ export function navigate(v: string, p: Record<string, unknown> = {}): void {
 
 /** Navigate from top-level nav bar — resets breadcrumb trail. */
 export function navigateTop(v: string, p: Record<string, unknown> = {}): void {
+  saveScroll();
   const state = { view: v, params: p } as NavState;
   trail = [makeCrumb(state)];
   trailIndex = 0;
@@ -36,12 +45,29 @@ export function navigateTop(v: string, p: Record<string, unknown> = {}): void {
 
 /** Breadcrumb click — keep full trail, just change active index. */
 export function onBreadcrumbNavigate(i: number): void {
+  saveScroll();
+  // Save current scroll position into the current crumb for later breadcrumb restoration
+  trail[trailIndex] = { ...trail[trailIndex], scrollY: window.scrollY };
   const crumb = trail[i];
   nav = crumb.state;
   trailIndex = i;
+  // Restore saved scroll position for the target crumb, or scroll to top
+  pendingScrollY = typeof crumb.scrollY === "number" ? crumb.scrollY : null;
   window.history.pushState({ ...crumb.state, trail, trailIndex: i }, "", stateToUrl(crumb.state));
-  window.scrollTo(0, 0);
+  if (pendingScrollY === null) window.scrollTo(0, 0);
   m.redraw();
+}
+
+/** Pending scroll restoration target (set by popstate, consumed by views after data loads). */
+export let pendingScrollY: number | null = null;
+
+/** Call from a view after async data has loaded and rendered to restore scroll position. */
+export function consumePendingScroll(): void {
+  if (pendingScrollY !== null) {
+    const y = pendingScrollY;
+    pendingScrollY = null;
+    requestAnimationFrame(() => window.scrollTo(0, y));
+  }
 }
 
 /** Reset nav to current URL (used after loading a new session). */
@@ -70,6 +96,7 @@ window.addEventListener("popstate", (e: PopStateEvent) => {
     nav = { view, params } as NavState;
     trail = Array.isArray(e.state.trail) ? e.state.trail : [makeCrumb(nav)];
     trailIndex = typeof e.state.trailIndex === "number" ? e.state.trailIndex : trail.length - 1;
+    pendingScrollY = typeof e.state.scrollY === "number" ? e.state.scrollY : null;
     m.redraw();
   }
 });

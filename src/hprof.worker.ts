@@ -37,6 +37,7 @@ type WorkerMessage =
 export interface HeapInfo { name: string; java: number; native_: number }
 
 export interface DuplicateBitmapGroup {
+  key: string;
   width: number;
   height: number;
   count: number;
@@ -369,12 +370,12 @@ function findDuplicateBitmaps(snapshot: AhatSnapshot): DuplicateBitmapGroup[] {
   }
 
   const result: DuplicateBitmapGroup[] = [];
-  for (const g of groups.values()) {
+  for (const [key, g] of groups) {
     if (g.count < 2) continue;
     const totalBytes = g.retainedPerInstance.reduce((a, b) => a + b, 0);
     // Wasted = total minus the one copy you need (smallest retained)
     const minRetained = Math.min(...g.retainedPerInstance);
-    result.push({ width: g.width, height: g.height, count: g.count, totalBytes, wastedBytes: totalBytes - minRetained });
+    result.push({ key, width: g.width, height: g.height, count: g.count, totalBytes, wastedBytes: totalBytes - minRetained });
   }
   result.sort((a, b) => b.wastedBytes - a.wastedBytes);
   return result;

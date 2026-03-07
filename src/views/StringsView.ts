@@ -5,10 +5,11 @@ import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize } from "../format";
 import { type NavFn, Section, SortableTable } from "../components";
 import { computeDuplicates, type DuplicateGroup } from "./strings-helpers";
+import { consumePendingScroll } from "../navigation";
 
 // ─── StringsView ─────────────────────────────────────────────────────────────
 
-interface StringsViewAttrs { proxy: WorkerProxy; navigate: NavFn; initialQuery?: string }
+interface StringsViewAttrs { proxy: WorkerProxy; navigate: NavFn; initialQuery?: string; initialExact?: boolean; initialHeap?: string }
 
 function StringsView(): m.Component<StringsViewAttrs> {
   let allRows: StringListRow[] | null = null;
@@ -16,11 +17,21 @@ function StringsView(): m.Component<StringsViewAttrs> {
   let selectedHeap = "all";
   let exactMatch = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let scrollToResults = false;
 
   function updateUrl(q: string) {
-    const url = q ? `/strings?q=${encodeURIComponent(q)}` : "/strings";
+    const sp = new URLSearchParams();
+    if (q) sp.set("q", q);
+    if (exactMatch) sp.set("exact", "1");
+    if (selectedHeap !== "all") sp.set("heap", selectedHeap);
+    const qs = sp.toString();
+    const url = qs ? `/strings?${qs}` : "/strings";
     const prev = window.history.state;
-    window.history.replaceState({ view: "strings", params: q ? { q } : {}, trail: prev?.trail, trailIndex: prev?.trailIndex }, "", url);
+    const params: Record<string, unknown> = {};
+    if (q) params.q = q;
+    if (exactMatch) params.exact = true;
+    if (selectedHeap !== "all") params.heap = selectedHeap;
+    window.history.replaceState({ view: "strings", params, trail: prev?.trail, trailIndex: prev?.trailIndex }, "", url);
   }
 
   function handleChange(q: string) {
@@ -33,8 +44,10 @@ function StringsView(): m.Component<StringsViewAttrs> {
   return {
     oninit(vnode) {
       query = vnode.attrs.initialQuery ?? "";
+      exactMatch = vnode.attrs.initialExact ?? false;
+      selectedHeap = vnode.attrs.initialHeap ?? "all";
       vnode.attrs.proxy.query<StringListRow[]>("getStringList")
-        .then(r => { allRows = r; m.redraw(); })
+        .then(r => { allRows = r; m.redraw(); consumePendingScroll(); })
         .catch(console.error);
     },
     onremove() {
@@ -80,7 +93,7 @@ function StringsView(): m.Component<StringsViewAttrs> {
           heaps.length > 1 && (
             m("select", {
               value: selectedHeap,
-              onchange: (e: Event) => { selectedHeap = (e.target as HTMLSelectElement).value; },
+              onchange: (e: Event) => { selectedHeap = (e.target as HTMLSelectElement).value; updateUrl(query); },
               className: "ah-select",
               style: { backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='%23888'%3E%3Cpath d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E")`, backgroundRepeat: "no-repeat", backgroundPosition: "right 0.4rem center" },
             },
@@ -125,7 +138,7 @@ function StringsView(): m.Component<StringsViewAttrs> {
                   },
                 ],
                 data: duplicates,
-                onRowClick: (r: DuplicateGroup) => { query = r.value; exactMatch = true; updateUrl(r.value); },
+                onRowClick: (r: DuplicateGroup) => { query = r.value; exactMatch = true; scrollToResults = true; updateUrl(r.value); },
               })
             )
           )
@@ -141,7 +154,21 @@ function StringsView(): m.Component<StringsViewAttrs> {
         filtered.length > 0 && (
           m(Fragment, null,
             (query || selectedHeap !== "all") && (
-              m("div", { className: "ah-table__more ah-mb-2" },
+              m("div", {
+                className: "ah-table__more ah-mb-2",
+                oncreate: (vnode: m.VnodeDOM) => {
+                  if (scrollToResults) {
+                    scrollToResults = false;
+                    (vnode.dom as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                },
+                onupdate: (vnode: m.VnodeDOM) => {
+                  if (scrollToResults) {
+                    scrollToResults = false;
+                    (vnode.dom as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                },
+              },
                 filtered.length.toLocaleString(), " match", filtered.length !== 1 ? "es" : "")
             ),
             m(SortableTable, {

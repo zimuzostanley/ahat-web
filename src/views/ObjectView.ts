@@ -5,6 +5,7 @@ import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize, fmtHex, fmtSizeDelta } from "../format";
 import { type NavFn, InstanceLink, SiteLinkRaw, Section, SortableTable, PrimOrRefCell, BitmapImage } from "../components";
 import { downloadBlob } from "../utils";
+import { consumePendingScroll } from "../navigation";
 
 export interface ObjectParams { id: number }
 
@@ -22,7 +23,7 @@ function ObjectView(): m.Component<ObjectViewAttrs> {
     detail = "loading";
     prevId = attrs.params.id;
     attrs.proxy.query<InstanceDetail | null>("getInstance", { id: attrs.params.id })
-      .then(d => { if (!localCancelled.value) { detail = d; m.redraw(); } })
+      .then(d => { if (!localCancelled.value) { detail = d; m.redraw(); consumePendingScroll(); } })
       .catch(err => { console.error(err); if (!localCancelled.value) { detail = null; m.redraw(); } });
   }
 

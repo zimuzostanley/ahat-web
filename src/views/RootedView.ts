@@ -3,6 +3,7 @@ import type { InstanceRow, HeapInfo } from "../hprof.worker";
 import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize, fmtSizeDelta } from "../format";
 import { type NavFn, SortableTable, InstanceLink } from "../components";
+import { consumePendingScroll } from "../navigation";
 
 interface RootedViewAttrs { proxy: WorkerProxy; heaps: HeapInfo[]; navigate: NavFn; isDiffed: boolean }
 
@@ -12,7 +13,7 @@ function RootedView(): m.Component<RootedViewAttrs> {
   return {
     oninit(vnode) {
       vnode.attrs.proxy.query<InstanceRow[]>("getRooted")
-        .then(r => { rows = r; m.redraw(); })
+        .then(r => { rows = r; m.redraw(); consumePendingScroll(); })
         .catch(console.error);
     },
     view(vnode) {

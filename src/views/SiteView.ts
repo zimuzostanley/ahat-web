@@ -3,6 +3,7 @@ import type { SiteData, SiteChildRow, SiteObjectsRow, HeapInfo } from "../hprof.
 import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize, fmtSizeDelta } from "../format";
 import { type NavFn, SiteLinkRaw, Section, SortableTable, InstanceLink } from "../components";
+import { consumePendingScroll } from "../navigation";
 
 export interface SiteParams { id: number }
 
@@ -21,7 +22,7 @@ function SiteView(): m.Component<SiteViewAttrs> {
     prevId = attrs.params.id;
     const capturedCancel = localCancelled;
     attrs.proxy.query<SiteData>("getSite", { id: attrs.params.id ?? 0 })
-      .then(d => { if (!capturedCancel.value) { data = d; m.redraw(); } })
+      .then(d => { if (!capturedCancel.value) { data = d; m.redraw(); consumePendingScroll(); } })
       .catch(console.error);
     // Store cancel ref for cleanup
     (fetchData as any)._cancel = () => { capturedCancel.value = true; };

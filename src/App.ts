@@ -624,8 +624,8 @@ export default function App(): m.Component {
                 nav.view === "objects"  && m(ObjectsView, { proxy: activeProxy, navigate, params: nav.params }),
                 nav.view === "site"     && m(SiteView, { proxy: activeProxy, heaps: activeOverview.heaps, navigate, params: nav.params, isDiffed }),
                 nav.view === "search"   && m(SearchView, { proxy: activeProxy, navigate, initialQuery: nav.params.q }),
-                nav.view === "bitmaps"  && m(BitmapGalleryView, { proxy: activeProxy, navigate }),
-                nav.view === "strings" && m(StringsView, { proxy: activeProxy, navigate, initialQuery: nav.params.q })
+                nav.view === "bitmaps"  && m(BitmapGalleryView, { proxy: activeProxy, navigate, initialDupKey: nav.params.dupKey }),
+                nav.view === "strings" && m(StringsView, { proxy: activeProxy, navigate, initialQuery: nav.params.q, initialExact: nav.params.exact, initialHeap: nav.params.heap })
               )
             )
           )

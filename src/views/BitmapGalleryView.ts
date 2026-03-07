@@ -4,6 +4,7 @@ import type { BitmapListRow, InstanceDetail } from "../hprof.worker";
 import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize } from "../format";
 import { type NavFn, InstanceLink, Section, SortableTable, BitmapImage } from "../components";
+import { consumePendingScroll } from "../navigation";
 
 interface BitmapCardAttrs {
   row: BitmapListRow; proxy: WorkerProxy; navigate: NavFn; density: number; deviceScale: boolean;
@@ -89,17 +90,25 @@ interface DupBitmapGroup {
   wastedBytes: number;
 }
 
-interface BitmapGalleryViewAttrs { proxy: WorkerProxy; navigate: NavFn }
+interface BitmapGalleryViewAttrs { proxy: WorkerProxy; navigate: NavFn; initialDupKey?: string }
 
 function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
   let rows: BitmapListRow[] | null = null;
   let deviceScale = false;
   let expandedHash: string | null = null;
+  let dupSectionOpen = false;
+  let scrollToDup = false;
 
   return {
     oninit(vnode) {
+      const dupKey = vnode.attrs.initialDupKey;
+      if (dupKey) {
+        expandedHash = dupKey;
+        dupSectionOpen = true;
+        scrollToDup = true;
+      }
       vnode.attrs.proxy.query<BitmapListRow[]>("getBitmapList")
-        .then(r => { rows = r; m.redraw(); })
+        .then(r => { rows = r; m.redraw(); consumePendingScroll(); })
         .catch(console.error);
     },
     view(vnode) {
@@ -156,7 +165,7 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
             // Duplicate bitmaps
             dupGroups.length > 0 && (
               m("div", { className: "ah-mb-4" },
-                m(Section, { title: `Duplicate bitmaps (${dupGroups.length} groups, ${fmtSize(totalDupWasted)} wasted)`, defaultOpen: false },
+                m(Section, { title: `Duplicate bitmaps (${dupGroups.length} groups, ${fmtSize(totalDupWasted)} wasted)`, defaultOpen: dupSectionOpen },
                   m(SortableTable, {
                     columns: [
                       { label: "Wasted", align: "right", sortKey: (r: DupBitmapGroup) => r.wastedBytes, render: (r: DupBitmapGroup) => m("span", { className: "ah-mono" }, fmtSize(r.wastedBytes)) },
@@ -165,10 +174,32 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
                       { label: "Hash", render: (r: DupBitmapGroup) => m("span", { className: "ah-mono", style: { color: "var(--ah-text-muted)" } }, r.hash.slice(0, 12)) },
                     ],
                     data: dupGroups,
-                    onRowClick: (r: DupBitmapGroup) => { expandedHash = expandedHash === r.hash ? null : r.hash; },
+                    onRowClick: (r: DupBitmapGroup) => {
+                      expandedHash = expandedHash === r.hash ? null : r.hash;
+                      if (expandedHash) scrollToDup = true;
+                      // Save expanded state to history so back-nav restores it
+                      const prev = window.history.state;
+                      const params: Record<string, unknown> = {};
+                      if (expandedHash) params.dupKey = expandedHash;
+                      window.history.replaceState({ ...prev, params }, "");
+                    },
                   }),
                   expandedHash && hashGroups.has(expandedHash) && (
-                    m("div", { style: { marginTop: "0.5rem", borderTop: "1px solid var(--ah-border)", paddingTop: "0.5rem" } },
+                    m("div", {
+                      style: { marginTop: "0.5rem", borderTop: "1px solid var(--ah-border)", paddingTop: "0.5rem" },
+                      oncreate: (vnode: m.VnodeDOM) => {
+                        if (scrollToDup) {
+                          scrollToDup = false;
+                          (vnode.dom as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+                        }
+                      },
+                      onupdate: (vnode: m.VnodeDOM) => {
+                        if (scrollToDup) {
+                          scrollToDup = false;
+                          (vnode.dom as HTMLElement).scrollIntoView({ behavior: "smooth", block: "start" });
+                        }
+                      },
+                    },
                       m("div", { style: { fontSize: "0.75rem", lineHeight: "1rem", color: "var(--ah-text-muted)", marginBottom: "0.5rem" } },
                         hashGroups.get(expandedHash)!.length, " allocations of this bitmap:"),
                       m(SortableTable, {

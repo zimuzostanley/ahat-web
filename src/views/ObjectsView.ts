@@ -4,6 +4,7 @@ import type { InstanceRow } from "../hprof.worker";
 import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize } from "../format";
 import { type NavFn, SortableTable, InstanceLink } from "../components";
+import { consumePendingScroll } from "../navigation";
 
 export interface ObjectsParams { siteId: number; className: string; heap: string | null }
 
@@ -24,7 +25,7 @@ function ObjectsView(): m.Component<ObjectsViewAttrs> {
     prevHeap = heap;
     rows = null;
     attrs.proxy.query<InstanceRow[]>("getObjects", { siteId, className, heap })
-      .then(r => { rows = r; m.redraw(); })
+      .then(r => { rows = r; m.redraw(); consumePendingScroll(); })
       .catch(console.error);
   }
 

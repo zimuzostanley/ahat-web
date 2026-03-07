@@ -116,7 +116,7 @@ function OverviewView(): m.Component<OverviewViewAttrs> {
             ),
             m("tbody", null,
               overview.duplicateBitmaps.map((g, i) =>
-                m("tr", { key: i, className: "ah-overview-row" },
+                m("tr", { key: i, className: "ah-overview-row ah-tr--clickable", onclick: () => navigate("bitmaps", { dupKey: g.key }) },
                   m("td", { className: "ah-overview-td ah-mono" }, g.width, " ", "\u00d7", " ", g.height),
                   m("td", { className: "ah-overview-td--right" }, g.count),
                   m("td", { className: "ah-overview-td--right" }, fmtSize(g.totalBytes)),
