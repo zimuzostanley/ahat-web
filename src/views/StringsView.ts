@@ -84,7 +84,7 @@ function StringsView(): m.Component<StringsViewAttrs> {
       })();
 
       return m("div", null,
-        m("div", { style: { display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.75rem" } },
+        m("div", { style: { display: "flex", alignItems: "baseline", gap: "0.75rem", marginBottom: "0.75rem" } },
           m("h2", { className: "ah-view-heading", style: { marginBottom: 0 } }, "Strings"),
           heaps.length > 1 && (
             m("select", {
