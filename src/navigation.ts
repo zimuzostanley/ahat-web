@@ -12,16 +12,17 @@ export let trailIndex = 0;
 
 export type NavFn = (view: string, params?: Record<string, unknown>) => void;
 
-/** Save current scroll position into the current history entry. */
-function saveScroll(): void {
+/** Save current scroll position into both the history entry and the active trail crumb. */
+function saveScrollState(): void {
+  const y = window.scrollY;
   const cur = window.history.state;
-  if (cur) window.history.replaceState({ ...cur, scrollY: window.scrollY }, "");
+  if (cur) window.history.replaceState({ ...cur, scrollY: y }, "");
+  trail[trailIndex] = { ...trail[trailIndex], scrollY: y };
 }
 
 /** Navigate from within a view — truncate trail after current position, append new crumb. */
 export function navigate(v: string, p: Record<string, unknown> = {}): void {
-  saveScroll();
-  trail[trailIndex] = { ...trail[trailIndex], scrollY: window.scrollY };
+  saveScrollState();
   const state = { view: v, params: p } as NavState;
   trail = [...trail.slice(0, trailIndex + 1), makeCrumb(state)];
   trailIndex = trail.length - 1;
@@ -33,7 +34,7 @@ export function navigate(v: string, p: Record<string, unknown> = {}): void {
 
 /** Navigate from top-level nav bar — resets breadcrumb trail. */
 export function navigateTop(v: string, p: Record<string, unknown> = {}): void {
-  saveScroll();
+  saveScrollState();
   const state = { view: v, params: p } as NavState;
   trail = [makeCrumb(state)];
   trailIndex = 0;
@@ -45,9 +46,7 @@ export function navigateTop(v: string, p: Record<string, unknown> = {}): void {
 
 /** Breadcrumb click — keep full trail, just change active index. */
 export function onBreadcrumbNavigate(i: number): void {
-  saveScroll();
-  // Save current scroll position into the current crumb for later breadcrumb restoration
-  trail[trailIndex] = { ...trail[trailIndex], scrollY: window.scrollY };
+  saveScrollState();
   const crumb = trail[i];
   nav = crumb.state;
   trailIndex = i;

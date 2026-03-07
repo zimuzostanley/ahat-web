@@ -6,6 +6,7 @@ import { fmtSize } from "../format";
 import { type NavFn, Section, SortableTable } from "../components";
 import { computeDuplicates, type DuplicateGroup } from "./strings-helpers";
 import { consumePendingScroll } from "../navigation";
+import { stateToUrl, type NavState } from "../routing";
 
 // ─── StringsView ─────────────────────────────────────────────────────────────
 
@@ -20,18 +21,13 @@ function StringsView(): m.Component<StringsViewAttrs> {
   let scrollToResults = false;
 
   function updateUrl(q: string) {
-    const sp = new URLSearchParams();
-    if (q) sp.set("q", q);
-    if (exactMatch) sp.set("exact", "1");
-    if (selectedHeap !== "all") sp.set("heap", selectedHeap);
-    const qs = sp.toString();
-    const url = qs ? `/strings?${qs}` : "/strings";
     const prev = window.history.state;
     const params: Record<string, unknown> = {};
     if (q) params.q = q;
     if (exactMatch) params.exact = true;
     if (selectedHeap !== "all") params.heap = selectedHeap;
-    window.history.replaceState({ view: "strings", params, trail: prev?.trail, trailIndex: prev?.trailIndex }, "", url);
+    const navState: NavState = { view: "strings", params };
+    window.history.replaceState({ ...prev, params }, "", stateToUrl(navState));
   }
 
   function handleChange(q: string) {
