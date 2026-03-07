@@ -541,6 +541,8 @@ export default function App(): m.Component {
                     "Capture from device"
                   )
                 ),
+              ),
+              m("div", { className: "ah-landing__session-row" },
                 m("label", { className: "ah-landing__session-load" }, [
                   "or load a saved session",
                   m("input", {

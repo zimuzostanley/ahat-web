@@ -660,8 +660,12 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   }
 }
 
+.ah-landing__session-row {
+  margin-top: 0.75rem;
+  text-align: center;
+}
+
 .ah-landing__session-load {
-  margin-left: 1rem;
   font-size: 0.75rem;
   color: var(--ah-text-faint);
   cursor: pointer;
