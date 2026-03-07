@@ -5,6 +5,7 @@ import type { WorkerProxy } from "../worker-proxy";
 import { fmtSize } from "../format";
 import { type NavFn, InstanceLink, Section, SortableTable, BitmapImage } from "../components";
 import { consumePendingScroll } from "../navigation";
+import { stateToUrl, type NavState } from "../routing";
 
 interface BitmapCardAttrs {
   row: BitmapListRow; proxy: WorkerProxy; navigate: NavFn; density: number; deviceScale: boolean;
@@ -181,7 +182,8 @@ function BitmapGalleryView(): m.Component<BitmapGalleryViewAttrs> {
                       const prev = window.history.state;
                       const params: Record<string, unknown> = {};
                       if (expandedHash) params.dupKey = expandedHash;
-                      window.history.replaceState({ ...prev, params }, "");
+                      const navState: NavState = { view: "bitmaps", params };
+                      window.history.replaceState({ ...prev, params }, "", stateToUrl(navState));
                     },
                   }),
                   expandedHash && hashGroups.has(expandedHash) && (

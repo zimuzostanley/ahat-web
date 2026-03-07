@@ -66,6 +66,19 @@ describe('URL routing', () => {
     it('generates /strings without query when empty', () => {
       expect(stateToUrl({ view: "strings", params: {} })).toBe("/strings");
     });
+
+    it('generates /bitmaps?dup=... with dupKey', () => {
+      const url = stateToUrl({ view: "bitmaps", params: { dupKey: "640x480:a1b2c3d4" } });
+      expect(url).toContain("dup=");
+      expect(url).toContain("640x480");
+    });
+
+    it('generates /strings with exact and heap params', () => {
+      const url = stateToUrl({ view: "strings", params: { q: "test", exact: true, heap: "app" } });
+      expect(url).toContain("q=test");
+      expect(url).toContain("exact=1");
+      expect(url).toContain("heap=app");
+    });
   });
 
   describe('urlToState', () => {
@@ -179,6 +192,24 @@ describe('URL routing', () => {
       expect(state.view).toBe("strings");
       expect(state.params).toEqual({});
     });
+
+    it('parses /bitmaps?dup=... with dupKey', () => {
+      const state = urlToState(u("/bitmaps?dup=640x480:a1b2c3d4"));
+      expect(state.view).toBe("bitmaps");
+      expect(state.params).toEqual({ dupKey: "640x480:a1b2c3d4" });
+    });
+
+    it('parses /strings?q=test&exact=1&heap=app', () => {
+      const state = urlToState(u("/strings?q=test&exact=1&heap=app"));
+      expect(state.view).toBe("strings");
+      expect(state.params).toEqual({ q: "test", exact: true, heap: "app" });
+    });
+
+    it('parses /strings?exact=0 as not exact', () => {
+      const state = urlToState(u("/strings?q=test&exact=0"));
+      expect(state.view).toBe("strings");
+      expect(state.params).toEqual({ q: "test" });
+    });
   });
 
   describe('roundtrip', () => {
@@ -243,6 +274,28 @@ describe('URL routing', () => {
       const state = urlToState(new URL(url, "http://localhost"));
       expect(state.view).toBe("strings");
       expect(state.params).toEqual({ q: "android.view" });
+    });
+
+    it('bitmaps with dupKey roundtrips', () => {
+      const url = stateToUrl({ view: "bitmaps", params: { dupKey: "640x480:a1b2c3d4" } });
+      const state = urlToState(new URL(url, "http://localhost"));
+      expect(state.view).toBe("bitmaps");
+      expect(state.params).toEqual({ dupKey: "640x480:a1b2c3d4" });
+    });
+
+    it('strings with exact and heap roundtrips', () => {
+      const params = { q: "test", exact: true as const, heap: "app" };
+      const url = stateToUrl({ view: "strings", params });
+      const state = urlToState(new URL(url, "http://localhost"));
+      expect(state.view).toBe("strings");
+      expect(state.params).toEqual(params);
+    });
+
+    it('bitmaps with both id and dupKey roundtrips', () => {
+      const url = stateToUrl({ view: "bitmaps", params: { id: 0xABC, dupKey: "100x100:deadbeef" } });
+      const state = urlToState(new URL(url, "http://localhost"));
+      expect(state.view).toBe("bitmaps");
+      expect(state.params).toEqual({ id: 0xABC, dupKey: "100x100:deadbeef" });
     });
   });
 
