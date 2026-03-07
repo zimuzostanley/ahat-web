@@ -1405,15 +1405,16 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   disabled: connectStatus !== null,
                 }, connectStatus ?? "Reconnect")
               ),
-              processes && (
+              m("span", { className: "ah-capture-toolbar__divider" }),
+              processes && m(Fragment, [
                 m("button", {
                   className: "ah-capture-toolbar__btn",
                   onclick: exportSession,
-                  title: "Save session (snapshots + current state)",
-                }, "\u2193 Save")
-              ),
-              m("label", { className: "ah-capture-toolbar__btn", style: { cursor: "pointer" }, title: "Load a saved session" }, [
-                "\u2191 Load",
+                }, "Save"),
+                m("span", { className: "ah-capture-toolbar__divider" }),
+              ]),
+              m("label", { className: "ah-capture-toolbar__btn ah-capture-toolbar__file-label" }, [
+                "Load",
                 m("input", {
                   type: "file",
                   accept: ".json",
