@@ -1795,9 +1795,9 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             ),
 
             // Scan All VMAs / Shared Mappings
-            conn.isRoot && processes && processes.length > 0 && (
+            (conn.isRoot || smapsData.size > 0) && processes && processes.length > 0 && (
               m("div", { className: "ah-mt-4" }, [
-                smapsData.size < (processes?.length ?? 0) && (
+                conn.isRoot && smapsData.size < (processes?.length ?? 0) && (
                   m("button", {
                     className: "ah-capture-toolbar__btn--accent ah-mb-2",
                     onclick: scanStatus ? cancelSmapsFetch : scanAllSmaps,
