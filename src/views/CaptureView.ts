@@ -1096,7 +1096,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     if (!processes) return;
     snapshots.push({
       id: nextSnapId++,
-      ts: Date.now(),
+      ts: lastRefreshTs ?? Date.now(),
       processes: processes.map(p => ({ ...p })),
       globalMemInfo: globalMemInfo ? { ...globalMemInfo } : null,
       smapsRollups: new Map(smapsRollups),
