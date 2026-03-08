@@ -875,16 +875,14 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     reader.readAsText(file);
   }
 
-  // Progressive diff recomputation — skip process diffs while enrichment
-  // is still running to avoid showing processes as "GONE" before the full
-  // /proc list has been fetched (the initial LRU list is smaller).
+  // Recompute diffs progressively — process diffs update as enrichment runs.
   function recomputeDiffs() {
     const base = getBaseSnap();
     if (!base) { processDiffs = null; globalMemInfoDiff = null; return; }
     const viewSnap = getViewSnap();
     const rightProcs = viewSnap?.processes ?? processes;
     const rightMem = viewSnap?.globalMemInfo ?? globalMemInfo;
-    if (base.processes && rightProcs && !enrichStatus) {
+    if (base.processes && rightProcs) {
       processDiffs = diffProcesses(base.processes, rightProcs);
     }
     if (base.globalMemInfo && rightMem) {
