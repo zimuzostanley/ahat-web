@@ -1699,11 +1699,11 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 
 .ah-timeline__dot--base {
   .ah-timeline__dot-circle {
-    background: var(--ah-link);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ah-link) 25%, transparent);
+    background: var(--ah-error-text);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ah-error-text) 25%, transparent);
   }
   .ah-timeline__dot-label {
-    color: var(--ah-link);
+    color: var(--ah-error-text);
     font-weight: 600;
   }
 }
