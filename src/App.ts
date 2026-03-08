@@ -567,6 +567,21 @@ export default function App(): m.Component {
         // CaptureView — mounted once captureUsed, stays mounted to preserve USB connection
         captureUsed && (
           m("div", { className: activeTab === "device" ? "" : "ah-hidden" },
+            sessions.length === 0 && (
+              m("div", { className: "ah-capture-header" },
+                m("div", { className: "ah-capture-header__inner" },
+                  m("button", {
+                    className: "ah-capture-header__logo",
+                    onclick: () => { if (!adbConn.connected) captureUsed = false; },
+                    title: adbConn.connected ? "" : "Back to home",
+                    style: adbConn.connected ? { cursor: "default" } : undefined,
+                  },
+                    m("div", { className: "ah-header__logo-icon" }, "A"),
+                  ),
+                  m(ThemeToggle, { variant: "landing" }),
+                )
+              )
+            ),
             m("div", { className: sessions.length > 0 ? "ah-capture-wrap--compact" : "ah-capture-wrap" },
               m(CaptureView, { onCaptured: loadBuffer, onVmaDump: loadVmaDump, conn: adbConn, sessionFile: pendingSessionFile })
             )
