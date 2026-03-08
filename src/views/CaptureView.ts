@@ -1453,16 +1453,17 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   },
                 }, diffMode ? "Hide Diff" : "Show Diff")
               ),
-              m("span", { className: "ah-capture-toolbar__divider" }),
               m("button", {
                 className: "ah-capture-toolbar__btn",
                 onclick: refreshProcesses,
                 disabled: !connected,
               }, enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Scanning\u2026" : "Refresh"),
+              processes && m("span", { className: "ah-capture-toolbar__divider" }),
               processes && m("button", {
                 className: "ah-capture-toolbar__btn",
                 onclick: exportSession,
               }, "Save"),
+              !connected && m("span", { className: "ah-capture-toolbar__divider" }),
               !connected && m("label", { className: "ah-capture-toolbar__btn ah-capture-toolbar__file-label" }, [
                 "Load",
                 m("input", {
