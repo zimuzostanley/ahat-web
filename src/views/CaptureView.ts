@@ -654,18 +654,11 @@ function getFieldValue(p: ProcessInfo, field: SmapsNumericField, rollup?: SmapsR
   return 0;
 }
 
-export interface CaptureViewRef {
-  save: () => void;
-  import: (file: File) => void;
-  hasData: boolean;
-}
-
 interface CaptureViewAttrs {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
   onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
   conn: AdbConnection;
   sessionFile?: File | null;
-  captureRef?: CaptureViewRef;
 }
 
 function CaptureView(): m.Component<CaptureViewAttrs> {
@@ -1255,12 +1248,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       conn = vnode.attrs.conn;
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
-      if (vnode.attrs.captureRef) {
-        const ref = vnode.attrs.captureRef;
-        ref.save = exportSession;
-        ref.import = importSession;
-        Object.defineProperty(ref, "hasData", { get: () => processes !== null, configurable: true });
-      }
       if (vnode.attrs.sessionFile) {
         _importedSessionFile = vnode.attrs.sessionFile;
         importSession(vnode.attrs.sessionFile);
@@ -1450,11 +1437,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                 m("span", { className: "ah-capture-toolbar__disconnected" }, "Disconnected")
               ),
               m("span", { className: "ah-capture-toolbar__spacer" }),
-              m("button", {
-                className: "ah-capture-toolbar__btn",
-                onclick: refreshProcesses,
-                disabled: !connected,
-              }, enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Scanning\u2026" : "Refresh"),
               connected && processes && !enrichStatus && (
                 m("button", {
                   className: "ah-capture-toolbar__btn--accent",
@@ -1471,6 +1453,30 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   },
                 }, diffMode ? "Hide Diff" : "Show Diff")
               ),
+              m("span", { className: "ah-capture-toolbar__divider" }),
+              m("button", {
+                className: "ah-capture-toolbar__btn",
+                onclick: refreshProcesses,
+                disabled: !connected,
+              }, enrichStatus && !diffMode ? "Refreshing\u2026" : enrichStatus && diffMode ? "Scanning\u2026" : "Refresh"),
+              processes && m("button", {
+                className: "ah-capture-toolbar__btn",
+                onclick: exportSession,
+              }, "Save"),
+              !connected && m("label", { className: "ah-capture-toolbar__btn ah-capture-toolbar__file-label" }, [
+                "Load",
+                m("input", {
+                  type: "file",
+                  accept: ".json",
+                  style: { display: "none" },
+                  onchange: (e: Event) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) importSession(file);
+                    (e.target as HTMLInputElement).value = "";
+                  },
+                }),
+              ]),
+              m("span", { className: "ah-capture-toolbar__divider" }),
               connected ? (
                 m("button", {
                   className: "ah-capture-toolbar__btn",
