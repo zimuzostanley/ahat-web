@@ -1527,7 +1527,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     },
                   }, [
                     m("div", { className: "ah-timeline__dot-circle" }),
-                    m("div", { className: "ah-timeline__dot-label" }, "Live"),
+                    m("div", { className: "ah-timeline__dot-label" }, "Latest"),
                   ]),
                 ),
               )
