@@ -672,6 +672,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   let enrichAbortCtrl: AbortController | null = null;
   let enrichStatus: string | null = null;
   let enrichProgress: { done: number; total: number } | null = null;
+  let lastRefreshTs: number | null = null;
 
   // Per-PID capture state -- each process row has independent dump lifecycle
   let captureJobs = new Map<number, CaptureJob>();
@@ -856,6 +857,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         smapsData = new Map(session.live.smapsData);
         javaPids = new Set(session.live.javaPids);
         // Reset: view live, diff against latest snapshot
+        lastRefreshTs = Date.now();
         viewSnapIdx = null;
         if (snapshots.length > 0) {
           diffBaseIdx = snapshots.length - 1;
@@ -935,6 +937,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     diffTriggered = false;
     const ac = new AbortController();
     enrichAbortCtrl = ac;
+    lastRefreshTs = Date.now();
     enrichStatus = "Fetching smaps\u2026";
     enrichProgress = null;
     smapsRollups = new Map();
@@ -1519,16 +1522,23 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   }),
                   // Live dot — same click rules as snapshot dots
                   m("div", { className: "ah-timeline__segment" }),
-                  m("button", {
-                    className: `ah-timeline__dot${dotColorClass(null)}`,
-                    onclick: () => {
-                      if (isGreenDot(null)) return; // already viewing live, no-op
-                      applyTimelineState(timelineClick(currentTimeline(), null));
-                    },
-                  }, [
-                    m("div", { className: "ah-timeline__dot-circle" }),
-                    m("div", { className: "ah-timeline__dot-label" }, "Latest"),
-                  ]),
+                  (() => {
+                    const t = lastRefreshTs ? new Date(lastRefreshTs) : null;
+                    const label = t
+                      ? `${t.getHours().toString().padStart(2, "0")}:${t.getMinutes().toString().padStart(2, "0")}:${t.getSeconds().toString().padStart(2, "0")}`
+                      : "now";
+                    return m("button", {
+                      className: `ah-timeline__dot${dotColorClass(null)}`,
+                      onclick: () => {
+                        if (isGreenDot(null)) return;
+                        applyTimelineState(timelineClick(currentTimeline(), null));
+                      },
+                      title: `Latest \u2014 ${label}`,
+                    }, [
+                      m("div", { className: "ah-timeline__dot-circle" }),
+                      m("div", { className: "ah-timeline__dot-label" }, label),
+                    ]);
+                  })(),
                 ),
               )
             ),
