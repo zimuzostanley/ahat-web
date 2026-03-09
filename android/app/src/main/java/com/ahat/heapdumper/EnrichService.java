@@ -144,7 +144,7 @@ public class EnrichService extends Service {
                 Log.e(TAG, "Failed to save snapshot", e);
             }
 
-            updateNotification("Done: enriched " + enriched + "/" + total + " processes");
+            showDoneNotification("Done: enriched " + enriched + "/" + total + " processes");
             finish();
         });
         workerThread.start();
@@ -152,7 +152,7 @@ public class EnrichService extends Service {
         return START_NOT_STICKY;
     }
 
-    /** Clean up: release wake lock, broadcast done, stop service. */
+    /** Clean up: release wake lock, remove FGS notification, broadcast done, stop service. */
     private void finish() {
         running = false;
         if (wakeLock != null && wakeLock.isHeld()) {
@@ -160,8 +160,20 @@ public class EnrichService extends Service {
             Log.i(TAG, "Wake lock released");
         }
         sendBroadcast(new Intent(ACTION_DONE));
-        stopForeground(STOP_FOREGROUND_DETACH);
+        stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
+    }
+
+    /** Post a separate non-ongoing notification for "Done" that the user can swipe away. */
+    private void showDoneNotification(String text) {
+        Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("ahat")
+                .setContentText(text)
+                .setSmallIcon(R.drawable.ic_notif)
+                .setAutoCancel(true)
+                .build();
+        NotificationManager nm = getSystemService(NotificationManager.class);
+        nm.notify(NOTIFICATION_ID + 1, n);
     }
 
     @Override
