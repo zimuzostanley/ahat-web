@@ -108,12 +108,16 @@ public class ShellHelper {
                 == PackageManager.PERMISSION_GRANTED;
         boolean usage = ctx.checkSelfPermission("android.permission.PACKAGE_USAGE_STATS")
                 == PackageManager.PERMISSION_GRANTED;
+        boolean watcher = ctx.checkSelfPermission("android.permission.SET_ACTIVITY_WATCHER")
+                == PackageManager.PERMISSION_GRANTED;
         log("DUMP permission: " + (dump ? "YES" : "NO"));
         log("PACKAGE_USAGE_STATS: " + (usage ? "YES" : "NO"));
+        log("SET_ACTIVITY_WATCHER: " + (watcher ? "YES" : "NO (needed for heap dump)"));
         hasDumpPerm = dump && usage;
-        if (!hasDumpPerm) {
-            log("Grant: adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
-            log("Grant: adb shell pm grant com.ahat.heapdumper android.permission.PACKAGE_USAGE_STATS");
+        if (!dump || !usage || !watcher) {
+            if (!dump) log("Grant: adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+            if (!usage) log("Grant: adb shell pm grant com.ahat.heapdumper android.permission.PACKAGE_USAGE_STATS");
+            if (!watcher) log("Grant: adb shell pm grant com.ahat.heapdumper android.permission.SET_ACTIVITY_WATCHER");
         }
         return hasDumpPerm;
     }
