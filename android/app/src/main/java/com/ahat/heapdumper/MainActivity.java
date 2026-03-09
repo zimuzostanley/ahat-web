@@ -36,6 +36,7 @@ public class MainActivity extends AppCompatActivity {
     private FrameLayout progressContainer;
     private TextView progressText;
     private TextView tabProcesses, tabDumps;
+    private TextView btnEnrichAll;
     private LinearLayout searchSortBar;
     private EditText searchInput;
     private TextView sortName, sortPid, sortState, sortMem;
@@ -47,6 +48,7 @@ public class MainActivity extends AppCompatActivity {
     private boolean showingDumps = false;
     private boolean logVisible = false;
     private volatile Future<?> enrichTask;
+    private List<ProcessInfo> currentProcesses;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -61,6 +63,7 @@ public class MainActivity extends AppCompatActivity {
         progressText = findViewById(R.id.progressText);
         tabProcesses = findViewById(R.id.tabProcesses);
         tabDumps = findViewById(R.id.tabDumps);
+        btnEnrichAll = findViewById(R.id.btnEnrichAll);
         logPanel = findViewById(R.id.logPanel);
         logText = findViewById(R.id.logText);
         searchSortBar = findViewById(R.id.searchSortBar);
@@ -81,11 +84,13 @@ public class MainActivity extends AppCompatActivity {
         // Wire up in-app log, context, and dump dir
         ShellHelper.setLogCallback(msg -> runOnUiThread(() -> appendLog(msg)));
         ShellHelper.setContext(this);
-        File dumpsDir = getExternalFilesDir("dumps");
-        if (dumpsDir != null) ShellHelper.setDumpDir(dumpsDir);
+        // Use public Downloads/ahat on sdcard — world-writable, any process can write here
+        File dumpsDir = new File(android.os.Environment.getExternalStoragePublicDirectory(
+                android.os.Environment.DIRECTORY_DOWNLOADS), "ahat");
+        ShellHelper.setDumpDir(dumpsDir);
 
         processAdapter = new ProcessAdapter();
-        processAdapter.setOnClickListener(this::onProcessClick);
+        processAdapter.setOnClickListener(this::enrichAndOpen);
         processAdapter.setOnLongClickListener(this::onProcessLongClick);
 
         dumpAdapter = new DumpAdapter();
@@ -101,6 +106,7 @@ public class MainActivity extends AppCompatActivity {
 
         tabProcesses.setOnClickListener(v -> showProcesses());
         tabDumps.setOnClickListener(v -> showDumps());
+        btnEnrichAll.setOnClickListener(v -> enrichAll());
         findViewById(R.id.btnSettings).setOnClickListener(v ->
                 startActivity(new Intent(this, SettingsActivity.class)));
         findViewById(R.id.btnDumps).setOnClickListener(v -> showDumps());
@@ -188,8 +194,8 @@ public class MainActivity extends AppCompatActivity {
         tabDumps.setTextColor(getThemeColor(R.attr.textSecondaryColor));
         tabDumps.setTypeface(null, android.graphics.Typeface.NORMAL);
         searchSortBar.setVisibility(View.VISIBLE);
+        btnEnrichAll.setVisibility(View.VISIBLE);
         recyclerView.setAdapter(processAdapter);
-        // Only load if we haven't loaded yet (pull-to-refresh reloads)
         if (processAdapter.getItemCount() == 0) loadProcesses();
     }
 
@@ -200,6 +206,7 @@ public class MainActivity extends AppCompatActivity {
         tabProcesses.setTextColor(getThemeColor(R.attr.textSecondaryColor));
         tabProcesses.setTypeface(null, android.graphics.Typeface.NORMAL);
         searchSortBar.setVisibility(View.GONE);
+        btnEnrichAll.setVisibility(View.GONE);
         recyclerView.setAdapter(dumpAdapter);
         loadDumps();
     }
@@ -252,7 +259,6 @@ public class MainActivity extends AppCompatActivity {
             buttons[i].setTypeface(null, isActive ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
         }
 
-        // Also update sort button label if sorting by mem
         updateSortButtons();
     }
 
@@ -277,6 +283,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 List<ProcessInfo> list = ShellHelper.getProcessList();
                 runOnUiThread(() -> {
+                    currentProcesses = list;
                     processAdapter.setProcesses(list);
                     String mode = ShellHelper.getAccessMode();
                     String modeLabel = "root".equals(mode) ? " [root]" :
@@ -284,7 +291,6 @@ public class MainActivity extends AppCompatActivity {
                     statusText.setText(list.size() + " processes" + modeLabel
                             + " \u2022 tap \u2022 long-press to dump");
                     swipeRefresh.setRefreshing(false);
-                    startEnrichment(list);
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -297,16 +303,24 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /**
-     * Per-process enrichment: calls `dumpsys meminfo <pid>` for each process
-     * to get full breakdown (PSS, Java, Native, Code, Graphics, RSS).
-     * Updates each row progressively as data comes in.
-     */
-    private void startEnrichment(List<ProcessInfo> processes) {
+    /** Triggered by "Enrich All" button — fetches meminfo for every process. */
+    private void enrichAll() {
+        if (currentProcesses == null || currentProcesses.isEmpty()) return;
+        if (enrichTask != null) enrichTask.cancel(true);
+
+        btnEnrichAll.setText("Enriching\u2026");
+        btnEnrichAll.setEnabled(false);
+
         enrichTask = executor.submit(() -> {
             int enriched = 0;
-            for (ProcessInfo p : processes) {
-                if (Thread.currentThread().isInterrupted() || isDestroyed()) return;
+            int total = currentProcesses.size();
+            for (int idx = 0; idx < total; idx++) {
+                if (Thread.currentThread().isInterrupted() || isDestroyed()) break;
+                ProcessInfo p = currentProcesses.get(idx);
+                final int progress = idx + 1;
+                runOnUiThread(() -> {
+                    if (!isDestroyed()) btnEnrichAll.setText(progress + "/" + total);
+                });
                 try {
                     MemInfo info = ShellHelper.getMemInfo(p.pid);
                     if (info.totalPssKb > 0 || info.javaHeapKb > 0) {
@@ -317,13 +331,44 @@ public class MainActivity extends AppCompatActivity {
                         enriched++;
                     }
                 } catch (Exception e) {
-                    // Skip this process, continue with next
+                    // Skip
                 }
             }
             final int count = enriched;
             runOnUiThread(() -> {
-                if (!isDestroyed()) appendLog("Enriched " + count + "/" + processes.size() + " processes");
+                if (isDestroyed()) return;
+                btnEnrichAll.setText("Enrich All");
+                btnEnrichAll.setEnabled(true);
+                appendLog("Enriched " + count + "/" + total + " processes");
             });
+        });
+    }
+
+    /** Enrich a single process (called before opening detail screen). */
+    private void enrichAndOpen(ProcessInfo process) {
+        if (process.enriched) {
+            onProcessClick(process);
+            return;
+        }
+        statusText.setText("Loading meminfo\u2026");
+        executor.execute(() -> {
+            try {
+                MemInfo info = ShellHelper.getMemInfo(process.pid);
+                process.applyMemInfo(info);
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    processAdapter.notifyProcessEnriched(process.pid);
+                    statusText.setText("");
+                    onProcessClick(process);
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    statusText.setText("");
+                    // Open detail anyway, it'll try to fetch its own meminfo
+                    onProcessClick(process);
+                });
+            }
         });
     }
 
