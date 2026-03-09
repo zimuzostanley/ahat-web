@@ -1,7 +1,6 @@
 package com.ahat.heapdumper;
 
 import android.annotation.SuppressLint;
-import android.net.Uri;
 import android.os.Bundle;
 import android.util.Base64;
 import android.webkit.JavascriptInterface;
@@ -17,14 +16,18 @@ import java.io.FileInputStream;
 import java.io.IOException;
 
 /**
- * Opens the ahat-web viewer in a WebView and injects the .hprof file
- * so the user doesn't have to manually pick it.
+ * Opens the ahat-web viewer in a WebView and sends the .hprof file
+ * via postMessage using the protocol:
+ *   window.postMessage({ type: "open-hprof", name: "...", buffer: ArrayBuffer })
+ *
+ * The ahat-web page listens for this on mount and loads the buffer directly.
  */
 public class ViewerActivity extends AppCompatActivity {
 
     private static final String AHAT_WEB_URL = "https://zimuzostanley.github.io/ahat-web/";
     private String hprofPath;
     private String processName;
+    private boolean injected = false;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -48,8 +51,10 @@ public class ViewerActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                // Inject the hprof file after the page loads
-                injectHprofFile(view);
+                if (!injected) {
+                    injected = true;
+                    injectViaPostMessage(view);
+                }
             }
         });
 
@@ -57,33 +62,35 @@ public class ViewerActivity extends AppCompatActivity {
     }
 
     /**
-     * After the ahat-web page loads, use JS to read the file via our bridge
-     * and feed it to the page's file input or drop handler.
+     * Use the postMessage API that ahat-web already supports:
+     * window.postMessage({ type: "open-hprof", name: "...", buffer: ArrayBuffer })
+     *
+     * Since the file can be large, we read it via the JS bridge in chunks
+     * and reconstruct the ArrayBuffer in JS, then postMessage it.
      */
-    private void injectHprofFile(WebView webView) {
+    private void injectViaPostMessage(WebView webView) {
         if (hprofPath == null) return;
 
-        // JavaScript that reads the file from our bridge and creates a synthetic
-        // file drop / input event on the page
+        // JS that:
+        // 1. Waits briefly for the app to mount and register the message listener
+        // 2. Reads the file as base64 from our bridge
+        // 3. Converts to ArrayBuffer
+        // 4. Posts it via window.postMessage with the open-hprof protocol
         String js = "(function() {" +
-                "  try {" +
-                "    var b64 = AhatBridge.getFileBase64();" +
-                "    if (!b64) return;" +
-                "    var binary = atob(b64);" +
-                "    var bytes = new Uint8Array(binary.length);" +
-                "    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);" +
-                "    var blob = new Blob([bytes], {type: 'application/octet-stream'});" +
-                "    var name = AhatBridge.getFileName();" +
-                "    var file = new File([blob], name, {type: 'application/octet-stream'});" +
-                // Try to find and use the file input
-                "    var input = document.querySelector('input[type=file]');" +
-                "    if (input) {" +
-                "      var dt = new DataTransfer();" +
-                "      dt.items.add(file);" +
-                "      input.files = dt.files;" +
-                "      input.dispatchEvent(new Event('change', {bubbles: true}));" +
-                "    }" +
-                "  } catch(e) { console.error('ahat inject error:', e); }" +
+                "  function send() {" +
+                "    try {" +
+                "      var b64 = AhatBridge.getFileBase64();" +
+                "      if (!b64) return;" +
+                "      var binary = atob(b64);" +
+                "      var buf = new ArrayBuffer(binary.length);" +
+                "      var view = new Uint8Array(buf);" +
+                "      for (var i = 0; i < binary.length; i++) view[i] = binary.charCodeAt(i);" +
+                "      var name = AhatBridge.getFileName();" +
+                "      window.postMessage({ type: 'open-hprof', name: name, buffer: buf }, '*');" +
+                "    } catch(e) { console.error('ahat inject error:', e); }" +
+                "  }" +
+                // Wait for the ahat-web message listener to be registered (it registers on mount)
+                "  setTimeout(send, 500);" +
                 "})();";
 
         webView.evaluateJavascript(js, null);

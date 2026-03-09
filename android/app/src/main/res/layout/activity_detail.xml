@@ -13,6 +13,15 @@
         android:gravity="center_vertical"
         android:padding="16dp">
 
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@android:drawable/ic_menu_revert"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Back"
+            android:layout_marginEnd="8dp" />
+
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -20,19 +29,20 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/detailName"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="ahat"
                 android:textColor="?attr/textPrimaryColor"
-                android:textSize="22sp"
+                android:textSize="16sp"
                 android:textStyle="bold"
-                android:fontFamily="monospace" />
+                android:fontFamily="monospace"
+                android:singleLine="true"
+                android:ellipsize="end" />
 
             <TextView
-                android:id="@+id/statusText"
+                android:id="@+id/detailPid"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Pull to refresh"
                 android:textColor="?attr/textSecondaryColor"
                 android:textSize="13sp"
                 android:fontFamily="monospace"
@@ -40,73 +50,94 @@
 
         </LinearLayout>
 
-        <ImageButton
-            android:id="@+id/btnDumps"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:src="@android:drawable/ic_menu_save"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Saved dumps"
-            android:layout_marginEnd="8dp" />
-
-        <ImageButton
-            android:id="@+id/btnSettings"
-            android:layout_width="40dp"
-            android:layout_height="40dp"
-            android:src="@android:drawable/ic_menu_preferences"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="Settings" />
+        <TextView
+            android:id="@+id/detailBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/badge_bg"
+            android:textColor="@color/white"
+            android:textSize="11sp"
+            android:fontFamily="monospace" />
 
     </LinearLayout>
 
-    <!-- Tab bar -->
+    <!-- Meminfo section -->
     <LinearLayout
+        android:id="@+id/meminfoContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:paddingStart="16dp"
         android:paddingEnd="16dp"
         android:paddingBottom="8dp">
 
         <TextView
-            android:id="@+id/tabProcesses"
+            android:id="@+id/meminfoLoading"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Processes"
-            android:textColor="@color/primary"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:fontFamily="monospace"
-            android:paddingEnd="16dp" />
-
-        <TextView
-            android:id="@+id/tabDumps"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Dumps"
+            android:text="Loading memory info\u2026"
             android:textColor="?attr/textSecondaryColor"
-            android:textSize="14sp"
+            android:textSize="13sp"
             android:fontFamily="monospace" />
+
+        <LinearLayout
+            android:id="@+id/meminfoGrid"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone" />
 
     </LinearLayout>
 
-    <!-- Process list -->
-    <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
-        android:id="@+id/swipeRefresh"
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="?attr/dividerColor" />
+
+    <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <androidx.recyclerview.widget.RecyclerView
-            android:id="@+id/recyclerView"
+        <LinearLayout
+            android:id="@+id/meminfoDetails"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:clipToPadding="false"
-            android:paddingBottom="16dp" />
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp" />
 
-    </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
+    </ScrollView>
 
-    <!-- Progress bar -->
+    <!-- Dump buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:background="?attr/surfaceColor"
+        android:gravity="center">
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDump"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Dump Heap"
+            android:fontFamily="monospace"
+            android:layout_marginEnd="8dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnDumpBitmap"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="+ Bitmaps"
+            android:fontFamily="monospace" />
+
+    </LinearLayout>
+
+    <!-- Progress -->
     <FrameLayout
         android:id="@+id/progressContainer"
         android:layout_width="match_parent"

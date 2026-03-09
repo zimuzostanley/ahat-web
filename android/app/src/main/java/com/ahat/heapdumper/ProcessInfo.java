@@ -1,14 +1,36 @@
 package com.ahat.heapdumper;
 
-/** Minimal process info matching the TypeScript ProcessInfo shape. */
-public class ProcessInfo {
+import java.io.Serializable;
+
+/** Process info from dumpsys activity lru, optionally enriched with meminfo. */
+public class ProcessInfo implements Serializable {
     public final int pid;
     public final String name;
     public final String oomLabel;
+
+    // Enriched by background meminfo (0 = not yet loaded)
+    public long pssKb;
+    public long rssKb;
+    public long javaHeapKb;
+    public long nativeHeapKb;
+    public long codeKb;
+    public long graphicsKb;
+    public boolean enriched;
 
     public ProcessInfo(int pid, String name, String oomLabel) {
         this.pid = pid;
         this.name = name;
         this.oomLabel = oomLabel;
+    }
+
+    /** Apply meminfo data from background enrichment. */
+    public void applyMemInfo(MemInfo info) {
+        this.pssKb = info.totalPssKb;
+        this.rssKb = info.totalRssKb;
+        this.javaHeapKb = info.javaHeapKb;
+        this.nativeHeapKb = info.nativeHeapKb;
+        this.codeKb = info.codeKb;
+        this.graphicsKb = info.graphicsKb;
+        this.enriched = true;
     }
 }

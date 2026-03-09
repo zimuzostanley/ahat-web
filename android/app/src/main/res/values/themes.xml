@@ -3,8 +3,14 @@
     <style name="Theme.AhatHeapDumper" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="colorPrimary">@color/primary</item>
         <item name="colorPrimaryDark">@color/primary_dark</item>
-        <item name="android:windowBackground">@color/bg</item>
-        <item name="android:statusBarColor">@color/bg</item>
-        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="bgColor">@color/bg_light</item>
+        <item name="surfaceColor">@color/surface_light</item>
+        <item name="textPrimaryColor">@color/text_primary_light</item>
+        <item name="textSecondaryColor">@color/text_secondary_light</item>
+        <item name="borderColor">@color/border_light</item>
+        <item name="dividerColor">@color/divider_light</item>
+        <item name="android:windowBackground">@color/bg_light</item>
+        <item name="android:statusBarColor">@color/bg_light</item>
+        <item name="android:navigationBarColor">@color/bg_light</item>
     </style>
 </resources>
