@@ -132,7 +132,8 @@ public class EnrichService extends Service {
     private void createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID, "Memory Enrichment", NotificationManager.IMPORTANCE_LOW);
+                    CHANNEL_ID, "Memory Enrichment", NotificationManager.IMPORTANCE_DEFAULT);
+            channel.setDescription("Shows progress during memory enrichment");
             NotificationManager nm = getSystemService(NotificationManager.class);
             nm.createNotificationChannel(channel);
         }
@@ -142,7 +143,7 @@ public class EnrichService extends Service {
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("ahat")
                 .setContentText(text)
-                .setSmallIcon(R.drawable.ic_launcher)
+                .setSmallIcon(R.drawable.ic_notif)
                 .setOngoing(true)
                 .build();
     }

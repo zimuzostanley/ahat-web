@@ -138,7 +138,7 @@ public class MainActivity extends AppCompatActivity {
         tabProcesses.setOnClickListener(v -> showProcesses());
         tabDumps.setOnClickListener(v -> showDumps());
         btnEnrichAll.setOnClickListener(v -> enrichAll());
-        btnEnrichAll.setOnLongClickListener(v -> { showDelayedEnrichDialog(); return true; });
+        findViewById(R.id.btnScheduleEnrich).setOnClickListener(v -> showDelayedEnrichDialog());
         findViewById(R.id.btnSettings).setOnClickListener(v ->
                 startActivity(new Intent(this, SettingsActivity.class)));
         findViewById(R.id.btnDumps).setOnClickListener(v -> showDumps());
@@ -396,14 +396,21 @@ public class MainActivity extends AppCompatActivity {
             EnrichService.pendingProcesses = null;
         }
 
-        Intent serviceIntent = new Intent(this, EnrichService.class);
-        serviceIntent.putExtra("delay_seconds", delaySeconds);
-        ContextCompat.startForegroundService(this, serviceIntent);
+        try {
+            Intent serviceIntent = new Intent(this, EnrichService.class);
+            serviceIntent.putExtra("delay_seconds", delaySeconds);
+            ContextCompat.startForegroundService(this, serviceIntent);
 
-        if (delaySeconds > 0) {
-            appendLog("Enrichment scheduled in " + delaySeconds + "s");
-        } else {
-            appendLog("Started enrichment for " + currentProcesses.size() + " processes");
+            if (delaySeconds > 0) {
+                appendLog("Enrichment scheduled in " + delaySeconds + "s");
+            } else {
+                appendLog("Started enrichment for " + currentProcesses.size() + " processes");
+            }
+        } catch (Exception e) {
+            appendLog("ERROR starting service: " + e.getMessage());
+            android.util.Log.e("ahat", "Failed to start EnrichService", e);
+            btnEnrichAll.setText("Enrich All");
+            btnEnrichAll.setEnabled(true);
         }
     }
 
