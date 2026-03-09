@@ -10,13 +10,28 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 
 public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHolder> {
 
+    public enum SortField { NAME, PID, STATE, MEM }
+    public enum MemColumn {
+        PSS("PSS"), JAVA("Java"), NATIVE("Native"), CODE("Code"), GRAPHICS("Graphics"), RSS("RSS");
+        public final String label;
+        MemColumn(String label) { this.label = label; }
+    }
+
+    private List<ProcessInfo> allProcesses = new ArrayList<>();
     private List<ProcessInfo> processes = new ArrayList<>();
     private OnProcessClickListener clickListener;
     private OnProcessLongClickListener longClickListener;
+    private String filterText = "";
+    private SortField sortField = SortField.NAME;
+    private boolean sortAscending = true;
+    private MemColumn memColumn = MemColumn.PSS;
 
     public interface OnProcessClickListener {
         void onClick(ProcessInfo process);
@@ -35,7 +50,71 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
     }
 
     public void setProcesses(List<ProcessInfo> list) {
-        this.processes = list;
+        this.allProcesses = new ArrayList<>(list);
+        applyFilterAndSort();
+    }
+
+    public void setFilter(String text) {
+        this.filterText = text.toLowerCase(Locale.ROOT);
+        applyFilterAndSort();
+    }
+
+    public void setSort(SortField field) {
+        if (this.sortField == field) {
+            sortAscending = !sortAscending;
+        } else {
+            this.sortField = field;
+            sortAscending = (field == SortField.MEM) ? false : true;
+        }
+        applyFilterAndSort();
+    }
+
+    public void setMemColumn(MemColumn col) {
+        this.memColumn = col;
+        if (sortField == SortField.MEM) {
+            applyFilterAndSort();
+        } else {
+            notifyDataSetChanged();
+        }
+    }
+
+    public SortField getSortField() { return sortField; }
+    public boolean isSortAscending() { return sortAscending; }
+    public MemColumn getMemColumn() { return memColumn; }
+
+    private long getMemValue(ProcessInfo p) {
+        switch (memColumn) {
+            case JAVA:     return p.javaHeapKb;
+            case NATIVE:   return p.nativeHeapKb;
+            case CODE:     return p.codeKb;
+            case GRAPHICS: return p.graphicsKb;
+            case RSS:      return p.rssKb;
+            default:       return p.pssKb;
+        }
+    }
+
+    private void applyFilterAndSort() {
+        List<ProcessInfo> filtered = new ArrayList<>();
+        for (ProcessInfo p : allProcesses) {
+            if (filterText.isEmpty()
+                    || p.name.toLowerCase(Locale.ROOT).contains(filterText)
+                    || String.valueOf(p.pid).contains(filterText)
+                    || p.oomLabel.toLowerCase(Locale.ROOT).contains(filterText)) {
+                filtered.add(p);
+            }
+        }
+
+        Comparator<ProcessInfo> cmp;
+        switch (sortField) {
+            case PID:   cmp = Comparator.comparingInt(p -> p.pid); break;
+            case STATE: cmp = Comparator.comparing(p -> p.oomLabel); break;
+            case MEM:   cmp = Comparator.comparingLong(this::getMemValue); break;
+            default:    cmp = Comparator.comparing(p -> p.name); break;
+        }
+        if (!sortAscending) cmp = cmp.reversed();
+        Collections.sort(filtered, cmp);
+
+        this.processes = filtered;
         notifyDataSetChanged();
     }
 
@@ -64,13 +143,11 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
         holder.pid.setText("PID " + p.pid);
         holder.state.setText(p.oomLabel);
 
-        // Show meminfo if enriched
+        // Show selected memory column if enriched
         if (p.enriched) {
+            long val = getMemValue(p);
             holder.meminfo.setVisibility(View.VISIBLE);
-            StringBuilder sb = new StringBuilder(" \u2022 PSS " + ShellHelper.formatKb(p.pssKb));
-            if (p.javaHeapKb > 0) sb.append(" \u2022 Java " + ShellHelper.formatKb(p.javaHeapKb));
-            if (p.nativeHeapKb > 0) sb.append(" \u2022 Native " + ShellHelper.formatKb(p.nativeHeapKb));
-            holder.meminfo.setText(sb.toString());
+            holder.meminfo.setText(memColumn.label + " " + ShellHelper.formatKb(val));
         } else {
             holder.meminfo.setVisibility(View.GONE);
         }

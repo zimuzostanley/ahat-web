@@ -4,8 +4,12 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
@@ -18,7 +22,6 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.io.File;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -33,6 +36,10 @@ public class MainActivity extends AppCompatActivity {
     private FrameLayout progressContainer;
     private TextView progressText;
     private TextView tabProcesses, tabDumps;
+    private LinearLayout searchSortBar;
+    private EditText searchInput;
+    private TextView sortName, sortPid, sortState, sortMem;
+    private TextView colPss, colJava, colNative, colCode, colGraphics, colRss;
     private ScrollView logPanel;
     private TextView logText;
     private final StringBuilder logBuffer = new StringBuilder();
@@ -56,6 +63,18 @@ public class MainActivity extends AppCompatActivity {
         tabDumps = findViewById(R.id.tabDumps);
         logPanel = findViewById(R.id.logPanel);
         logText = findViewById(R.id.logText);
+        searchSortBar = findViewById(R.id.searchSortBar);
+        searchInput = findViewById(R.id.searchInput);
+        sortName = findViewById(R.id.sortName);
+        sortPid = findViewById(R.id.sortPid);
+        sortState = findViewById(R.id.sortState);
+        sortMem = findViewById(R.id.sortMem);
+        colPss = findViewById(R.id.colPss);
+        colJava = findViewById(R.id.colJava);
+        colNative = findViewById(R.id.colNative);
+        colCode = findViewById(R.id.colCode);
+        colGraphics = findViewById(R.id.colGraphics);
+        colRss = findViewById(R.id.colRss);
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
@@ -86,6 +105,29 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnDumps).setOnClickListener(v -> showDumps());
         findViewById(R.id.btnLog).setOnClickListener(v -> toggleLog());
 
+        // Search filter
+        searchInput.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
+            @Override public void afterTextChanged(Editable s) {
+                processAdapter.setFilter(s.toString());
+            }
+        });
+
+        // Sort buttons
+        sortName.setOnClickListener(v -> onSortClicked(ProcessAdapter.SortField.NAME));
+        sortPid.setOnClickListener(v -> onSortClicked(ProcessAdapter.SortField.PID));
+        sortState.setOnClickListener(v -> onSortClicked(ProcessAdapter.SortField.STATE));
+        sortMem.setOnClickListener(v -> onSortClicked(ProcessAdapter.SortField.MEM));
+
+        // Memory column selector
+        colPss.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.PSS));
+        colJava.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.JAVA));
+        colNative.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.NATIVE));
+        colCode.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.CODE));
+        colGraphics.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.GRAPHICS));
+        colRss.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.RSS));
+
         // Detect permissions + root, then load processes
         appendLog("ahat Heap Dumper starting...");
         appendLog("App UID: " + android.os.Process.myUid());
@@ -95,7 +137,7 @@ public class MainActivity extends AppCompatActivity {
             String mode = ShellHelper.getAccessMode();
             if ("none".equals(mode)) {
                 runOnUiThread(() -> {
-                    statusText.setText("Need permission — see log");
+                    statusText.setText("Need permission \u2014 see log");
                     appendLog("No access. Grant permissions:");
                     appendLog("  adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
                     appendLog("  adb shell pm grant com.ahat.heapdumper android.permission.PACKAGE_USAGE_STATS");
@@ -108,7 +150,6 @@ public class MainActivity extends AppCompatActivity {
 
     private void appendLog(String msg) {
         logBuffer.append(msg).append('\n');
-        // Keep last 200 lines
         String full = logBuffer.toString();
         String[] lines = full.split("\n");
         if (lines.length > 200) {
@@ -145,6 +186,7 @@ public class MainActivity extends AppCompatActivity {
         tabProcesses.setTypeface(null, android.graphics.Typeface.BOLD);
         tabDumps.setTextColor(getThemeColor(R.attr.textSecondaryColor));
         tabDumps.setTypeface(null, android.graphics.Typeface.NORMAL);
+        searchSortBar.setVisibility(View.VISIBLE);
         recyclerView.setAdapter(processAdapter);
         loadProcesses();
     }
@@ -155,8 +197,61 @@ public class MainActivity extends AppCompatActivity {
         tabDumps.setTypeface(null, android.graphics.Typeface.BOLD);
         tabProcesses.setTextColor(getThemeColor(R.attr.textSecondaryColor));
         tabProcesses.setTypeface(null, android.graphics.Typeface.NORMAL);
+        searchSortBar.setVisibility(View.GONE);
         recyclerView.setAdapter(dumpAdapter);
         loadDumps();
+    }
+
+    private void onSortClicked(ProcessAdapter.SortField field) {
+        processAdapter.setSort(field);
+        updateSortButtons();
+    }
+
+    private void onMemColumnClicked(ProcessAdapter.MemColumn col) {
+        processAdapter.setMemColumn(col);
+        updateMemColumnButtons();
+    }
+
+    private void updateSortButtons() {
+        ProcessAdapter.SortField active = processAdapter.getSortField();
+        boolean asc = processAdapter.isSortAscending();
+        String arrow = asc ? " \u25B2" : " \u25BC";
+        int activeColor = 0xFF3b82f6;
+        int inactiveColor = getThemeColor(R.attr.textSecondaryColor);
+
+        sortName.setTextColor(active == ProcessAdapter.SortField.NAME ? activeColor : inactiveColor);
+        sortName.setTypeface(null, active == ProcessAdapter.SortField.NAME ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        sortName.setText(active == ProcessAdapter.SortField.NAME ? "Name" + arrow : "Name");
+
+        sortPid.setTextColor(active == ProcessAdapter.SortField.PID ? activeColor : inactiveColor);
+        sortPid.setTypeface(null, active == ProcessAdapter.SortField.PID ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        sortPid.setText(active == ProcessAdapter.SortField.PID ? "PID" + arrow : "PID");
+
+        sortState.setTextColor(active == ProcessAdapter.SortField.STATE ? activeColor : inactiveColor);
+        sortState.setTypeface(null, active == ProcessAdapter.SortField.STATE ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        sortState.setText(active == ProcessAdapter.SortField.STATE ? "State" + arrow : "State");
+
+        String memLabel = processAdapter.getMemColumn().label;
+        sortMem.setTextColor(active == ProcessAdapter.SortField.MEM ? activeColor : inactiveColor);
+        sortMem.setTypeface(null, active == ProcessAdapter.SortField.MEM ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        sortMem.setText(active == ProcessAdapter.SortField.MEM ? memLabel + arrow : memLabel);
+    }
+
+    private void updateMemColumnButtons() {
+        ProcessAdapter.MemColumn active = processAdapter.getMemColumn();
+        int activeColor = 0xFF3b82f6;
+        int inactiveColor = getThemeColor(R.attr.textSecondaryColor);
+
+        TextView[] buttons = { colPss, colJava, colNative, colCode, colGraphics, colRss };
+        ProcessAdapter.MemColumn[] cols = ProcessAdapter.MemColumn.values();
+        for (int i = 0; i < buttons.length; i++) {
+            boolean isActive = cols[i] == active;
+            buttons[i].setTextColor(isActive ? activeColor : inactiveColor);
+            buttons[i].setTypeface(null, isActive ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        }
+
+        // Also update sort button label if sorting by mem
+        updateSortButtons();
     }
 
     private int getThemeColor(int attr) {
@@ -194,7 +289,6 @@ public class MainActivity extends AppCompatActivity {
                     statusText.setText("Error: " + e.getMessage());
                     appendLog("ERROR: " + e.toString());
                     swipeRefresh.setRefreshing(false);
-                    // Auto-show log on error
                     if (!logVisible) toggleLog();
                 });
             }
@@ -202,22 +296,28 @@ public class MainActivity extends AppCompatActivity {
     }
 
     /**
-     * Bulk enrichment: single `dumpsys meminfo -s` call to get PSS for all processes,
-     * then update each row. Much faster than per-process calls.
+     * Per-process enrichment: calls `dumpsys meminfo <pid>` for each process
+     * to get full breakdown (PSS, Java, Native, Code, Graphics, RSS).
+     * Updates each row progressively as data comes in.
      */
     private void startEnrichment(List<ProcessInfo> processes) {
         enrichTask = executor.submit(() -> {
-            Map<Integer, Long> pssMap = ShellHelper.getBulkPss();
-            if (pssMap.isEmpty()) return;
+            int enriched = 0;
             for (ProcessInfo p : processes) {
                 if (Thread.currentThread().isInterrupted()) return;
-                Long pss = pssMap.get(p.pid);
-                if (pss != null && pss > 0) {
-                    p.pssKb = pss;
-                    p.enriched = true;
-                    runOnUiThread(() -> processAdapter.notifyProcessEnriched(p.pid));
+                try {
+                    MemInfo info = ShellHelper.getMemInfo(p.pid);
+                    if (info.totalPssKb > 0 || info.javaHeapKb > 0) {
+                        p.applyMemInfo(info);
+                        runOnUiThread(() -> processAdapter.notifyProcessEnriched(p.pid));
+                        enriched++;
+                    }
+                } catch (Exception e) {
+                    // Skip this process, continue with next
                 }
             }
+            final int count = enriched;
+            runOnUiThread(() -> appendLog("Enriched " + count + "/" + processes.size() + " processes"));
         });
     }
 

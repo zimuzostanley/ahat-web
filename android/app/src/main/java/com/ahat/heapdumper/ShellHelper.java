@@ -1,7 +1,9 @@
 package com.ahat.heapdumper;
 
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.os.Debug;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -290,34 +292,62 @@ public class ShellHelper {
         String output = exec("dumpsys meminfo " + pid);
         MemInfo info = new MemInfo();
 
+        // App Summary section has lines like "  Java Heap:    12345"
         Pattern categoryLine = Pattern.compile(
-                "^\\s*(Java Heap|Native Heap|Code|Stack|Graphics|System|TOTAL):\\s+(\\d+)");
+                "^\\s*(Java Heap|Native Heap|Code|Stack|Graphics|System):\\s+(\\d+)");
+        // "TOTAL PSS:    12345" in App Summary (may also show "TOTAL RSS:    ...")
+        Pattern totalPssLine = Pattern.compile(
+                "^\\s*TOTAL PSS:\\s+(\\d+)");
         Pattern totalRssLine = Pattern.compile(
-                "^\\s*TOTAL\\b.*?\\s(\\d+)\\s*$");
+                "^\\s*TOTAL RSS:\\s+(\\d+)");
+        Pattern totalSwapLine = Pattern.compile(
+                "^\\s*TOTAL SWAP PSS:\\s+(\\d+)");
+        // Main table TOTAL line: "  TOTAL   99999   88888   ..."
+        Pattern mainTotalLine = Pattern.compile(
+                "^\\s+TOTAL\\s+(\\d+)");
 
         for (String line : output.split("\n")) {
-            Matcher m = categoryLine.matcher(line);
-            if (!m.find()) continue;
-            String cat = m.group(1);
-            long pssKb = Long.parseLong(m.group(2));
+            Matcher m;
 
-            switch (cat) {
-                case "Java Heap":   info.javaHeapKb = pssKb; break;
-                case "Native Heap": info.nativeHeapKb = pssKb; break;
-                case "Code":        info.codeKb = pssKb; break;
-                case "Stack":       info.stackKb = pssKb; break;
-                case "Graphics":    info.graphicsKb = pssKb; break;
-                case "System":      info.systemKb = pssKb; break;
-                case "TOTAL":
-                    info.totalPssKb = pssKb;
-                    Matcher rm = totalRssLine.matcher(line);
-                    if (rm.find()) info.totalRssKb = Long.parseLong(rm.group(1));
-                    String[] parts = line.trim().split("\\s+");
-                    if (parts.length >= 5) {
-                        try { info.totalSwapKb = Long.parseLong(parts[4]); }
-                        catch (NumberFormatException ignored) {}
-                    }
-                    break;
+            m = categoryLine.matcher(line);
+            if (m.find()) {
+                String cat = m.group(1);
+                long val = Long.parseLong(m.group(2));
+                switch (cat) {
+                    case "Java Heap":   info.javaHeapKb = val; break;
+                    case "Native Heap": info.nativeHeapKb = val; break;
+                    case "Code":        info.codeKb = val; break;
+                    case "Stack":       info.stackKb = val; break;
+                    case "Graphics":    info.graphicsKb = val; break;
+                    case "System":      info.systemKb = val; break;
+                }
+                continue;
+            }
+
+            m = totalPssLine.matcher(line);
+            if (m.find()) {
+                info.totalPssKb = Long.parseLong(m.group(1));
+                continue;
+            }
+
+            m = totalRssLine.matcher(line);
+            if (m.find()) {
+                info.totalRssKb = Long.parseLong(m.group(1));
+                continue;
+            }
+
+            m = totalSwapLine.matcher(line);
+            if (m.find()) {
+                info.totalSwapKb = Long.parseLong(m.group(1));
+                continue;
+            }
+
+            // Fallback: main detail table TOTAL row (first number is PSS Total)
+            if (info.totalPssKb == 0) {
+                m = mainTotalLine.matcher(line);
+                if (m.find()) {
+                    info.totalPssKb = Long.parseLong(m.group(1));
+                }
             }
         }
         return info;
@@ -341,31 +371,57 @@ public class ShellHelper {
         if (dumpDir != null) {
             appPath = new File(dumpDir, fileName).getAbsolutePath();
             // Make dir world-writable so target process can write
-            exec("chmod 777 " + dumpDir.getAbsolutePath());
+            try { exec("chmod 777 " + dumpDir.getAbsolutePath()); }
+            catch (Exception e) { log("chmod dump dir failed: " + e.getMessage()); }
         }
 
         // Also try /data/local/tmp as fallback
         String tmpPath = "/data/local/tmp/" + fileName;
         String dumpPath = appPath != null ? appPath : tmpPath;
 
-        callback.onProgress("Dumping PID " + pid + "\u2026");
         String bmpFlag = withBitmaps ? "-b png " : "";
-        exec("am dumpheap " + bmpFlag + pid + " " + dumpPath);
+        String amCmd = "am dumpheap " + bmpFlag + pid + " " + dumpPath;
+
+        callback.onProgress("Dumping PID " + pid + "\u2026");
+        log("Dump target: " + dumpPath);
+
+        // Run am dumpheap and capture full output (including errors)
+        String amOutput = exec(amCmd);
+        if (!amOutput.trim().isEmpty()) {
+            log("am dumpheap output: " + amOutput.trim());
+        }
+
+        // Check for known error patterns in am output
+        if (amOutput.contains("Error") || amOutput.contains("error")
+                || amOutput.contains("not found") || amOutput.contains("Unknown process")
+                || amOutput.contains("No process")) {
+            throw new Exception("am dumpheap failed: " + amOutput.trim());
+        }
 
         // Poll file size until stable
         long lastSize = -1;
         int stableCount = 0;
+        boolean triedFallback = false;
         for (int i = 0; i < 120; i++) {
             Thread.sleep(500);
-            callback.onProgress("Waiting\u2026 " + (i / 2) + "s");
+            int elapsed = (i + 1) / 2;
+            callback.onProgress("Waiting\u2026 " + elapsed + "s");
 
             long size = getFileSize(dumpPath);
+            if (i % 4 == 0) {
+                log("Poll " + elapsed + "s: " + dumpPath + " size=" + size);
+            }
+
             if (size <= 0) {
-                // If app dir failed, try fallback to /data/local/tmp
-                if (i == 6 && appPath != null && !dumpPath.equals(tmpPath)) {
-                    log("App dir dump not appearing, trying /data/local/tmp...");
+                // If app dir failed after 3s, try fallback to /data/local/tmp
+                if (i == 6 && appPath != null && !triedFallback && !dumpPath.equals(tmpPath)) {
+                    log("App dir dump not appearing after 3s, trying /data/local/tmp...");
                     dumpPath = tmpPath;
-                    exec("am dumpheap " + bmpFlag + pid + " " + dumpPath);
+                    triedFallback = true;
+                    amOutput = exec("am dumpheap " + bmpFlag + pid + " " + dumpPath);
+                    if (!amOutput.trim().isEmpty()) {
+                        log("am dumpheap (fallback) output: " + amOutput.trim());
+                    }
                 }
                 stableCount = 0;
                 lastSize = -1;
@@ -373,7 +429,10 @@ public class ShellHelper {
             }
             if (size == lastSize) {
                 stableCount++;
-                if (stableCount >= 3) break;
+                if (stableCount >= 3) {
+                    log("File stable at " + formatSize(size) + " after " + elapsed + "s");
+                    break;
+                }
             } else {
                 stableCount = 0;
                 lastSize = size;
@@ -381,7 +440,25 @@ public class ShellHelper {
         }
 
         if (lastSize <= 0) {
-            throw new Exception("Heap dump failed: file not created");
+            // Try to list what's in the dir for debugging
+            String dirContents = "";
+            try {
+                if (dumpDir != null) {
+                    dirContents = exec("ls -la " + dumpDir.getAbsolutePath() + "/ 2>&1 | head -20");
+                }
+                dirContents += "\n" + exec("ls -la /data/local/tmp/ahat_* 2>&1 | head -10");
+            } catch (Exception ignored) {}
+            log("Dir listing:\n" + dirContents);
+
+            // Also check if the process is still alive
+            try {
+                String procCheck = exec("kill -0 " + pid + " 2>&1; echo exit=$?");
+                log("Process " + pid + " check: " + procCheck.trim());
+            } catch (Exception ignored) {}
+
+            throw new Exception("Heap dump failed: file not created after 60s.\n"
+                    + "Path: " + dumpPath + "\n"
+                    + "Check log for details.");
         }
 
         // If dumped to /data/local/tmp, try to copy to app dir
@@ -389,8 +466,6 @@ public class ShellHelper {
         if (dumpPath.equals(tmpPath) && dumpDir != null) {
             String destPath = new File(dumpDir, fileName).getAbsolutePath();
             try {
-                // Use cat through shell to copy (our UID may not read the file directly,
-                // but with DUMP permission the shell might)
                 exec("cp " + tmpPath + " " + destPath);
                 exec("chmod 644 " + destPath);
                 if (new File(destPath).length() > 0) {
@@ -400,12 +475,23 @@ public class ShellHelper {
                 }
             } catch (Exception e) {
                 log("Copy to app dir failed: " + e.getMessage());
-                // Try making the tmp file readable
                 try { exec("chmod 644 " + tmpPath); } catch (Exception ignored) {}
             }
         }
 
+        // Verify we can actually read the file
+        File finalFile = new File(finalPath);
+        if (!finalFile.canRead()) {
+            log("WARNING: cannot read " + finalPath + ", trying chmod...");
+            try { exec("chmod 644 " + finalPath); } catch (Exception ignored) {}
+            if (!finalFile.canRead()) {
+                throw new Exception("Dump created (" + formatSize(lastSize)
+                        + ") but app cannot read it: " + finalPath);
+            }
+        }
+
         callback.onProgress("Done (" + formatSize(lastSize) + ")");
+        log("Dump complete: " + finalPath + " (" + formatSize(lastSize) + ")");
         return finalPath;
     }
 

@@ -120,6 +120,203 @@
 
     </LinearLayout>
 
+    <!-- Search + sort bar (visible only on Processes tab) -->
+    <LinearLayout
+        android:id="@+id/searchSortBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp">
+
+        <EditText
+            android:id="@+id/searchInput"
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:hint="Search processes\u2026"
+            android:textSize="13sp"
+            android:fontFamily="monospace"
+            android:textColor="?attr/textPrimaryColor"
+            android:textColorHint="?attr/textSecondaryColor"
+            android:background="?attr/surfaceColor"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:inputType="text"
+            android:imeOptions="actionSearch"
+            android:maxLines="1" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="6dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Sort:"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:paddingEnd="8dp" />
+
+            <TextView
+                android:id="@+id/sortName"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Name"
+                android:textColor="@color/primary"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/sortPid"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PID"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/sortState"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="State"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/sortMem"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Mem"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="12sp"
+                android:fontFamily="monospace"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp" />
+
+        </LinearLayout>
+
+        <!-- Memory column selector -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="4dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Show:"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:paddingEnd="6dp" />
+
+            <TextView
+                android:id="@+id/colPss"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PSS"
+                android:textColor="@color/primary"
+                android:textSize="11sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp" />
+
+            <TextView
+                android:id="@+id/colJava"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Java"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp" />
+
+            <TextView
+                android:id="@+id/colNative"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Native"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp" />
+
+            <TextView
+                android:id="@+id/colCode"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Code"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp" />
+
+            <TextView
+                android:id="@+id/colGraphics"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Gfx"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp" />
+
+            <TextView
+                android:id="@+id/colRss"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="RSS"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="11sp"
+                android:fontFamily="monospace"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
     <!-- Process list -->
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/swipeRefresh"
