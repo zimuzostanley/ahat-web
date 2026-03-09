@@ -93,8 +93,9 @@ public class MainActivity extends AppCompatActivity {
             if ("none".equals(mode)) {
                 runOnUiThread(() -> {
                     statusText.setText("Need permission — see log");
-                    appendLog("No access. Grant DUMP permission:");
+                    appendLog("No access. Grant permissions:");
                     appendLog("  adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+                    appendLog("  adb shell pm grant com.ahat.heapdumper android.permission.PACKAGE_USAGE_STATS");
                     if (!logVisible) toggleLog();
                 });
             }

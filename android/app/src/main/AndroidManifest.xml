@@ -2,8 +2,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Development permission — grant via: adb shell pm grant com.ahat.heapdumper android.permission.DUMP -->
+    <!-- Development permissions — grant via adb: -->
+    <!-- adb shell pm grant com.ahat.heapdumper android.permission.DUMP -->
+    <!-- adb shell pm grant com.ahat.heapdumper android.permission.PACKAGE_USAGE_STATS -->
     <uses-permission android:name="android.permission.DUMP" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
 
     <application
         android:allowBackup="true"

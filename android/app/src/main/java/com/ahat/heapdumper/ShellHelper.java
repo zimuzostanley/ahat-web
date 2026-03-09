@@ -93,13 +93,20 @@ public class ShellHelper {
             "/data/adb/ksu/bin/su",
     };
 
-    /** Check if DUMP permission is granted. */
+    /** Check if required permissions are granted. */
     public static boolean checkDumpPermission(Context ctx) {
-        hasDumpPerm = ctx.checkSelfPermission("android.permission.DUMP")
+        boolean dump = ctx.checkSelfPermission("android.permission.DUMP")
                 == PackageManager.PERMISSION_GRANTED;
-        log("DUMP permission: " + (hasDumpPerm ? "GRANTED" : "NOT GRANTED"));
-        if (!hasDumpPerm) {
-            log("Grant with: adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+        boolean usage = ctx.checkSelfPermission("android.permission.PACKAGE_USAGE_STATS")
+                == PackageManager.PERMISSION_GRANTED;
+        log("DUMP permission: " + (dump ? "GRANTED" : "NOT GRANTED"));
+        log("PACKAGE_USAGE_STATS: " + (usage ? "GRANTED" : "NOT GRANTED"));
+        hasDumpPerm = dump && usage;
+        if (!dump) {
+            log("Grant: adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+        }
+        if (!usage) {
+            log("Grant: adb shell pm grant com.ahat.heapdumper android.permission.PACKAGE_USAGE_STATS");
         }
         return hasDumpPerm;
     }
@@ -207,8 +214,10 @@ public class ShellHelper {
 
         // Detect permission denial
         if (result.contains("Permission Denial") || result.contains("not allowed")) {
-            log("  PERMISSION DENIED — need: adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
-            throw new Exception("Permission denied. Run:\nadb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+            log("  PERMISSION DENIED");
+            throw new Exception("Permission denied. Run:\n"
+                    + "adb shell pm grant com.ahat.heapdumper android.permission.DUMP\n"
+                    + "adb shell pm grant com.ahat.heapdumper android.permission.PACKAGE_USAGE_STATS");
         }
 
         return result;
