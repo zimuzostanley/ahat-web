@@ -4,6 +4,7 @@ import android.app.ActivityManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.os.Debug;
+import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -64,17 +65,23 @@ public class ShellHelper {
 
     // ─── Logging ────────────────────────────────────────────────────────────────
 
+    private static final String TAG = "AhatDumper";
+
     public interface LogCallback { void onLog(String message); }
     private static volatile LogCallback logCallback;
     public static void setLogCallback(LogCallback cb) { logCallback = cb; }
     private static void log(String msg) {
+        Log.d(TAG, msg);
         LogCallback cb = logCallback;
         if (cb != null) cb.onLog(msg);
     }
 
-    // ─── App storage dir (set by MainActivity) ──────────────────────────────────
+    // ─── App context & storage dir (set by MainActivity) ───────────────────────
 
+    private static Context appContext;
     private static File dumpDir;
+
+    public static void setContext(Context ctx) { appContext = ctx.getApplicationContext(); }
 
     /** Set the dump directory to app's own external files dir. */
     public static void setDumpDir(File dir) {
@@ -164,7 +171,10 @@ public class ShellHelper {
             String line;
             while ((line = br.readLine()) != null) sb.append(line).append('\n');
         }
-        proc.waitFor();
+        int exit = proc.waitFor();
+        if (exit != 0) {
+            Log.w(TAG, "Command exited " + exit + ": " + java.util.Arrays.toString(cmd));
+        }
         return sb.toString();
     }
 
@@ -355,25 +365,71 @@ public class ShellHelper {
      *
      * If writing to app dir fails, falls back to /data/local/tmp then copies.
      */
+    /**
+     * Dump heap for a given PID. Tries multiple approaches:
+     * 1. ActivityManager.dumpHeap() via reflection (works with DUMP permission)
+     * 2. Shell `am dumpheap` command (works as shell UID or with SELinux permissive)
+     */
     public static String dumpHeap(int pid, boolean withBitmaps, ProgressCallback callback) throws Exception {
         if (dumpDir == null) throw new Exception("No dump directory set");
+        if (appContext == null) throw new Exception("Context not set — call setContext() first");
 
         String fileName = "ahat_" + pid + "_" + System.currentTimeMillis() + ".hprof";
-        String dumpPath = new File(dumpDir, fileName).getAbsolutePath();
+        File dumpFile = new File(dumpDir, fileName);
+        String dumpPath = dumpFile.getAbsolutePath();
 
-        // Ensure dump dir is world-writable
+        // Ensure dump dir is world-writable so target process can write
         dumpDir.mkdirs();
         dumpDir.setWritable(true, false);
         dumpDir.setReadable(true, false);
         dumpDir.setExecutable(true, false);
 
         callback.onProgress("Dumping PID " + pid + "\u2026");
-        String bmpFlag = withBitmaps ? "-b png " : "";
-        String amCmd = "am dumpheap " + bmpFlag + pid + " " + dumpPath;
 
-        // Run am dumpheap — this is an async command
-        String output = exec(amCmd);
-        log("am dumpheap -> [" + output.trim() + "]");
+        // Try 1: ActivityManager.dumpHeap() via reflection
+        boolean requested = false;
+        try {
+            ActivityManager am = (ActivityManager) appContext.getSystemService(Context.ACTIVITY_SERVICE);
+            // ActivityManager.dumpHeap(pid, managed, nativeDebuggable, dumpBitmaps, path, fd)
+            // Hidden API: dumpHeap(int pid, boolean managed, boolean mallocInfo, boolean runGc,
+            //              String path, ParcelFileDescriptor fd)
+            // Simpler hidden API: IActivityManager.dumpHeap(pid, managed, nativeAlloc, path, fd)
+            // But the simplest approach: use the public-ish profileControl or dumpHeap
+            java.lang.reflect.Method dumpHeapMethod = null;
+            for (java.lang.reflect.Method m : am.getClass().getDeclaredMethods()) {
+                if ("dumpHeap".equals(m.getName())) {
+                    dumpHeapMethod = m;
+                    log("Found AM.dumpHeap: " + java.util.Arrays.toString(m.getParameterTypes()));
+                    break;
+                }
+            }
+            if (dumpHeapMethod != null) {
+                dumpHeapMethod.setAccessible(true);
+                Class<?>[] params = dumpHeapMethod.getParameterTypes();
+                log("dumpHeap params: " + params.length);
+                if (params.length == 6) {
+                    // dumpHeap(String process, int userId, String path, ParcelFileDescriptor fd,
+                    //          boolean managed, boolean mallocInfo)
+                    // This is the newer signature
+                    dumpHeapMethod.invoke(am, String.valueOf(pid), 0, dumpPath, null, true, false);
+                    requested = true;
+                } else if (params.length == 5) {
+                    dumpHeapMethod.invoke(am, String.valueOf(pid), 0, dumpPath, null, true);
+                    requested = true;
+                }
+                if (requested) log("AM.dumpHeap() invoked OK");
+            }
+        } catch (Exception e) {
+            log("AM.dumpHeap() failed: " + e.getMessage());
+        }
+
+        // Try 2: shell `am dumpheap` command
+        if (!requested) {
+            String bmpFlag = withBitmaps ? "-b png " : "";
+            String output = exec("am dumpheap " + bmpFlag + pid + " " + dumpPath);
+            log("am dumpheap -> [" + output.trim() + "]");
+            requested = true;
+        }
 
         // Poll until file appears and size stabilizes
         long lastSize = -1;
@@ -382,17 +438,7 @@ public class ShellHelper {
             Thread.sleep(1000);
             callback.onProgress("Dumping\u2026 " + (i + 1) + "s");
 
-            File f = new File(dumpPath);
-            long size = f.exists() ? f.length() : 0;
-
-            // Also check via shell in case Java can't see it yet
-            if (size == 0) {
-                try {
-                    String s = execRaw("sh", "-c", "stat -c %s " + dumpPath + " 2>/dev/null || echo 0").trim();
-                    size = Long.parseLong(s);
-                } catch (Exception ignored) {}
-            }
-
+            long size = dumpFile.exists() ? dumpFile.length() : 0;
             if (size <= 0) { stableCount = 0; lastSize = -1; continue; }
             if (size == lastSize) {
                 if (++stableCount >= 3) break;
@@ -403,18 +449,15 @@ public class ShellHelper {
         }
 
         if (lastSize <= 0) {
-            // Debug info
-            try { log("Dir: " + execRaw("sh", "-c", "ls -la " + dumpDir.getAbsolutePath() + "/ 2>&1").trim()); }
+            try { log("Dir: " + execRaw("sh", "-c", "ls -la " + dumpDir.getAbsolutePath() + "/").trim()); }
             catch (Exception ignored) {}
             try { log("id: " + execRaw("sh", "-c", "id").trim()); }
             catch (Exception ignored) {}
             throw new Exception("Heap dump failed: file not created.\nPath: " + dumpPath
-                    + "\nCheck app log for details.");
+                    + "\nCheck log for details.");
         }
 
-        // Ensure our app can read it
-        new File(dumpPath).setReadable(true, false);
-
+        dumpFile.setReadable(true, false);
         callback.onProgress("Done (" + formatSize(lastSize) + ")");
         log("Dump: " + dumpPath + " (" + formatSize(lastSize) + ")");
         return dumpPath;

@@ -78,8 +78,9 @@ public class MainActivity extends AppCompatActivity {
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        // Wire up in-app log and dump dir
+        // Wire up in-app log, context, and dump dir
         ShellHelper.setLogCallback(msg -> runOnUiThread(() -> appendLog(msg)));
+        ShellHelper.setContext(this);
         File dumpsDir = getExternalFilesDir("dumps");
         if (dumpsDir != null) ShellHelper.setDumpDir(dumpsDir);
 
@@ -305,12 +306,14 @@ public class MainActivity extends AppCompatActivity {
         enrichTask = executor.submit(() -> {
             int enriched = 0;
             for (ProcessInfo p : processes) {
-                if (Thread.currentThread().isInterrupted()) return;
+                if (Thread.currentThread().isInterrupted() || isDestroyed()) return;
                 try {
                     MemInfo info = ShellHelper.getMemInfo(p.pid);
                     if (info.totalPssKb > 0 || info.javaHeapKb > 0) {
                         p.applyMemInfo(info);
-                        runOnUiThread(() -> processAdapter.notifyProcessEnriched(p.pid));
+                        runOnUiThread(() -> {
+                            if (!isDestroyed()) processAdapter.notifyProcessEnriched(p.pid);
+                        });
                         enriched++;
                     }
                 } catch (Exception e) {
@@ -318,7 +321,9 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
             final int count = enriched;
-            runOnUiThread(() -> appendLog("Enriched " + count + "/" + processes.size() + " processes"));
+            runOnUiThread(() -> {
+                if (!isDestroyed()) appendLog("Enriched " + count + "/" + processes.size() + " processes");
+            });
         });
     }
 
@@ -368,14 +373,18 @@ public class MainActivity extends AppCompatActivity {
         executor.execute(() -> {
             try {
                 String path = ShellHelper.dumpHeap(process.pid, withBitmaps,
-                        msg -> runOnUiThread(() -> progressText.setText(msg)));
+                        msg -> runOnUiThread(() -> {
+                            if (!isDestroyed()) progressText.setText(msg);
+                        }));
 
                 runOnUiThread(() -> {
+                    if (isDestroyed()) return;
                     progressContainer.setVisibility(View.GONE);
                     openDump(path, process.name + ".hprof");
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
+                    if (isDestroyed()) return;
                     progressContainer.setVisibility(View.GONE);
                     new AlertDialog.Builder(this)
                             .setTitle("Dump failed")
