@@ -37,7 +37,12 @@ public class EnrichService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Notification notification = buildNotification("Enriching 0/?");
+        int delaySeconds = intent != null ? intent.getIntExtra("delay_seconds", 0) : 0;
+
+        String initialText = delaySeconds > 0
+                ? "Enriching in " + delaySeconds + "s\u2026"
+                : "Enriching 0/?";
+        Notification notification = buildNotification(initialText);
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification,
                     android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
@@ -45,19 +50,48 @@ public class EnrichService extends Service {
             startForeground(NOTIFICATION_ID, notification);
         }
 
-        List<ProcessInfo> processes = pendingProcesses;
+        final List<ProcessInfo> passedProcesses = pendingProcesses;
         pendingProcesses = null;
-
-        if (processes == null || processes.isEmpty()) {
-            updateNotification("Done: enriched 0/0 processes");
-            sendBroadcast(new Intent(ACTION_DONE));
-            stopSelf();
-            return START_NOT_STICKY;
-        }
 
         running = true;
 
         new Thread(() -> {
+            List<ProcessInfo> processes = passedProcesses;
+
+            // Countdown delay
+            if (delaySeconds > 0) {
+                for (int s = delaySeconds; s > 0; s--) {
+                    updateNotification("Enriching in " + s + "s\u2026");
+                    try { Thread.sleep(1000); } catch (InterruptedException e) {
+                        running = false;
+                        sendBroadcast(new Intent(ACTION_DONE));
+                        stopSelf();
+                        return;
+                    }
+                }
+                // Fetch fresh process list after delay
+                updateNotification("Fetching processes\u2026");
+                try {
+                    processes = ShellHelper.getProcessList();
+                    Log.i(TAG, "Fresh process list: " + processes.size() + " processes");
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to fetch process list", e);
+                    updateNotification("Failed: " + e.getMessage());
+                    running = false;
+                    sendBroadcast(new Intent(ACTION_DONE));
+                    stopSelf();
+                    return;
+                }
+            }
+
+            if (processes == null || processes.isEmpty()) {
+                updateNotification("Done: enriched 0/0 processes");
+                running = false;
+                sendBroadcast(new Intent(ACTION_DONE));
+                stopSelf();
+                return;
+            }
+
             int total = processes.size();
             int enriched = 0;
 

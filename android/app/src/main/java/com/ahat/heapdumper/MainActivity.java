@@ -1,14 +1,17 @@
 package com.ahat.heapdumper;
 
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
+import android.text.InputType;
 import android.text.TextWatcher;
 import android.view.View;
 import android.widget.EditText;
@@ -20,6 +23,7 @@ import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -122,9 +126,19 @@ public class MainActivity extends AppCompatActivity {
         swipeRefresh.setOnRefreshListener(this::refresh);
         swipeRefresh.setColorSchemeColors(0xFF3b82f6);
 
+        // Request notification permission for FGS on Android 13+
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS}, 100);
+            }
+        }
+
         tabProcesses.setOnClickListener(v -> showProcesses());
         tabDumps.setOnClickListener(v -> showDumps());
         btnEnrichAll.setOnClickListener(v -> enrichAll());
+        btnEnrichAll.setOnLongClickListener(v -> { showDelayedEnrichDialog(); return true; });
         findViewById(R.id.btnSettings).setOnClickListener(v ->
                 startActivity(new Intent(this, SettingsActivity.class)));
         findViewById(R.id.btnDumps).setOnClickListener(v -> showDumps());
@@ -330,20 +344,67 @@ public class MainActivity extends AppCompatActivity {
 
     /** Triggered by "Enrich All" button — starts foreground service to enrich all processes. */
     private void enrichAll() {
-        if (currentProcesses == null || currentProcesses.isEmpty()) return;
+        startEnrichService(0);
+    }
+
+    private void showDelayedEnrichDialog() {
         if (EnrichService.running) {
             appendLog("Enrichment already running");
             return;
         }
 
-        btnEnrichAll.setText("Enriching\u2026");
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setHint("Seconds");
+        input.setTextSize(16);
+        input.setFontFeatureSettings("monospace");
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        input.setPadding(pad, pad, pad, pad);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Delayed enrichment")
+                .setMessage("Enrich after how many seconds?\nFetches fresh process list after the delay.")
+                .setView(input)
+                .setPositiveButton("Start", (d, w) -> {
+                    String text = input.getText().toString().trim();
+                    int seconds = 0;
+                    try { seconds = Integer.parseInt(text); } catch (NumberFormatException ignored) {}
+                    if (seconds > 0) {
+                        startEnrichService(seconds);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+
+        input.requestFocus();
+    }
+
+    private void startEnrichService(int delaySeconds) {
+        if (delaySeconds == 0 && (currentProcesses == null || currentProcesses.isEmpty())) return;
+        if (EnrichService.running) {
+            appendLog("Enrichment already running");
+            return;
+        }
+
+        btnEnrichAll.setText(delaySeconds > 0 ? "Waiting " + delaySeconds + "s\u2026" : "Enriching\u2026");
         btnEnrichAll.setEnabled(false);
 
-        // Pass process list to service via static field (same process)
-        EnrichService.pendingProcesses = new ArrayList<>(currentProcesses);
+        // For immediate: pass current process list. For delayed: service fetches fresh list.
+        if (delaySeconds == 0) {
+            EnrichService.pendingProcesses = new ArrayList<>(currentProcesses);
+        } else {
+            EnrichService.pendingProcesses = null;
+        }
+
         Intent serviceIntent = new Intent(this, EnrichService.class);
+        serviceIntent.putExtra("delay_seconds", delaySeconds);
         ContextCompat.startForegroundService(this, serviceIntent);
-        appendLog("Started enrichment service for " + currentProcesses.size() + " processes");
+
+        if (delaySeconds > 0) {
+            appendLog("Enrichment scheduled in " + delaySeconds + "s");
+        } else {
+            appendLog("Started enrichment for " + currentProcesses.size() + " processes");
+        }
     }
 
     /** Enrich a single process (called before opening detail screen). */
