@@ -6,6 +6,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.FrameLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AlertDialog;
@@ -31,10 +32,13 @@ public class MainActivity extends AppCompatActivity {
     private FrameLayout progressContainer;
     private TextView progressText;
     private TextView tabProcesses, tabDumps;
+    private ScrollView logPanel;
+    private TextView logText;
+    private final StringBuilder logBuffer = new StringBuilder();
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private boolean showingDumps = false;
+    private boolean logVisible = false;
     private volatile Future<?> enrichTask;
-    private volatile List<ProcessInfo> currentProcesses;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -49,8 +53,13 @@ public class MainActivity extends AppCompatActivity {
         progressText = findViewById(R.id.progressText);
         tabProcesses = findViewById(R.id.tabProcesses);
         tabDumps = findViewById(R.id.tabDumps);
+        logPanel = findViewById(R.id.logPanel);
+        logText = findViewById(R.id.logText);
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
+
+        // Wire up in-app log
+        ShellHelper.setLogCallback(msg -> runOnUiThread(() -> appendLog(msg)));
 
         processAdapter = new ProcessAdapter();
         processAdapter.setOnClickListener(this::onProcessClick);
@@ -72,8 +81,35 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnSettings).setOnClickListener(v ->
                 startActivity(new Intent(this, SettingsActivity.class)));
         findViewById(R.id.btnDumps).setOnClickListener(v -> showDumps());
+        findViewById(R.id.btnLog).setOnClickListener(v -> toggleLog());
 
-        loadProcesses();
+        // Detect root + load processes
+        appendLog("ahat Heap Dumper starting...");
+        appendLog("App UID: " + android.os.Process.myUid());
+        executor.execute(() -> {
+            ShellHelper.detectRoot();
+            runOnUiThread(this::loadProcesses);
+        });
+    }
+
+    private void appendLog(String msg) {
+        logBuffer.append(msg).append('\n');
+        // Keep last 200 lines
+        String full = logBuffer.toString();
+        String[] lines = full.split("\n");
+        if (lines.length > 200) {
+            logBuffer.setLength(0);
+            for (int i = lines.length - 200; i < lines.length; i++) {
+                logBuffer.append(lines[i]).append('\n');
+            }
+        }
+        logText.setText(logBuffer.toString());
+        logPanel.post(() -> logPanel.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private void toggleLog() {
+        logVisible = !logVisible;
+        logPanel.setVisibility(logVisible ? View.VISIBLE : View.GONE);
     }
 
     @Override
@@ -121,7 +157,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadProcesses() {
-        // Cancel any in-flight enrichment
         if (enrichTask != null) enrichTask.cancel(true);
 
         swipeRefresh.setRefreshing(true);
@@ -130,29 +165,26 @@ public class MainActivity extends AppCompatActivity {
         executor.execute(() -> {
             try {
                 List<ProcessInfo> list = ShellHelper.getProcessList();
-                currentProcesses = list;
                 runOnUiThread(() -> {
                     processAdapter.setProcesses(list);
-                    statusText.setText(list.size() + " processes \u2022 tap for details \u2022 long-press to dump");
+                    String rootLabel = ShellHelper.isRooted() ? " [root]" : " [no root]";
+                    statusText.setText(list.size() + " processes" + rootLabel
+                            + " \u2022 tap \u2022 long-press to dump");
                     swipeRefresh.setRefreshing(false);
-
-                    // Start background meminfo enrichment
                     startEnrichment(list);
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     statusText.setText("Error: " + e.getMessage());
+                    appendLog("ERROR: " + e.toString());
                     swipeRefresh.setRefreshing(false);
+                    // Auto-show log on error
+                    if (!logVisible) toggleLog();
                 });
             }
         });
     }
 
-    /**
-     * Background meminfo enrichment: iterate all processes and fetch `dumpsys meminfo <pid>`
-     * one by one, updating the UI progressively as each completes (same pattern as TypeScript
-     * enrichProcessDetails which shows diffs progressively during enrichment).
-     */
     private void startEnrichment(List<ProcessInfo> processes) {
         enrichTask = executor.submit(() -> {
             for (ProcessInfo p : processes) {
@@ -161,8 +193,8 @@ public class MainActivity extends AppCompatActivity {
                     MemInfo info = ShellHelper.getMemInfo(p.pid);
                     p.applyMemInfo(info);
                     runOnUiThread(() -> processAdapter.notifyProcessEnriched(p.pid));
-                } catch (Exception ignored) {
-                    // Process may have died, skip it
+                } catch (Exception e) {
+                    // Process may have died
                 }
             }
         });
@@ -181,14 +213,12 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /** Tap: open process detail with meminfo. */
     private void onProcessClick(ProcessInfo process) {
         Intent intent = new Intent(this, DetailActivity.class);
         intent.putExtra("process", process);
         startActivity(intent);
     }
 
-    /** Long-press: quick dump directly from main screen. */
     private void onProcessLongClick(ProcessInfo process) {
         SharedPreferences prefs = getSharedPreferences("ahat_prefs", MODE_PRIVATE);
         boolean bitmaps = prefs.getBoolean("include_bitmaps", false);
@@ -208,7 +238,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startDump(ProcessInfo process, boolean withBitmaps) {
-        // Cancel enrichment while dumping
         if (enrichTask != null) enrichTask.cancel(true);
 
         progressContainer.setVisibility(View.VISIBLE);
@@ -268,6 +297,7 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        ShellHelper.setLogCallback(null);
         if (enrichTask != null) enrichTask.cancel(true);
         executor.shutdownNow();
     }

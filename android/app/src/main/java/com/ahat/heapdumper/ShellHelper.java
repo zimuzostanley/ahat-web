@@ -3,6 +3,7 @@ package com.ahat.heapdumper;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -15,14 +16,15 @@ import java.util.regex.Pattern;
 /**
  * Shell-based process listing, meminfo, and heap dumping — mirrors the TypeScript
  * AdbConnection logic from src/adb/capture.ts but runs on-device.
+ *
+ * Commands that need elevated permissions (dumpsys, am dumpheap) are routed
+ * through su when available. The app auto-detects root on first use.
  */
 public class ShellHelper {
 
-    // Same regex as TypeScript: LRU_LINE = /^\s*#\d+:\s+(\S+)\s+.*?\s(\d+):([^\s/]+)/
     private static final Pattern LRU_LINE =
             Pattern.compile("^\\s*#\\d+:\\s+(\\S+)\\s+.*?\\s(\\d+):([^\\s/]+)");
 
-    // OOM label map — same as TypeScript OOM_LABEL_MAP
     private static final Map<String, String> OOM_LABEL_MAP = new HashMap<>();
     static {
         OOM_LABEL_MAP.put("pers", "Persistent");
@@ -55,14 +57,69 @@ public class ShellHelper {
         OOM_LABEL_MAP.put("lstact", "Last Activity");
     }
 
-    private static String mapOomLabel(String raw) {
-        String base = raw.replaceAll("\\+\\d+$", "").replaceAll("\\d+$", "");
-        String mapped = OOM_LABEL_MAP.get(base);
-        return mapped != null ? mapped : raw;
+    // ─── Logging ────────────────────────────────────────────────────────────────
+
+    public interface LogCallback {
+        void onLog(String message);
     }
 
-    /** Run a shell command and return stdout. */
-    public static String exec(String... cmd) throws Exception {
+    private static volatile LogCallback logCallback;
+
+    public static void setLogCallback(LogCallback cb) {
+        logCallback = cb;
+    }
+
+    private static void log(String msg) {
+        LogCallback cb = logCallback;
+        if (cb != null) cb.onLog(msg);
+    }
+
+    // ─── Root detection ─────────────────────────────────────────────────────────
+
+    private static Boolean hasRoot = null;
+    private static String suBinary = null; // "su" or null
+
+    /** Detect root once: tries `su -c id` and checks for uid=0. */
+    public static synchronized boolean detectRoot() {
+        if (hasRoot != null) return hasRoot;
+        log("Detecting root...");
+        try {
+            String result = execDirect("su", "-c", "id");
+            if (result.contains("uid=0")) {
+                hasRoot = true;
+                suBinary = "su";
+                log("Root: YES (su -c)");
+                return true;
+            }
+        } catch (Exception e) {
+            log("su -c id failed: " + e.getMessage());
+        }
+        // Try su 0 (toybox variant)
+        try {
+            String result = execDirect("su", "0", "id");
+            if (result.contains("uid=0")) {
+                hasRoot = true;
+                suBinary = "su";
+                log("Root: YES (su 0)");
+                return true;
+            }
+        } catch (Exception e) {
+            log("su 0 id failed: " + e.getMessage());
+        }
+        hasRoot = false;
+        log("Root: NO — commands will run as app user (limited)");
+        return false;
+    }
+
+    public static boolean isRooted() {
+        if (hasRoot == null) detectRoot();
+        return hasRoot;
+    }
+
+    // ─── Shell execution ────────────────────────────────────────────────────────
+
+    /** Run a command directly (no su). Returns stdout+stderr. */
+    public static String execDirect(String... cmd) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
         Process proc = pb.start();
@@ -73,11 +130,74 @@ public class ShellHelper {
                 sb.append(line).append('\n');
             }
         }
-        proc.waitFor();
-        return sb.toString();
+        int exit = proc.waitFor();
+        String out = sb.toString();
+        if (exit != 0 && out.trim().isEmpty()) {
+            throw new Exception("Exit code " + exit);
+        }
+        return out;
     }
 
-    /** Parse `dumpsys activity lru` — same logic as TypeScript parseLruProcesses. */
+    /**
+     * Run a shell command string via su if rooted, otherwise directly via sh.
+     * This is the primary exec method — routes through su for privileged commands.
+     */
+    public static String exec(String command) throws Exception {
+        log("$ " + command);
+        String result;
+        if (isRooted()) {
+            // Use su -c 'command' to run as root
+            ProcessBuilder pb = new ProcessBuilder("su", "-c", command);
+            pb.redirectErrorStream(true);
+            Process proc = pb.start();
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    sb.append(line).append('\n');
+                }
+            }
+            int exit = proc.waitFor();
+            result = sb.toString();
+            if (exit != 0) {
+                log("  exit=" + exit + " out=" + truncate(result, 200));
+            }
+        } else {
+            // No root, try directly via sh
+            ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
+            pb.redirectErrorStream(true);
+            Process proc = pb.start();
+            StringBuilder sb = new StringBuilder();
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
+                String line;
+                while ((line = br.readLine()) != null) {
+                    sb.append(line).append('\n');
+                }
+            }
+            int exit = proc.waitFor();
+            result = sb.toString();
+            if (exit != 0) {
+                log("  exit=" + exit + " out=" + truncate(result, 200));
+            }
+        }
+        log("  -> " + truncate(result, 120));
+        return result;
+    }
+
+    private static String truncate(String s, int max) {
+        s = s.trim();
+        if (s.length() <= max) return s;
+        return s.substring(0, max) + "\u2026";
+    }
+
+    private static String mapOomLabel(String raw) {
+        String base = raw.replaceAll("\\+\\d+$", "").replaceAll("\\d+$", "");
+        String mapped = OOM_LABEL_MAP.get(base);
+        return mapped != null ? mapped : raw;
+    }
+
+    // ─── Process listing ────────────────────────────────────────────────────────
+
     public static List<ProcessInfo> parseLruProcesses(String output) {
         List<ProcessInfo> results = new ArrayList<>();
         Set<Integer> seen = new HashSet<>();
@@ -100,10 +220,12 @@ public class ShellHelper {
         return results;
     }
 
-    /** Get Java process list from dumpsys activity lru + pinned processes. */
     public static List<ProcessInfo> getProcessList() throws Exception {
-        String output = exec("dumpsys", "activity", "lru");
+        log("Fetching process list...");
+        String output = exec("dumpsys activity lru");
+        log("dumpsys output: " + output.length() + " chars");
         List<ProcessInfo> list = parseLruProcesses(output);
+        log("Parsed " + list.size() + " LRU processes");
 
         // Add pinned system processes (same as TypeScript PINNED_PROCESSES)
         Set<Integer> pids = new HashSet<>();
@@ -111,40 +233,26 @@ public class ShellHelper {
 
         for (String name : new String[]{"system_server", "com.android.systemui"}) {
             try {
-                String pidStr = exec("pidof", name).trim();
+                String pidStr = exec("pidof " + name).trim();
                 if (pidStr.isEmpty()) continue;
                 int pid = Integer.parseInt(pidStr.split("\\s+")[0]);
                 if (!pids.contains(pid)) {
                     list.add(0, new ProcessInfo(pid, name, "System"));
+                    log("Pinned: " + name + " PID " + pid);
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception e) {
+                log("pidof " + name + " failed: " + e.getMessage());
+            }
         }
+        log("Total: " + list.size() + " processes");
         return list;
     }
 
-    /**
-     * Parse `dumpsys meminfo <pid>` for the TOTAL line and category breakdowns.
-     * Extracts PSS, RSS (Private Dirty + Private Clean), Java Heap, Native Heap,
-     * Code, Stack, Graphics, System.
-     */
+    // ─── Meminfo ────────────────────────────────────────────────────────────────
+
     public static MemInfo getMemInfo(int pid) throws Exception {
-        String output = exec("dumpsys", "meminfo", String.valueOf(pid));
+        String output = exec("dumpsys meminfo " + pid);
         MemInfo info = new MemInfo();
-
-        // dumpsys meminfo output has lines like:
-        //                    Pss  Private  Private  SwapPss  Rss
-        //                  Total    Dirty    Clean    Dirty  Total
-        //                 ------   ------   ------   ------  ------
-        //   Java Heap:     1234     1200       34        0    1500
-        //   Native Heap:   5678     5600       78        0    6000
-        //   Code:           900      100      800        0    1200
-        //   Stack:          100      100        0        0     200
-        //   Graphics:       500      500        0        0     600
-        //   System:         300
-        //   TOTAL:         8712     7500      912        0    9500
-
-        // Also handles the simpler compact format:
-        //   TOTAL    8712    7500     912       0    9500
 
         Pattern categoryLine = Pattern.compile(
                 "^\\s*(Java Heap|Native Heap|Code|Stack|Graphics|System|TOTAL):\\s+(\\d+)");
@@ -166,12 +274,10 @@ public class ShellHelper {
                 case "System":      info.systemKb = pssKb; break;
                 case "TOTAL":
                     info.totalPssKb = pssKb;
-                    // Try to extract RSS (last number on TOTAL line)
                     Matcher rm = totalRssLine.matcher(line);
                     if (rm.find()) {
                         info.totalRssKb = Long.parseLong(rm.group(1));
                     }
-                    // Try to extract SwapPss (4th number)
                     String[] parts = line.trim().split("\\s+");
                     if (parts.length >= 5) {
                         try {
@@ -184,25 +290,16 @@ public class ShellHelper {
         return info;
     }
 
-    /**
-     * Trigger heap dump and wait for completion.
-     * Same approach as TypeScript: am dumpheap [-b png], then poll file size until stable.
-     *
-     * @param withBitmaps if true, uses `-b png` to include bitmap pixel data
-     * @return path to the .hprof file on device
-     */
+    // ─── Heap dump ──────────────────────────────────────────────────────────────
+
     public static String dumpHeap(int pid, boolean withBitmaps, ProgressCallback callback) throws Exception {
         String ts = String.valueOf(System.currentTimeMillis());
         String remotePath = "/data/local/tmp/ahat_" + pid + "_" + ts + ".hprof";
 
         callback.onProgress("Dumping heap for PID " + pid + "\u2026");
 
-        // Same as TypeScript: `am dumpheap ${bmpFlag}${pid} ${remotePath}`
-        if (withBitmaps) {
-            exec("am", "dumpheap", "-b", "png", String.valueOf(pid), remotePath);
-        } else {
-            exec("am", "dumpheap", String.valueOf(pid), remotePath);
-        }
+        String bmpFlag = withBitmaps ? "-b png " : "";
+        exec("am dumpheap " + bmpFlag + pid + " " + remotePath);
 
         // Poll file size until stable (same logic as TypeScript)
         long lastSize = -1;
@@ -213,7 +310,7 @@ public class ShellHelper {
 
             long size;
             try {
-                String out = exec("stat", "-c", "%s", remotePath);
+                String out = exec("stat -c %s '" + remotePath + "' 2>/dev/null || echo -1");
                 size = Long.parseLong(out.trim());
             } catch (Exception e) {
                 size = -1;
@@ -227,7 +324,7 @@ public class ShellHelper {
 
             if (size == lastSize) {
                 stableCount++;
-                if (stableCount >= 3) break; // 1.5s stable = done
+                if (stableCount >= 3) break;
             } else {
                 stableCount = 0;
                 lastSize = size;
@@ -235,14 +332,15 @@ public class ShellHelper {
         }
 
         if (lastSize <= 0) {
-            throw new Exception("Heap dump failed: file not created");
+            throw new Exception("Heap dump failed: file not created at " + remotePath);
         }
 
         callback.onProgress("Dump complete (" + formatSize(lastSize) + ")");
         return remotePath;
     }
 
-    /** List .hprof files in /data/local/tmp/ matching our naming pattern. */
+    // ─── File management ────────────────────────────────────────────────────────
+
     public static List<HprofFile> listDumps() {
         List<HprofFile> result = new ArrayList<>();
         File dir = new File("/data/local/tmp");
@@ -251,24 +349,20 @@ public class ShellHelper {
         for (File f : files) {
             result.add(new HprofFile(f.getAbsolutePath(), f.getName(), f.length(), f.lastModified()));
         }
-        // Most recent first
         result.sort((a, b) -> Long.compare(b.lastModified, a.lastModified));
         return result;
     }
 
-    /** Delete an hprof file. */
     public static boolean deleteDump(String path) {
         return new File(path).delete();
     }
 
-    /** Format bytes to human-readable. */
     public static String formatSize(long bytes) {
         if (bytes < 1024) return bytes + " B";
         if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
         return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
     }
 
-    /** Format KB to human-readable. */
     public static String formatKb(long kb) {
         if (kb < 1024) return kb + " KB";
         return String.format("%.1f MB", kb / 1024.0);

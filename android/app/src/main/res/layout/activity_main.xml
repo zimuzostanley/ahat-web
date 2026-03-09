@@ -41,13 +41,22 @@
         </LinearLayout>
 
         <ImageButton
+            android:id="@+id/btnLog"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@android:drawable/ic_menu_info_details"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Toggle log"
+            android:layout_marginEnd="4dp" />
+
+        <ImageButton
             android:id="@+id/btnDumps"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:src="@android:drawable/ic_menu_save"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Saved dumps"
-            android:layout_marginEnd="8dp" />
+            android:layout_marginEnd="4dp" />
 
         <ImageButton
             android:id="@+id/btnSettings"
@@ -58,6 +67,27 @@
             android:contentDescription="Settings" />
 
     </LinearLayout>
+
+    <!-- Log panel (hidden by default, toggled by log button) -->
+    <ScrollView
+        android:id="@+id/logPanel"
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:visibility="gone"
+        android:background="?attr/surfaceColor"
+        android:padding="8dp"
+        android:fillViewport="false">
+
+        <TextView
+            android:id="@+id/logText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="?attr/textSecondaryColor"
+            android:textSize="10sp"
+            android:fontFamily="monospace"
+            android:lineSpacingExtra="2dp" />
+
+    </ScrollView>
 
     <!-- Tab bar -->
     <LinearLayout
