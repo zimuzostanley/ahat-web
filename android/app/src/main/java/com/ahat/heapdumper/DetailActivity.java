@@ -60,9 +60,13 @@ public class DetailActivity extends AppCompatActivity {
         executor.execute(() -> {
             try {
                 MemInfo info = ShellHelper.getMemInfo(process.pid);
-                runOnUiThread(() -> showMemInfo(info));
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
+                    showMemInfo(info);
+                });
             } catch (Exception e) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     TextView loading = findViewById(R.id.meminfoLoading);
                     loading.setText("Failed: " + e.getMessage());
                 });
@@ -104,9 +108,12 @@ public class DetailActivity extends AppCompatActivity {
         executor.execute(() -> {
             try {
                 String path = ShellHelper.dumpHeap(process.pid, withBitmaps,
-                        msg -> runOnUiThread(() -> progressText.setText(msg)));
+                        msg -> runOnUiThread(() -> {
+                            if (!(isFinishing() || isDestroyed())) progressText.setText(msg);
+                        }));
 
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     progress.setVisibility(View.GONE);
                     Intent intent = new Intent(this, ViewerActivity.class);
                     intent.putExtra("hprof_path", path);
@@ -116,6 +123,7 @@ public class DetailActivity extends AppCompatActivity {
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     progress.setVisibility(View.GONE);
                     buttons.setVisibility(View.VISIBLE);
                     new AlertDialog.Builder(this)

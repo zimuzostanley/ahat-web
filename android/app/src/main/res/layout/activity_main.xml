@@ -44,25 +44,35 @@
             android:id="@+id/btnLog"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:src="@android:drawable/ic_menu_info_details"
+            android:src="@drawable/ic_log"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Toggle log"
+            android:layout_marginEnd="4dp" />
+
+        <ImageButton
+            android:id="@+id/btnHistory"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:src="@drawable/ic_history"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Snapshot history"
             android:layout_marginEnd="4dp" />
 
         <ImageButton
             android:id="@+id/btnDumps"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:src="@android:drawable/ic_menu_save"
+            android:src="@drawable/ic_dumps"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Saved dumps"
-            android:layout_marginEnd="4dp" />
+            android:layout_marginEnd="4dp"
+            android:visibility="gone" />
 
         <ImageButton
             android:id="@+id/btnSettings"
             android:layout_width="40dp"
             android:layout_height="40dp"
-            android:src="@android:drawable/ic_menu_preferences"
+            android:src="@drawable/ic_settings"
             android:background="?attr/selectableItemBackgroundBorderless"
             android:contentDescription="Settings" />
 
@@ -116,7 +126,8 @@
             android:text="Dumps"
             android:textColor="?attr/textSecondaryColor"
             android:textSize="14sp"
-            android:fontFamily="monospace" />
+            android:fontFamily="monospace"
+            android:visibility="gone" />
 
         <View
             android:layout_width="0dp"

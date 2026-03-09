@@ -31,7 +31,7 @@ public class DumpAdapter extends RecyclerView.Adapter<DumpAdapter.ViewHolder> {
     }
 
     public void setDumps(List<ShellHelper.HprofFile> list) {
-        this.dumps = list;
+        this.dumps = new ArrayList<>(list);
         notifyDataSetChanged();
     }
 

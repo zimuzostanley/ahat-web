@@ -304,26 +304,28 @@ public class ShellHelper {
      */
     public static MemInfo getMemInfo(int pid) throws Exception {
         String output = exec("dumpsys meminfo " + pid);
+        MemInfo info = parseMemInfoOutput(output);
+        log("MemInfo PID " + pid + ": PSS=" + info.totalPssKb + " RSS=" + info.totalRssKb
+                + " Java=" + info.javaHeapKb + " Native=" + info.nativeHeapKb
+                + " Code=" + info.codeKb + " Gfx=" + info.graphicsKb);
+        return info;
+    }
+
+    /** Parse `dumpsys meminfo <pid>` output into a MemInfo object. Package-visible for testing. */
+    static MemInfo parseMemInfoOutput(String output) {
         MemInfo info = new MemInfo();
 
-        // App Summary section lines like:
-        //    Java Heap:    12345                          23456
-        // First number = PSS, second (optional) = RSS
         Pattern categoryLine = Pattern.compile(
                 "^\\s*(Java Heap|Native Heap|Code|Stack|Graphics|System):\\s+(\\d+)(?:\\s+(\\d+))?");
         Pattern totalPssLine = Pattern.compile("TOTAL PSS:\\s+(\\d+)");
         Pattern totalRssLine = Pattern.compile("TOTAL RSS:\\s+(\\d+)");
         Pattern totalSwapLine = Pattern.compile("TOTAL SWAP.*?:\\s+(\\d+)");
 
-        boolean inAppSummary = false;
         for (String line : output.split("\n")) {
-            if (line.contains("App Summary")) { inAppSummary = true; continue; }
-
             Matcher m = categoryLine.matcher(line);
             if (m.find()) {
                 String cat = m.group(1);
                 long pss = Long.parseLong(m.group(2));
-                long rss = m.group(3) != null ? Long.parseLong(m.group(3)) : 0;
                 switch (cat) {
                     case "Java Heap":   info.javaHeapKb = pss; break;
                     case "Native Heap": info.nativeHeapKb = pss; break;
@@ -335,14 +337,18 @@ public class ShellHelper {
                 continue;
             }
 
+            // TOTAL PSS and TOTAL RSS may appear on the same line — check both
             m = totalPssLine.matcher(line);
-            if (m.find()) { info.totalPssKb = Long.parseLong(m.group(1)); continue; }
+            if (m.find()) { info.totalPssKb = Long.parseLong(m.group(1)); }
 
             m = totalRssLine.matcher(line);
-            if (m.find()) { info.totalRssKb = Long.parseLong(m.group(1)); continue; }
+            if (m.find()) { info.totalRssKb = Long.parseLong(m.group(1)); }
 
             m = totalSwapLine.matcher(line);
-            if (m.find()) { info.totalSwapKb = Long.parseLong(m.group(1)); continue; }
+            if (m.find()) { info.totalSwapKb = Long.parseLong(m.group(1)); }
+
+            // If any TOTAL line matched, skip fallback
+            if (info.totalPssKb > 0 || info.totalRssKb > 0 || info.totalSwapKb > 0) continue;
 
             // Fallback: main detail table TOTAL row
             if (info.totalPssKb == 0 && line.matches("\\s+TOTAL\\s+\\d+.*")) {
@@ -352,11 +358,6 @@ public class ShellHelper {
                 }
             }
         }
-
-        // Log parsed values for debugging
-        log("MemInfo PID " + pid + ": PSS=" + info.totalPssKb + " RSS=" + info.totalRssKb
-                + " Java=" + info.javaHeapKb + " Native=" + info.nativeHeapKb
-                + " Code=" + info.codeKb + " Gfx=" + info.graphicsKb);
         return info;
     }
 
@@ -512,7 +513,7 @@ public class ShellHelper {
     }
 
     public static String formatKb(long kb) {
-        if (kb < 1024) return kb + " KB";
+        if (Math.abs(kb) < 1024) return kb + " KB";
         return String.format("%.1f MB", kb / 1024.0);
     }
 

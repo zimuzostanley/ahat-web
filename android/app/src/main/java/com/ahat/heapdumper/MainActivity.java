@@ -1,8 +1,12 @@
 package com.ahat.heapdumper;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -16,15 +20,16 @@ import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.app.AppCompatDelegate;
+import androidx.core.content.ContextCompat;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -47,8 +52,21 @@ public class MainActivity extends AppCompatActivity {
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private boolean showingDumps = false;
     private boolean logVisible = false;
-    private volatile Future<?> enrichTask;
     private List<ProcessInfo> currentProcesses;
+
+    private final BroadcastReceiver enrichDoneReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (isFinishing() || isDestroyed()) return;
+            btnEnrichAll.setText("Enrich All");
+            btnEnrichAll.setEnabled(true);
+            appendLog("Enrichment complete — snapshot saved");
+            // Reload processes to show enriched data
+            if (currentProcesses != null) {
+                processAdapter.notifyDataSetChanged();
+            }
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -111,6 +129,16 @@ public class MainActivity extends AppCompatActivity {
                 startActivity(new Intent(this, SettingsActivity.class)));
         findViewById(R.id.btnDumps).setOnClickListener(v -> showDumps());
         findViewById(R.id.btnLog).setOnClickListener(v -> toggleLog());
+        findViewById(R.id.btnHistory).setOnClickListener(v ->
+                startActivity(new Intent(this, HistoryActivity.class)));
+
+        // Register broadcast receiver for enrich service completion
+        IntentFilter filter = new IntentFilter(EnrichService.ACTION_DONE);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(enrichDoneReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(enrichDoneReceiver, filter);
+        }
 
         // Search filter
         searchInput.addTextChangedListener(new TextWatcher() {
@@ -274,8 +302,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void loadProcesses() {
-        if (enrichTask != null) enrichTask.cancel(true);
-
         swipeRefresh.setRefreshing(true);
         statusText.setText("Loading\u2026");
 
@@ -288,8 +314,7 @@ public class MainActivity extends AppCompatActivity {
                     String mode = ShellHelper.getAccessMode();
                     String modeLabel = "root".equals(mode) ? " [root]" :
                             "dump".equals(mode) ? " [dump perm]" : " [no access]";
-                    statusText.setText(list.size() + " processes" + modeLabel
-                            + " \u2022 tap \u2022 long-press to dump");
+                    statusText.setText(list.size() + " processes" + modeLabel);
                     swipeRefresh.setRefreshing(false);
                 });
             } catch (Exception e) {
@@ -303,45 +328,22 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /** Triggered by "Enrich All" button — fetches meminfo for every process. */
+    /** Triggered by "Enrich All" button — starts foreground service to enrich all processes. */
     private void enrichAll() {
         if (currentProcesses == null || currentProcesses.isEmpty()) return;
-        if (enrichTask != null) enrichTask.cancel(true);
+        if (EnrichService.running) {
+            appendLog("Enrichment already running");
+            return;
+        }
 
         btnEnrichAll.setText("Enriching\u2026");
         btnEnrichAll.setEnabled(false);
 
-        enrichTask = executor.submit(() -> {
-            int enriched = 0;
-            int total = currentProcesses.size();
-            for (int idx = 0; idx < total; idx++) {
-                if (Thread.currentThread().isInterrupted() || isFinishing() || isDestroyed()) break;
-                ProcessInfo p = currentProcesses.get(idx);
-                final int progress = idx + 1;
-                runOnUiThread(() -> {
-                    if (!isFinishing() || isDestroyed()) btnEnrichAll.setText(progress + "/" + total);
-                });
-                try {
-                    MemInfo info = ShellHelper.getMemInfo(p.pid);
-                    if (info.totalPssKb > 0 || info.javaHeapKb > 0) {
-                        p.applyMemInfo(info);
-                        runOnUiThread(() -> {
-                            if (!isFinishing() || isDestroyed()) processAdapter.notifyProcessEnriched(p.pid);
-                        });
-                        enriched++;
-                    }
-                } catch (Exception e) {
-                    // Skip
-                }
-            }
-            final int count = enriched;
-            runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) return;
-                btnEnrichAll.setText("Enrich All");
-                btnEnrichAll.setEnabled(true);
-                appendLog("Enriched " + count + "/" + total + " processes");
-            });
-        });
+        // Pass process list to service via static field (same process)
+        EnrichService.pendingProcesses = new ArrayList<>(currentProcesses);
+        Intent serviceIntent = new Intent(this, EnrichService.class);
+        ContextCompat.startForegroundService(this, serviceIntent);
+        appendLog("Started enrichment service for " + currentProcesses.size() + " processes");
     }
 
     /** Enrich a single process (called before opening detail screen). */
@@ -392,26 +394,27 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void onProcessLongClick(ProcessInfo process) {
-        SharedPreferences prefs = getSharedPreferences("ahat_prefs", MODE_PRIVATE);
-        boolean bitmaps = prefs.getBoolean("include_bitmaps", false);
-
-        String[] options = bitmaps ?
-                new String[]{"Dump heap (+ bitmaps)", "Dump heap (no bitmaps)", "Cancel"} :
-                new String[]{"Dump heap", "Dump heap (+ bitmaps)", "Cancel"};
-
+        StringBuilder sb = new StringBuilder();
+        sb.append("PID: ").append(process.pid).append("\n");
+        sb.append("OOM: ").append(process.oomLabel != null ? process.oomLabel : "?").append("\n");
+        if (process.enriched) {
+            sb.append("\nPSS: ").append(ShellHelper.formatKb(process.pssKb));
+            sb.append("\nJava: ").append(ShellHelper.formatKb(process.javaHeapKb));
+            sb.append("\nNative: ").append(ShellHelper.formatKb(process.nativeHeapKb));
+            sb.append("\nCode: ").append(ShellHelper.formatKb(process.codeKb));
+            sb.append("\nGraphics: ").append(ShellHelper.formatKb(process.graphicsKb));
+            sb.append("\nRSS: ").append(ShellHelper.formatKb(process.rssKb));
+        } else {
+            sb.append("\nNot enriched — tap to enrich");
+        }
         new AlertDialog.Builder(this)
-                .setTitle(process.name + " (PID " + process.pid + ")")
-                .setItems(options, (d, which) -> {
-                    if (options[which].equals("Cancel")) return;
-                    boolean withBmp = options[which].contains("bitmap");
-                    startDump(process, withBmp);
-                })
+                .setTitle(process.name)
+                .setMessage(sb.toString())
+                .setPositiveButton("OK", null)
                 .show();
     }
 
     private void startDump(ProcessInfo process, boolean withBitmaps) {
-        if (enrichTask != null) enrichTask.cancel(true);
-
         progressContainer.setVisibility(View.VISIBLE);
         progressText.setText("Starting dump\u2026");
 
@@ -419,7 +422,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 String path = ShellHelper.dumpHeap(process.pid, withBitmaps,
                         msg -> runOnUiThread(() -> {
-                            if (!isFinishing() || isDestroyed()) progressText.setText(msg);
+                            if (!(isFinishing() || isDestroyed())) progressText.setText(msg);
                         }));
 
                 runOnUiThread(() -> {
@@ -473,8 +476,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        try { unregisterReceiver(enrichDoneReceiver); } catch (Exception ignored) {}
         ShellHelper.setLogCallback(null);
-        if (enrichTask != null) enrichTask.cancel(true);
         executor.shutdownNow();
     }
 }
