@@ -18,6 +18,7 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -58,8 +59,10 @@ public class MainActivity extends AppCompatActivity {
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        // Wire up in-app log
+        // Wire up in-app log and dump dir
         ShellHelper.setLogCallback(msg -> runOnUiThread(() -> appendLog(msg)));
+        File dumpsDir = getExternalFilesDir("dumps");
+        if (dumpsDir != null) ShellHelper.setDumpDir(dumpsDir);
 
         processAdapter = new ProcessAdapter();
         processAdapter.setOnClickListener(this::onProcessClick);
@@ -198,16 +201,21 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    /**
+     * Bulk enrichment: single `dumpsys meminfo -s` call to get PSS for all processes,
+     * then update each row. Much faster than per-process calls.
+     */
     private void startEnrichment(List<ProcessInfo> processes) {
         enrichTask = executor.submit(() -> {
+            Map<Integer, Long> pssMap = ShellHelper.getBulkPss();
+            if (pssMap.isEmpty()) return;
             for (ProcessInfo p : processes) {
                 if (Thread.currentThread().isInterrupted()) return;
-                try {
-                    MemInfo info = ShellHelper.getMemInfo(p.pid);
-                    p.applyMemInfo(info);
+                Long pss = pssMap.get(p.pid);
+                if (pss != null && pss > 0) {
+                    p.pssKb = pss;
+                    p.enriched = true;
                     runOnUiThread(() -> processAdapter.notifyProcessEnriched(p.pid));
-                } catch (Exception e) {
-                    // Process may have died
                 }
             }
         });

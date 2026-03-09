@@ -67,9 +67,10 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
         // Show meminfo if enriched
         if (p.enriched) {
             holder.meminfo.setVisibility(View.VISIBLE);
-            holder.meminfo.setText(" \u2022 PSS " + ShellHelper.formatKb(p.pssKb)
-                    + " \u2022 Java " + ShellHelper.formatKb(p.javaHeapKb)
-                    + " \u2022 Native " + ShellHelper.formatKb(p.nativeHeapKb));
+            StringBuilder sb = new StringBuilder(" \u2022 PSS " + ShellHelper.formatKb(p.pssKb));
+            if (p.javaHeapKb > 0) sb.append(" \u2022 Java " + ShellHelper.formatKb(p.javaHeapKb));
+            if (p.nativeHeapKb > 0) sb.append(" \u2022 Native " + ShellHelper.formatKb(p.nativeHeapKb));
+            holder.meminfo.setText(sb.toString());
         } else {
             holder.meminfo.setVisibility(View.GONE);
         }
