@@ -188,7 +188,8 @@ public class MainActivity extends AppCompatActivity {
         tabDumps.setTypeface(null, android.graphics.Typeface.NORMAL);
         searchSortBar.setVisibility(View.VISIBLE);
         recyclerView.setAdapter(processAdapter);
-        loadProcesses();
+        // Only load if we haven't loaded yet (pull-to-refresh reloads)
+        if (processAdapter.getItemCount() == 0) loadProcesses();
     }
 
     private void showDumps() {
