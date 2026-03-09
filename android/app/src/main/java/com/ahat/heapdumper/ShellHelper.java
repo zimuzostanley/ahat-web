@@ -1,9 +1,11 @@
 package com.ahat.heapdumper;
 
+import android.content.Context;
+import android.content.pm.PackageManager;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -17,8 +19,11 @@ import java.util.regex.Pattern;
  * Shell-based process listing, meminfo, and heap dumping — mirrors the TypeScript
  * AdbConnection logic from src/adb/capture.ts but runs on-device.
  *
- * Commands that need elevated permissions (dumpsys, am dumpheap) are routed
- * through su when available. The app auto-detects root on first use.
+ * Requires android.permission.DUMP (development permission).
+ * Grant via: adb shell pm grant com.ahat.heapdumper android.permission.DUMP
+ *
+ * If the device is rooted, commands route through su for full access.
+ * Otherwise, commands run directly (works if DUMP permission is granted).
  */
 public class ShellHelper {
 
@@ -65,49 +70,86 @@ public class ShellHelper {
 
     private static volatile LogCallback logCallback;
 
-    public static void setLogCallback(LogCallback cb) {
-        logCallback = cb;
-    }
+    public static void setLogCallback(LogCallback cb) { logCallback = cb; }
 
     private static void log(String msg) {
         LogCallback cb = logCallback;
         if (cb != null) cb.onLog(msg);
     }
 
-    // ─── Root detection ─────────────────────────────────────────────────────────
+    // ─── Root & permission detection ────────────────────────────────────────────
 
     private static Boolean hasRoot = null;
-    private static String suBinary = null; // "su" or null
+    private static String suPath = null; // full path to su binary
+    private static boolean hasDumpPerm = false;
 
-    /** Detect root once: tries `su -c id` and checks for uid=0. */
+    // Common su binary locations on Android
+    private static final String[] SU_PATHS = {
+            "/sbin/su",
+            "/system/bin/su",
+            "/system/xbin/su",
+            "/su/bin/su",
+            "/magisk/.core/bin/su",
+            "/data/adb/ksu/bin/su",
+    };
+
+    /** Check if DUMP permission is granted. */
+    public static boolean checkDumpPermission(Context ctx) {
+        hasDumpPerm = ctx.checkSelfPermission("android.permission.DUMP")
+                == PackageManager.PERMISSION_GRANTED;
+        log("DUMP permission: " + (hasDumpPerm ? "GRANTED" : "NOT GRANTED"));
+        if (!hasDumpPerm) {
+            log("Grant with: adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+        }
+        return hasDumpPerm;
+    }
+
+    public static boolean hasDumpPermission() { return hasDumpPerm; }
+
+    /** Detect root: search common su paths and test. */
     public static synchronized boolean detectRoot() {
         if (hasRoot != null) return hasRoot;
         log("Detecting root...");
-        try {
-            String result = execDirect("su", "-c", "id");
-            if (result.contains("uid=0")) {
-                hasRoot = true;
-                suBinary = "su";
-                log("Root: YES (su -c)");
-                return true;
+
+        // Find su binary
+        for (String path : SU_PATHS) {
+            File f = new File(path);
+            if (f.exists()) {
+                log("Found su at: " + path);
+                // Test it
+                for (String variant : new String[]{path + " -c id", path + " 0 id"}) {
+                    try {
+                        String result = execRaw("sh", "-c", variant);
+                        if (result.contains("uid=0")) {
+                            hasRoot = true;
+                            suPath = path;
+                            log("Root: YES (" + variant + ")");
+                            return true;
+                        }
+                    } catch (Exception e) {
+                        log("  " + variant + " -> " + e.getMessage());
+                    }
+                }
             }
-        } catch (Exception e) {
-            log("su -c id failed: " + e.getMessage());
         }
-        // Try su 0 (toybox variant)
-        try {
-            String result = execDirect("su", "0", "id");
-            if (result.contains("uid=0")) {
-                hasRoot = true;
-                suBinary = "su";
-                log("Root: YES (su 0)");
-                return true;
+
+        // Also try bare "su" in case PATH has it
+        for (String variant : new String[]{"su -c id", "su 0 id"}) {
+            try {
+                String result = execRaw("sh", "-c", variant);
+                if (result.contains("uid=0")) {
+                    hasRoot = true;
+                    suPath = "su";
+                    log("Root: YES (" + variant + ")");
+                    return true;
+                }
+            } catch (Exception e) {
+                log("  " + variant + " -> " + e.getMessage());
             }
-        } catch (Exception e) {
-            log("su 0 id failed: " + e.getMessage());
         }
+
         hasRoot = false;
-        log("Root: NO — commands will run as app user (limited)");
+        log("Root: NO");
         return false;
     }
 
@@ -116,10 +158,16 @@ public class ShellHelper {
         return hasRoot;
     }
 
+    public static String getAccessMode() {
+        if (isRooted()) return "root";
+        if (hasDumpPerm) return "dump";
+        return "none";
+    }
+
     // ─── Shell execution ────────────────────────────────────────────────────────
 
-    /** Run a command directly (no su). Returns stdout+stderr. */
-    public static String execDirect(String... cmd) throws Exception {
+    /** Low-level exec: runs args directly via ProcessBuilder. */
+    private static String execRaw(String... cmd) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
         Process proc = pb.start();
@@ -130,64 +178,40 @@ public class ShellHelper {
                 sb.append(line).append('\n');
             }
         }
-        int exit = proc.waitFor();
-        String out = sb.toString();
-        if (exit != 0 && out.trim().isEmpty()) {
-            throw new Exception("Exit code " + exit);
-        }
-        return out;
+        proc.waitFor();
+        return sb.toString();
     }
 
     /**
-     * Run a shell command string via su if rooted, otherwise directly via sh.
-     * This is the primary exec method — routes through su for privileged commands.
+     * Run a shell command. Routes through su if rooted, otherwise runs directly.
+     * With DUMP permission granted, direct execution works for dumpsys/am commands.
      */
     public static String exec(String command) throws Exception {
         log("$ " + command);
         String result;
-        if (isRooted()) {
-            // Use su -c 'command' to run as root
-            ProcessBuilder pb = new ProcessBuilder("su", "-c", command);
-            pb.redirectErrorStream(true);
-            Process proc = pb.start();
-            StringBuilder sb = new StringBuilder();
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    sb.append(line).append('\n');
-                }
-            }
-            int exit = proc.waitFor();
-            result = sb.toString();
-            if (exit != 0) {
-                log("  exit=" + exit + " out=" + truncate(result, 200));
-            }
-        } else {
-            // No root, try directly via sh
-            ProcessBuilder pb = new ProcessBuilder("sh", "-c", command);
-            pb.redirectErrorStream(true);
-            Process proc = pb.start();
-            StringBuilder sb = new StringBuilder();
-            try (BufferedReader br = new BufferedReader(new InputStreamReader(proc.getInputStream()))) {
-                String line;
-                while ((line = br.readLine()) != null) {
-                    sb.append(line).append('\n');
-                }
-            }
-            int exit = proc.waitFor();
-            result = sb.toString();
-            if (exit != 0) {
-                log("  exit=" + exit + " out=" + truncate(result, 200));
-            }
-        }
-        log("  -> " + truncate(result, 120));
-        return result;
-    }
 
-    private static String truncate(String s, int max) {
-        s = s.trim();
-        if (s.length() <= max) return s;
-        return s.substring(0, max) + "\u2026";
+        if (isRooted() && suPath != null) {
+            // Route through su for full root access
+            result = execRaw("sh", "-c", suPath + " -c '" + command.replace("'", "'\\''") + "'");
+        } else {
+            // Direct execution — works if DUMP permission is granted
+            result = execRaw("sh", "-c", command);
+        }
+
+        String trimmed = result.trim();
+        if (trimmed.length() > 150) {
+            log("  -> " + trimmed.substring(0, 150) + "\u2026 (" + trimmed.length() + " chars)");
+        } else {
+            log("  -> " + trimmed);
+        }
+
+        // Detect permission denial
+        if (result.contains("Permission Denial") || result.contains("not allowed")) {
+            log("  PERMISSION DENIED — need: adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+            throw new Exception("Permission denied. Run:\nadb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+        }
+
+        return result;
     }
 
     private static String mapOomLabel(String raw) {
@@ -223,7 +247,6 @@ public class ShellHelper {
     public static List<ProcessInfo> getProcessList() throws Exception {
         log("Fetching process list...");
         String output = exec("dumpsys activity lru");
-        log("dumpsys output: " + output.length() + " chars");
         List<ProcessInfo> list = parseLruProcesses(output);
         log("Parsed " + list.size() + " LRU processes");
 
@@ -241,7 +264,7 @@ public class ShellHelper {
                     log("Pinned: " + name + " PID " + pid);
                 }
             } catch (Exception e) {
-                log("pidof " + name + " failed: " + e.getMessage());
+                log("pidof " + name + ": " + e.getMessage());
             }
         }
         log("Total: " + list.size() + " processes");

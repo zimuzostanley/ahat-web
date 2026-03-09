@@ -83,11 +83,21 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnDumps).setOnClickListener(v -> showDumps());
         findViewById(R.id.btnLog).setOnClickListener(v -> toggleLog());
 
-        // Detect root + load processes
+        // Detect permissions + root, then load processes
         appendLog("ahat Heap Dumper starting...");
         appendLog("App UID: " + android.os.Process.myUid());
         executor.execute(() -> {
+            ShellHelper.checkDumpPermission(this);
             ShellHelper.detectRoot();
+            String mode = ShellHelper.getAccessMode();
+            if ("none".equals(mode)) {
+                runOnUiThread(() -> {
+                    statusText.setText("Need permission — see log");
+                    appendLog("No access. Grant DUMP permission:");
+                    appendLog("  adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+                    if (!logVisible) toggleLog();
+                });
+            }
             runOnUiThread(this::loadProcesses);
         });
     }
@@ -167,8 +177,10 @@ public class MainActivity extends AppCompatActivity {
                 List<ProcessInfo> list = ShellHelper.getProcessList();
                 runOnUiThread(() -> {
                     processAdapter.setProcesses(list);
-                    String rootLabel = ShellHelper.isRooted() ? " [root]" : " [no root]";
-                    statusText.setText(list.size() + " processes" + rootLabel
+                    String mode = ShellHelper.getAccessMode();
+                    String modeLabel = "root".equals(mode) ? " [root]" :
+                            "dump".equals(mode) ? " [dump perm]" : " [no access]";
+                    statusText.setText(list.size() + " processes" + modeLabel
                             + " \u2022 tap \u2022 long-press to dump");
                     swipeRefresh.setRefreshing(false);
                     startEnrichment(list);
