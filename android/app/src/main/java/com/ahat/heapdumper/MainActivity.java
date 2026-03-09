@@ -315,18 +315,18 @@ public class MainActivity extends AppCompatActivity {
             int enriched = 0;
             int total = currentProcesses.size();
             for (int idx = 0; idx < total; idx++) {
-                if (Thread.currentThread().isInterrupted() || isDestroyed()) break;
+                if (Thread.currentThread().isInterrupted() || isFinishing() || isDestroyed()) break;
                 ProcessInfo p = currentProcesses.get(idx);
                 final int progress = idx + 1;
                 runOnUiThread(() -> {
-                    if (!isDestroyed()) btnEnrichAll.setText(progress + "/" + total);
+                    if (!isFinishing() || isDestroyed()) btnEnrichAll.setText(progress + "/" + total);
                 });
                 try {
                     MemInfo info = ShellHelper.getMemInfo(p.pid);
                     if (info.totalPssKb > 0 || info.javaHeapKb > 0) {
                         p.applyMemInfo(info);
                         runOnUiThread(() -> {
-                            if (!isDestroyed()) processAdapter.notifyProcessEnriched(p.pid);
+                            if (!isFinishing() || isDestroyed()) processAdapter.notifyProcessEnriched(p.pid);
                         });
                         enriched++;
                     }
@@ -336,7 +336,7 @@ public class MainActivity extends AppCompatActivity {
             }
             final int count = enriched;
             runOnUiThread(() -> {
-                if (isDestroyed()) return;
+                if (isFinishing() || isDestroyed()) return;
                 btnEnrichAll.setText("Enrich All");
                 btnEnrichAll.setEnabled(true);
                 appendLog("Enriched " + count + "/" + total + " processes");
@@ -356,14 +356,14 @@ public class MainActivity extends AppCompatActivity {
                 MemInfo info = ShellHelper.getMemInfo(process.pid);
                 process.applyMemInfo(info);
                 runOnUiThread(() -> {
-                    if (isDestroyed()) return;
+                    if (isFinishing() || isDestroyed()) return;
                     processAdapter.notifyProcessEnriched(process.pid);
                     statusText.setText("");
                     onProcessClick(process);
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
-                    if (isDestroyed()) return;
+                    if (isFinishing() || isDestroyed()) return;
                     statusText.setText("");
                     // Open detail anyway, it'll try to fetch its own meminfo
                     onProcessClick(process);
@@ -419,17 +419,17 @@ public class MainActivity extends AppCompatActivity {
             try {
                 String path = ShellHelper.dumpHeap(process.pid, withBitmaps,
                         msg -> runOnUiThread(() -> {
-                            if (!isDestroyed()) progressText.setText(msg);
+                            if (!isFinishing() || isDestroyed()) progressText.setText(msg);
                         }));
 
                 runOnUiThread(() -> {
-                    if (isDestroyed()) return;
+                    if (isFinishing() || isDestroyed()) return;
                     progressContainer.setVisibility(View.GONE);
                     openDump(path, process.name + ".hprof");
                 });
             } catch (Exception e) {
                 runOnUiThread(() -> {
-                    if (isDestroyed()) return;
+                    if (isFinishing() || isDestroyed()) return;
                     progressContainer.setVisibility(View.GONE);
                     new AlertDialog.Builder(this)
                             .setTitle("Dump failed")
