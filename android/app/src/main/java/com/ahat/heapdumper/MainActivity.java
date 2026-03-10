@@ -221,6 +221,14 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         applyTheme();
         if (showingDumps) loadDumps();
+        // Sync button state with service
+        if (EnrichService.running) {
+            btnEnrichAll.setText("Cancel");
+            btnEnrichAll.setEnabled(true);
+        } else {
+            btnEnrichAll.setText("Enrich All");
+            btnEnrichAll.setEnabled(true);
+        }
     }
 
     private void applyTheme() {
@@ -342,8 +350,18 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /** Triggered by "Enrich All" button — starts foreground service to enrich all processes. */
+    /** Triggered by "Enrich All" button — starts or cancels enrichment. */
     private void enrichAll() {
+        if (EnrichService.running) {
+            // Cancel running enrichment
+            Intent stop = new Intent(this, EnrichService.class);
+            stop.setAction(EnrichService.ACTION_STOP);
+            startService(stop);
+            btnEnrichAll.setText("Enrich All");
+            btnEnrichAll.setEnabled(true);
+            appendLog("Enrichment cancelled");
+            return;
+        }
         startEnrichService(0);
     }
 
@@ -386,8 +404,8 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        btnEnrichAll.setText(delaySeconds > 0 ? "Waiting " + delaySeconds + "s\u2026" : "Enriching\u2026");
-        btnEnrichAll.setEnabled(false);
+        btnEnrichAll.setText("Cancel");
+        btnEnrichAll.setEnabled(true);
 
         // For immediate: pass current process list. For delayed: service fetches fresh list.
         if (delaySeconds == 0) {
