@@ -3,6 +3,7 @@ import { Fragment } from "../mithril-helpers";
 import { AdbConnection, PINNED_PROCESSES, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
 import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, timelineClick, deleteSnapshotState, type TimelineState, type SmapsNumericField, type SmapsDeltaKey } from "./capture-helpers";
+import { searchProcesses, searchSharedMappings, filterProcesses, filterSmapsGroups, filterVmaEntries, filterSharedMappings, type SearchResults, type SearchMatch } from "./capture-search";
 
 type SmapsSortFieldType = SmapsNumericField | SmapsDeltaKey | "count";
 type VmaSortFieldType = SmapsNumericField | SmapsDeltaKey | "addrStart";
@@ -39,9 +40,10 @@ const VmaEntries: m.Component<{
   entryDiffs?: SmapsEntryDiff[] | null;
   showDeltaCols: boolean;
   leadingColCount: number;
+  searchMatch?: SearchMatch | null;
 }> = {
   view(vnode) {
-    const { entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, onDump, dumpDisabled, entryDiffs, showDeltaCols, leadingColCount } = vnode.attrs;
+    const { entries, groupName, pid, processName, sortField, sortAsc, onToggleSort, onDump, dumpDisabled, entryDiffs, showDeltaCols, leadingColCount, searchMatch } = vnode.attrs;
 
     const diffByAddr: Map<string, SmapsEntryDiff> | null = entryDiffs
       ? new Map(entryDiffs.map(d => [d.current.addrStart, d] as const))
@@ -63,6 +65,9 @@ const VmaEntries: m.Component<{
       };
       return sortWithDiffPinning(entries, entryDiffs, cmp);
     })();
+
+    // Apply search filtering to VMA entries
+    const displayEntries = searchMatch ? filterVmaEntries(sorted, groupName, searchMatch) : sorted;
 
     return m(Fragment, [
       m("tr", { className: "ah-vma-header" }, [
@@ -102,7 +107,7 @@ const VmaEntries: m.Component<{
           return cells;
         }),
       ]),
-      sorted.map((e, i) => {
+      displayEntries.map((e, i) => {
         const ed = diffByAddr?.get(e.addrStart);
         return m("tr", {
           key: i,
@@ -174,9 +179,10 @@ const SmapsSubTable: m.Component<{
   prevAggregated?: SmapsAggregated[] | null;
   showDeltaCols: boolean;
   leadingColCount: number;
+  searchMatch?: SearchMatch | null;
 }> = {
   view(vnode) {
-    const { pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated, showDeltaCols, leadingColCount } = vnode.attrs;
+    const { pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated, showDeltaCols, leadingColCount, searchMatch } = vnode.attrs;
 
     const diffByName: Map<string, SmapsDiff> | null = smapsDiffs
       ? new Map(smapsDiffs.map(d => [d.current.name, d] as const))
@@ -199,6 +205,9 @@ const SmapsSubTable: m.Component<{
       };
       return sortWithDiffPinning(aggregated, smapsDiffs, cmp);
     })();
+
+    // Apply search filtering to smaps groups
+    const displayGroups = searchMatch ? filterSmapsGroups(sorted, searchMatch) : sorted;
 
     const totals = computeSmapsTotals(aggregated, smapsDiffs);
 
@@ -262,7 +271,7 @@ const SmapsSubTable: m.Component<{
           return cells;
         }),
       ]),
-      sorted.map(g => {
+      displayGroups.map(g => {
         const sd = diffByName?.get(g.name);
         const prevEntries = sd && sd.status === "matched" && prevByName ? prevByName.get(g.name)?.entries ?? null : null;
         return m(Fragment, { key: g.name }, [
@@ -329,6 +338,7 @@ const SmapsSubTable: m.Component<{
               entryDiffs: prevEntries ? diffSmapsEntries(prevEntries, g.entries) : null,
               showDeltaCols,
               leadingColCount,
+              searchMatch,
             })
           ),
         ]);
@@ -718,6 +728,26 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   let processDiffs: ProcessDiff[] | null = null;
   let globalMemInfoDiff: GlobalMemInfoDiff | null = null;
   let diffTriggered = false;
+
+  // Search state
+  let searchQuery = "";
+  let searchResults: SearchResults = new Map();
+  let sharedMappingMatches = new Set<string>();
+  let lastSearchInput = ""; // for memoization
+
+  function updateSearch() {
+    const q = searchQuery.trim();
+    if (q === lastSearchInput) return;
+    lastSearchInput = q;
+    if (!q) {
+      searchResults = new Map();
+      sharedMappingMatches = new Set();
+      return;
+    }
+    const procs = processes ?? [];
+    searchResults = searchProcesses(procs, q, smapsData, smapsRollups);
+    // Shared mappings search will be done at render time (depends on aggregated data)
+  }
 
   function getBaseSnap(): Snapshot | null {
     if (!diffMode) return null;
@@ -1378,8 +1408,34 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
       const hasOomLabel = dProcs ? dProcs.some(p => p.oomLabel !== "") : false;
 
+      // Apply search filtering
+      updateSearch();
+      const isSearching = searchQuery.trim() !== "";
+      const filteredSorted = isSearching && sorted ? filterProcesses(sorted, searchResults) : sorted;
+      const filteredDiffs = isSearching && sortedDiffs
+        ? sortedDiffs.filter(d => searchResults.has(d.current.pid))
+        : sortedDiffs;
+
+      // Update shared mapping search matches at render time
+      // Include mappings that match by name OR have a matching process
+      if (isSearching && sharedMappings) {
+        sharedMappingMatches = searchSharedMappings(sharedMappings, searchQuery);
+        // Also include mappings that contain processes matching the search
+        for (const mp of sharedMappings) {
+          if (sharedMappingMatches.has(mp.name)) continue;
+          if (mp.processes.some(p => searchResults.has(p.pid))) {
+            sharedMappingMatches.add(mp.name);
+          }
+        }
+      } else {
+        sharedMappingMatches = new Set();
+      }
+      const filteredSharedMappings = isSearching && sharedMappings
+        ? filterSharedMappings(sharedMappings, sharedMappingMatches)
+        : sharedMappings;
+
       const processTotals = (() => {
-        const activeProcs = (sorted ?? []).filter(p => !(diffMode && sortedDiffs?.find(d => d.current.pid === p.pid && d.status === "removed")));
+        const activeProcs = (filteredSorted ?? []).filter(p => !(diffMode && filteredDiffs?.find(d => d.current.pid === p.pid && d.status === "removed")));
         const totals: Record<string, number> = {};
         for (const [f] of ROLLUP_COLUMNS) totals[f] = 0;
         for (const p of activeProcs) {
@@ -1603,6 +1659,39 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
               ])
             ),
 
+            // Search box
+            processes && processes.length > 0 && (
+              m("div", { className: "ah-search" }, [
+                m("div", { className: "ah-search__inner" }, [
+                  m("input", {
+                    type: "text",
+                    className: "ah-search__input",
+                    placeholder: "Filter processes, mappings, VMAs\u2026",
+                    value: searchQuery,
+                    oninput: (e: Event) => {
+                      searchQuery = (e.target as HTMLInputElement).value;
+                      updateSearch();
+                    },
+                  }),
+                  searchQuery && m("button", {
+                    className: "ah-search__clear",
+                    onclick: () => { searchQuery = ""; updateSearch(); },
+                    title: "Clear search",
+                  }, "\u00D7"),
+                  searchQuery && (() => {
+                    const procCount = filteredSorted?.length ?? 0;
+                    const sharedCount = filteredSharedMappings?.length ?? 0;
+                    const total = procCount + sharedCount;
+                    return m("span", { className: "ah-search__count" },
+                      total > 0
+                        ? `${procCount} process${procCount !== 1 ? "es" : ""}${sharedCount > 0 ? `, ${sharedCount} mapping${sharedCount !== 1 ? "s" : ""}` : ""}`
+                        : "no matches",
+                    );
+                  })(),
+                ]),
+              ])
+            ),
+
             // Global memory summary
             dMemInfo && (
               m("div", { className: "ah-global-mem" }, [
@@ -1651,16 +1740,20 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             ),
 
             // Process list
-            sorted === null ? (
+            filteredSorted === null ? (
               m("div", { className: "ah-loading" }, "Loading processes\u2026")
-            ) : sorted.length === 0 ? (
-              m("div", { className: "ah-loading", style: { display: "flex", alignItems: "center", gap: "0.75rem" } }, [
-                "No processes found.",
-                m("button", {
-                  className: "ah-link",
-                  onclick: refreshProcesses,
-                }, "Refresh"),
-              ])
+            ) : filteredSorted.length === 0 ? (
+              isSearching ? (
+                m("div", { className: "ah-loading" }, "No matching processes.")
+              ) : (
+                m("div", { className: "ah-loading", style: { display: "flex", alignItems: "center", gap: "0.75rem" } }, [
+                  "No processes found.",
+                  m("button", {
+                    className: "ah-link",
+                    onclick: refreshProcesses,
+                  }, "Refresh"),
+                ])
+              )
             ) : (
               m("div", { className: "ah-capture-table-wrap" }, [
                 m("table", { className: "ah-capture-table" }, [
@@ -1720,7 +1813,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           }, processTotals.values[f] > 0 ? fmtSize(processTotals.values[f] * 1024) : "\u2014"),
                         ];
                         if (diffMode) {
-                          const totalDelta = sortedDiffs ? sortedDiffs.reduce((s, d) => {
+                          const totalDelta = filteredDiffs ? filteredDiffs.reduce((s, d) => {
                             const r = dRollups.get(d.current.pid);
                             const pr = baseRollups?.get(d.current.pid);
                             return s + (r && pr ? r[f] - pr[f] : 0);
@@ -1735,7 +1828,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                         return cells;
                       }),
                     ]),
-                    (diffMode && sortedDiffs ? sortedDiffs : (sorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }))).map(d => {
+                    (diffMode && filteredDiffs ? filteredDiffs : (filteredSorted ?? []).map(p => ({ status: "matched" as const, current: p, prev: null, deltaPssKb: 0, deltaRssKb: 0, deltaJavaHeapKb: 0, deltaNativeHeapKb: 0, deltaGraphicsKb: 0, deltaCodeKb: 0 }))).map(d => {
                       const p = d.current;
                       const isJava = javaPids.has(p.pid);
                       const canCapture = isJava && (conn.isRoot || p.debuggable !== false);
@@ -1856,6 +1949,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             prevAggregated: isDiff && baseSmapsData?.has(p.pid) ? baseSmapsData.get(p.pid)! : null,
                             showDeltaCols: diffMode,
                             leadingColCount: 3 + (hasOomLabel ? 1 : 0),
+                            searchMatch: isSearching ? searchResults.get(p.pid) ?? null : null,
                           })
                         ),
                       ]);
@@ -1875,9 +1969,9 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     disabled: !connected || !isLive || !!vmaDumpStatus,
                   }, scanStatus ? `Cancel Scan (${smapsData.size}/${dProcs?.length ?? 0})` : `Scan All VMAs (${smapsData.size}/${dProcs?.length ?? 0})`)
                 ),
-                sharedMappings && sharedMappings.length > 0 && (
+                filteredSharedMappings && filteredSharedMappings.length > 0 && (
                   m(SharedMappingsTable, {
-                    mappings: sharedMappings,
+                    mappings: filteredSharedMappings,
                     loadedCount: dSmaps.size,
                     loading: scanStatus !== null,
                     diffs: sharedMappingDiffs,
