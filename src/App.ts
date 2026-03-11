@@ -594,6 +594,9 @@ export default function App(): m.Component {
               m("div", {
                 className: "ah-landing__dropzone",
                 onclick: () => fileEl?.click(),
+                title: "Capture with:\n"
+                  + "  adb shell am dumpheap <pid> /data/local/tmp/dump.hprof\n"
+                  + "  adb pull /data/local/tmp/dump.hprof",
               },
                 m("div", { className: "ah-mb-4" },
                   m("svg", { className: "ah-landing__drop-icon", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 1.5 },
