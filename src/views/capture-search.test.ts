@@ -98,13 +98,12 @@ describe("searchProcesses", () => {
     expect(m.vmaEntries.get("libc.so")?.has("7f000000")).toBe(true);
   });
 
-  it("matches VMA permissions", () => {
+  it("does NOT match VMA permissions", () => {
     const entry = makeEntry("heap", "1000", { perms: "rw-p" });
     const procs = [makeProc(1, "app")];
     const smaps = new Map([[1, [makeGroup("[heap]", [entry])]]]);
     const r = searchProcesses(procs, "rw-p", smaps, noRollups);
-    expect(r.size).toBe(1);
-    expect(r.get(1)!.vmaEntries.get("[heap]")?.has("1000")).toBe(true);
+    expect(r.size).toBe(0);
   });
 
   it("does not include processes with no matches", () => {
@@ -463,5 +462,71 @@ describe("qualified search (scope:value)", () => {
     const r = searchSharedMappings(mappings, "pss:>3mb");
     expect(r.size).toBe(1);
     expect(r.has("libc.so")).toBe(true);
+  });
+
+  it("pss: scope accepts plain KB number without suffix", () => {
+    const r = searchProcesses(procs, "pss:>100000", smaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true); // 200_000 KB
+  });
+
+  it("rss: scope with plain number (KB)", () => {
+    const r = searchProcesses(procs, "rss:>200000", smaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true); // 300_000 KB
+  });
+});
+
+// ── Multiple conditions (AND) ─────────────────────────────────────────────────
+
+describe("multiple search conditions (AND)", () => {
+  const procs = [
+    makeProc(1, "system_server", { pssKb: 200_000, rssKb: 300_000 }),
+    makeProc(2, "com.google.chrome", { pssKb: 50_000, rssKb: 80_000 }),
+    makeProc(3, "com.google.gms", { pssKb: 10_000, rssKb: 15_000 }),
+  ];
+  const rollups = new Map<number, SmapsRollup>([
+    [1, { sizeKb: 400_000, pssKb: 200_000, rssKb: 300_000, privateDirtyKb: 150_000, privateCleanKb: 20_000, sharedDirtyKb: 5_000, sharedCleanKb: 25_000, swapKb: 1_000, swapPssKb: 500 }],
+    [2, { sizeKb: 100_000, pssKb: 50_000, rssKb: 80_000, privateDirtyKb: 40_000, privateCleanKb: 5_000, sharedDirtyKb: 2_000, sharedCleanKb: 3_000, swapKb: 0, swapPssKb: 0 }],
+    [3, { sizeKb: 20_000, pssKb: 10_000, rssKb: 15_000, privateDirtyKb: 8_000, privateCleanKb: 1_000, sharedDirtyKb: 500, sharedCleanKb: 500, swapKb: 0, swapPssKb: 0 }],
+  ]);
+
+  it("two size conditions intersect results", () => {
+    // pss:>30mb matches system_server and chrome; rss:>100mb matches only system_server
+    const r = searchProcesses(procs, "pss:>30mb rss:>100mb", noSmaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+  });
+
+  it("text + size condition", () => {
+    // "google" matches chrome and gms; pss:>20mb matches system_server and chrome
+    const r = searchProcesses(procs, "google pss:>20mb", noSmaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(2)).toBe(true); // only chrome matches both
+  });
+
+  it("single term still works", () => {
+    const r = searchProcesses(procs, "system_server", noSmaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+  });
+
+  it("no overlap returns empty", () => {
+    // "system" matches system_server; "google" matches chrome and gms
+    const r = searchProcesses(procs, "system google", noSmaps, rollups);
+    expect(r.size).toBe(0);
+  });
+
+  it("shared mappings also AND multiple terms", () => {
+    const mappings = [
+      makeSharedMapping("libc.so", { pssKb: 5000 }),
+      makeSharedMapping("libm.so", { pssKb: 5000 }),
+      makeSharedMapping("libc++.so", { pssKb: 100 }),
+    ];
+    const r = searchSharedMappings(mappings, "lib pss:>3mb");
+    // "lib" matches all three; pss:>3mb matches libc.so and libm.so
+    expect(r.size).toBe(2);
+    expect(r.has("libc.so")).toBe(true);
+    expect(r.has("libm.so")).toBe(true);
   });
 });

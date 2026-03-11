@@ -70,16 +70,16 @@ const SIZE_SUFFIXES: [string, number][] = [
 ];
 
 /**
- * Check if a search query looks like a size query (e.g. "100mb", ">50kb").
- * Returns null if not a size query, or { op, valueKb } if it is.
+ * Check if a search query looks like a size query (e.g. ">50kb", ">5000").
+ * In unscoped mode, requires operator or suffix to distinguish from text search.
+ * In size-scoped mode (forceSize=true), plain numbers are treated as KB.
  */
-function parseSizeQuery(query: string): { op: ">" | "<" | ">=" | "<=" | "="; valueKb: number } | null {
-  // Require either a comparison operator or a size suffix (or both) to distinguish from plain text/PID searches.
+function parseSizeQuery(query: string, forceSize = false): { op: ">" | "<" | ">=" | "<=" | "="; valueKb: number } | null {
   const m = query.match(/^([><]=?|=)?\s*(\d+(?:\.\d+)?)\s*(gb|mb|kb)?$/i);
   if (!m) return null;
   const hasOp = !!m[1];
   const hasSuffix = !!m[3];
-  if (!hasOp && !hasSuffix) return null; // plain number, not a size query
+  if (!hasOp && !hasSuffix && !forceSize) return null;
   const op = (m[1] || ">=") as ">" | "<" | ">=" | "<=" | "=";
   const num = parseFloat(m[2]);
   const suffix = m[3]?.toLowerCase();
@@ -138,8 +138,7 @@ function smapsGroupMatchesText(g: SmapsAggregated, query: string): boolean {
 
 function vmaEntryMatchesText(e: SmapsEntry, query: string): boolean {
   return textMatch(e.name, query)
-    || textMatch(`${e.addrStart}-${e.addrEnd}`, query)
-    || textMatch(e.perms, query);
+    || textMatch(`${e.addrStart}-${e.addrEnd}`, query);
 }
 
 function sharedMappingMatchesText(mp: SharedMapping, query: string): boolean {
@@ -149,18 +148,16 @@ function sharedMappingMatchesText(mp: SharedMapping, query: string): boolean {
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Search across all process data. Returns a map from pid → match details.
- * Uses path-to-root: if a VMA matches, its parent smaps group and process are kept.
+ * Run a single search term against all processes.
+ * Returns a map from pid → match details.
  */
-export function searchProcesses(
+function searchSingleTerm(
   processes: ProcessInfo[],
-  query: string,
+  raw: string,
   smapsData: Map<number, SmapsAggregated[]>,
   rollups: Map<number, SmapsRollup>,
 ): SearchResults {
   const results: SearchResults = new Map();
-  const raw = query.trim();
-  if (!raw) return results;
 
   const parsed = parseQualifiedQuery(raw);
   const q = parsed.value;
@@ -168,17 +165,16 @@ export function searchProcesses(
 
   const { scope } = parsed;
 
-  // For column-scoped size queries (pss:>5mb), the value must be a size expression
   const isSizeScope = scope !== "all" && scope !== "process" && scope !== "vma" && scope !== "mapping";
-  const sizeQuery = isSizeScope ? parseSizeQuery(q) : (scope === "all" ? parseSizeQuery(q) : null);
+  const sizeQuery = isSizeScope
+    ? parseSizeQuery(q, true) // plain numbers = KB in size scope
+    : (scope === "all" ? parseSizeQuery(q) : null);
 
-  // Column-scoped query requires a valid size expression
   if (isSizeScope && !sizeQuery) return results;
 
   for (const p of processes) {
     const rollup = rollups.get(p.pid);
 
-    // Process-level match
     let processMatched = false;
     if (scope === "all") {
       processMatched = sizeQuery
@@ -189,12 +185,10 @@ export function searchProcesses(
     } else if (isSizeScope) {
       processMatched = processMatchesSize(p, sizeQuery!, rollup, scope as SizeField);
     }
-    // vma/mapping scopes skip process-level matching
 
     const smapsGroups = new Set<string>();
     const vmaEntries = new Map<string, Set<string>>();
 
-    // Search smaps sub-data (skip for process-only scope)
     if (scope !== "process") {
       const aggs = smapsData.get(p.pid);
       if (aggs) {
@@ -202,17 +196,16 @@ export function searchProcesses(
           const groupMatched = !sizeQuery && (scope === "all" || scope === "mapping") && smapsGroupMatchesText(g, q);
           const matchedVmas = new Set<string>();
 
+          // Always check VMAs (even when group matched) so sub-filtering works
           if (scope !== "mapping") {
             for (const e of g.entries) {
               if (sizeQuery) {
                 if (isSizeScope) {
-                  // Single column
                   const f = scope as SizeField;
                   if (f in e && matchesSize((e as any)[f], sizeQuery.op, sizeQuery.valueKb)) {
                     matchedVmas.add(e.addrStart);
                   }
                 } else {
-                  // All size fields
                   for (const f of PROCESS_SIZE_FIELDS) {
                     if (matchesSize(e[f], sizeQuery.op, sizeQuery.valueKb)) {
                       matchedVmas.add(e.addrStart);
@@ -246,27 +239,83 @@ export function searchProcesses(
   return results;
 }
 
+/** Intersect two SearchResults: keep only pids in both, merge match details. */
+function intersectResults(a: SearchResults, b: SearchResults): SearchResults {
+  const result: SearchResults = new Map();
+  for (const [pid, matchA] of a) {
+    const matchB = b.get(pid);
+    if (!matchB) continue;
+    result.set(pid, {
+      process: matchA.process || matchB.process,
+      smapsGroups: new Set([...matchA.smapsGroups, ...matchB.smapsGroups]),
+      vmaEntries: mergeVmaEntries(matchA.vmaEntries, matchB.vmaEntries),
+    });
+  }
+  return result;
+}
+
+function mergeVmaEntries(a: Map<string, Set<string>>, b: Map<string, Set<string>>): Map<string, Set<string>> {
+  const result = new Map(a);
+  for (const [group, addrs] of b) {
+    const existing = result.get(group);
+    result.set(group, existing ? new Set([...existing, ...addrs]) : addrs);
+  }
+  return result;
+}
+
+/**
+ * Search across all process data. Supports multiple space-separated conditions
+ * (AND logic). Returns a map from pid → match details.
+ */
+export function searchProcesses(
+  processes: ProcessInfo[],
+  query: string,
+  smapsData: Map<number, SmapsAggregated[]>,
+  rollups: Map<number, SmapsRollup>,
+): SearchResults {
+  const raw = query.trim();
+  if (!raw) return new Map();
+
+  // Split into terms, respecting quoted strings and qualifier:value pairs
+  const terms = splitSearchTerms(raw);
+  if (terms.length === 0) return new Map();
+
+  let results = searchSingleTerm(processes, terms[0], smapsData, rollups);
+  for (let i = 1; i < terms.length; i++) {
+    const termResults = searchSingleTerm(processes, terms[i], smapsData, rollups);
+    results = intersectResults(results, termResults);
+  }
+  return results;
+}
+
+/** Split query into terms: space-separated, but qualifier:value stays together. */
+function splitSearchTerms(raw: string): string[] {
+  const terms: string[] = [];
+  const re = /(\S+:"[^"]*"|\S+:'[^']*'|\S+)\s*/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(raw)) !== null) {
+    terms.push(m[1]);
+  }
+  return terms;
+}
+
 /**
  * Filter shared mappings by query. Returns the set of mapping names that match.
  */
-export function searchSharedMappings(
+function searchSharedMappingsSingleTerm(
   mappings: SharedMapping[],
-  query: string,
+  raw: string,
 ): Set<string> {
   const result = new Set<string>();
-  const raw = query.trim();
-  if (!raw) return result;
-
   const parsed = parseQualifiedQuery(raw);
   const q = parsed.value;
   if (!q) return result;
 
   const { scope } = parsed;
-  // process-only or vma-only scopes don't match shared mappings by name
   if (scope === "process" || scope === "vma") return result;
 
   const isSizeScope = scope !== "all" && scope !== "mapping";
-  const sizeQuery = isSizeScope ? parseSizeQuery(q) : (scope === "all" ? parseSizeQuery(q) : null);
+  const sizeQuery = isSizeScope ? parseSizeQuery(q, true) : (scope === "all" ? parseSizeQuery(q) : null);
   if (isSizeScope && !sizeQuery) return result;
 
   for (const mp of mappings) {
@@ -289,6 +338,25 @@ export function searchSharedMappings(
     }
   }
 
+  return result;
+}
+
+export function searchSharedMappings(
+  mappings: SharedMapping[],
+  query: string,
+): Set<string> {
+  const raw = query.trim();
+  if (!raw) return new Set();
+
+  const terms = splitSearchTerms(raw);
+  if (terms.length === 0) return new Set();
+
+  let result = searchSharedMappingsSingleTerm(mappings, terms[0]);
+  for (let i = 1; i < terms.length; i++) {
+    const termResult = searchSharedMappingsSingleTerm(mappings, terms[i]);
+    // Intersect
+    result = new Set([...result].filter(name => termResult.has(name)));
+  }
   return result;
 }
 
@@ -317,16 +385,18 @@ export function filterSmapsGroups(
 
 /**
  * Filter VMA entries within a group by search results.
- * If the group itself matched (not just VMA sub-matches), all entries are shown.
+ * If the process matched directly, all entries are shown.
+ * If specific VMAs matched, only those are shown.
+ * If only the group name matched (no VMA-level detail), all entries are shown.
  */
 export function filterVmaEntries(
   entries: SmapsEntry[],
   groupName: string,
   match: SearchMatch,
 ): SmapsEntry[] {
-  if (match.process) return entries; // process-level match shows everything
+  if (match.process) return entries;
   const matchedVmas = match.vmaEntries.get(groupName);
-  if (!matchedVmas) return entries; // group-level match shows all entries
+  if (!matchedVmas || matchedVmas.size === 0) return entries;
   return entries.filter(e => matchedVmas.has(e.addrStart));
 }
 
