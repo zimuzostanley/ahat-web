@@ -19,6 +19,7 @@ function StringsView(): m.Component<StringsViewAttrs> {
   let exactMatch = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let scrollToResults = false;
+  let copyingId: number | null = null;
 
   function updateUrl(q: string) {
     const prev = window.history.state;
@@ -173,8 +174,28 @@ function StringsView(): m.Component<StringsViewAttrs> {
                 { label: "Length", align: "right", sortKey: (r: StringListRow) => r.length, render: (r: StringListRow) => m("span", { className: "ah-mono" }, r.length.toLocaleString()) },
                 { label: "Heap", render: (r: StringListRow) => m("span", { className: "ah-info-grid__label" }, r.heap) },
                 { label: "Value", render: (r: StringListRow) =>
-                  m("span", { className: "ah-mono ah-break-all", style: { color: "var(--ah-badge-string)" } },
-                    "\"", r.value.length > 300 ? r.value.slice(0, 300) + "\u2026" : r.value, "\""),
+                  m("span", { className: "ah-mono ah-break-all", style: { color: "var(--ah-badge-string)" } }, [
+                    "\"", r.value.length > 300 ? r.value.slice(0, 300) + "\u2026" : r.value, "\"",
+                    m("button", {
+                      className: "ah-copy-btn",
+                      title: "Copy full string",
+                      onclick: (e: Event) => {
+                        e.stopPropagation();
+                        if (copyingId === r.id) return;
+                        copyingId = r.id;
+                        m.redraw();
+                        vnode.attrs.proxy.query<string | null>("getFullString", { id: r.id }).then(full => {
+                          navigator.clipboard.writeText(full ?? r.value);
+                          copyingId = null;
+                          m.redraw();
+                        }).catch(() => {
+                          navigator.clipboard.writeText(r.value);
+                          copyingId = null;
+                          m.redraw();
+                        });
+                      },
+                    }, copyingId === r.id ? "\u2026" : "\u2398"),
+                  ]),
                 },
               ],
               data: filtered,

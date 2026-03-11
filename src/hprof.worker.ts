@@ -695,7 +695,7 @@ function handleGetStringList(): StringListRow[] {
     results.push({
       id: ci.id,
       value: str,
-      length: str.length,
+      length: ci.stringLength(),
       retainedSize: ci.getTotalRetainedSize().total,
       shallowSize: ci.getSize().java + ci.getSize().native_,
       heap: ci.heap?.name ?? "?",
@@ -815,6 +815,13 @@ addEventListener("message", (e: MessageEvent) => {
         case "getObjects":    data = handleGetObjects({ siteId: Number(params.siteId), className: String(params.className), heap: params.heap ? String(params.heap) : null }); break;
         case "getBitmapList": data = handleGetBitmapList(); break;
         case "getStringList": data = handleGetStringList(); break;
+        case "getFullString": {
+          if (!snap) throw new Error("no snapshot");
+          const inst = snap.instances.get(Number(params.id));
+          const ci = inst?.asClassInstance?.();
+          data = ci?.asString(-1) ?? null;
+          break;
+        }
         default: throw new Error("Unknown query: " + name);
       }
       postMessage({ type: "result", id, data });

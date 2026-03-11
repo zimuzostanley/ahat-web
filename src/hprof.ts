@@ -356,6 +356,22 @@ export class AhatClassInstance extends AhatInstance {
     return arr.asStringSlice(offset, count, maxChars);
   }
 
+  /** Return the character length of this java.lang.String without decoding. */
+  stringLength(): number {
+    if (!this.isInstanceOfClass("java.lang.String")) return -1;
+    const val = this.getField("value");
+    if (!(val instanceof AhatInstance) || !val.isArrayInstance()) return -1;
+    const arr = val.asArrayInstance()!;
+    const countField = this.getField("count");
+    if (typeof countField === "number") return countField;
+    // No count field: char[] length, or byte[] length (÷2 for UTF-16LE)
+    if (arr.elemType === Type.BYTE) {
+      const coder = this.getField("coder");
+      return (typeof coder === "number" && coder === 1) ? arr.length >> 1 : arr.length;
+    }
+    return arr.length;
+  }
+
   /**
    * Returns bitmap data if this is an android.graphics.Bitmap with available pixel data.
    * Checks legacy mBuffer first, then DumpData (from `am dumpheap -b`).
