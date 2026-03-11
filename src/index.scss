@@ -1380,10 +1380,11 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 .ah-hex-row {
   font-family: $mono;
   font-size: 0.75rem;
-  line-height: 1.25rem;
+  line-height: 20px; // must match ROW_HEIGHT in HexView.ts
   color: var(--ah-text);
   user-select: text;
   white-space: pre;
+  margin: 0; // reset pre default margin
 }
 
 .ah-hex-row--diff {
