@@ -11,6 +11,7 @@ html {
   line-height: 1.5;
   -webkit-text-size-adjust: 100%;
   tab-size: 4;
+  min-width: min-content;
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
     "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
@@ -234,6 +235,7 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 
 .ah-page {
   min-height: 100vh;
+  min-width: min-content;
   background: var(--ah-surface-page);
   display: flex;
   flex-direction: column;
@@ -991,7 +993,7 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
 // ─── SortableTable ───────────────────────────────────────────────────────────
 
 .ah-table-wrap {
-  overflow-x: clip;
+  overflow-x: auto;
 }
 
 .ah-table {
@@ -2206,7 +2208,7 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   background: var(--ah-surface);
   border: 1px solid var(--ah-border);
   max-height: 500px;
-  overflow-y: auto;
+  overflow: auto;
 }
 
 .ah-shared-mappings__table {
