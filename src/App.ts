@@ -20,6 +20,64 @@ import BitmapGalleryView from "./views/BitmapGalleryView";
 import StringsView from "./views/StringsView";
 import SmapsFileView from "./views/SmapsFileView";
 
+// ─── CmdTooltip ──────────────────────────────────────────────────────────────
+
+function CmdTooltip(): m.Component<{ commands: { label: string; cmd: string }[] }> {
+  let open = false;
+  let copiedIdx: number | null = null;
+  let hideTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function show() {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    open = true;
+  }
+  function scheduleHide() {
+    hideTimer = setTimeout(() => { open = false; copiedIdx = null; m.redraw(); }, 300);
+  }
+  function copyCmd(cmd: string, idx: number, e: Event) {
+    e.stopPropagation();
+    e.preventDefault();
+    navigator.clipboard.writeText(cmd).then(() => {
+      copiedIdx = idx;
+      m.redraw();
+      setTimeout(() => { if (copiedIdx === idx) { copiedIdx = null; m.redraw(); } }, 1500);
+    });
+  }
+
+  return {
+    view(vnode) {
+      const { commands } = vnode.attrs;
+      return m("span", {
+        className: "ah-cmd-tip",
+        onmouseenter: show,
+        onmouseleave: scheduleHide,
+        onclick: (e: Event) => { e.stopPropagation(); e.preventDefault(); show(); m.redraw(); },
+      }, [
+        m("span", { className: "ah-cmd-tip__icon" }, "?"),
+        open && m("div", {
+          className: "ah-cmd-tip__popup",
+          onmouseenter: show,
+          onmouseleave: scheduleHide,
+          onclick: (e: Event) => { e.stopPropagation(); e.preventDefault(); },
+        }, [
+          m("div", { className: "ah-cmd-tip__title" }, "adb commands"),
+          commands.map((c, i) =>
+            m("div", { className: "ah-cmd-tip__row", key: i }, [
+              m("span", { className: "ah-cmd-tip__label" }, c.label),
+              m("code", { className: "ah-cmd-tip__cmd" }, c.cmd),
+              m("button", {
+                className: "ah-cmd-tip__copy",
+                onclick: (e: Event) => copyCmd(c.cmd, i, e),
+                title: "Copy",
+              }, copiedIdx === i ? "\u2713" : "\u2398"),
+            ])
+          ),
+        ]),
+      ]);
+    },
+  };
+}
+
 // ─── Session type ─────────────────────────────────────────────────────────────
 
 type SessionStatus = "loading" | "ready" | "error";
@@ -594,9 +652,6 @@ export default function App(): m.Component {
               m("div", {
                 className: "ah-landing__dropzone",
                 onclick: () => fileEl?.click(),
-                title: "Capture with:\n"
-                  + "  adb shell am dumpheap <pid> /data/local/tmp/dump.hprof\n"
-                  + "  adb pull /data/local/tmp/dump.hprof",
               },
                 m("div", { className: "ah-mb-4" },
                   m("svg", { className: "ah-landing__drop-icon", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 1.5 },
@@ -604,15 +659,15 @@ export default function App(): m.Component {
                   )
                 ),
                 m("p", { className: "ah-landing__drop-text" }, "Drop an .hprof file here or click to browse"),
-                m("p", { className: "ah-landing__drop-hint" }, "Supports J2SE HPROF format with Android extensions")
+                m("p", { className: "ah-landing__drop-hint" }, "Supports J2SE HPROF format with Android extensions"),
+                m(CmdTooltip, { commands: [
+                  { label: "Dump heap", cmd: "adb shell am dumpheap <pid> /data/local/tmp/dump.hprof" },
+                  { label: "Pull file", cmd: "adb pull /data/local/tmp/dump.hprof" },
+                ] }),
               ),
-              m("div", { className: "ah-landing__session-row" },
+              m("div", { className: "ah-landing__session-row", style: { position: "relative" } },
                 m("label", {
                   className: "ah-landing__session-load",
-                  title: "Capture with:\n"
-                    + "  Single:  adb shell cat /proc/<pid>/smaps > smaps.txt\n"
-                    + "  Rollup:  adb shell cat /proc/<pid>/smaps_rollup > rollup.txt\n"
-                    + "  All:     adb shell 'for p in /proc/[0-9]*/smaps_rollup; do pid=$(basename $(dirname $p)); name=$(cat /proc/$pid/cmdline 2>/dev/null | tr \"\\\\0\" \" \"); echo \"===PID:$pid===$name\"; cat $p 2>/dev/null; done' > all.txt",
                 }, [
                   "or load a smaps text file",
                   m("input", {
@@ -626,6 +681,11 @@ export default function App(): m.Component {
                     },
                   }),
                 ]),
+                m(CmdTooltip, { commands: [
+                  { label: "Single process", cmd: "adb shell cat /proc/<pid>/smaps > smaps.txt" },
+                  { label: "Rollup", cmd: "adb shell cat /proc/<pid>/smaps_rollup > rollup.txt" },
+                  { label: "All processes", cmd: "adb shell 'for p in /proc/[0-9]*/smaps_rollup; do pid=$(basename $(dirname $p)); name=$(cat /proc/$pid/cmdline 2>/dev/null | tr \"\\0\" \" \"); echo \"===PID:$pid===$name\"; cat $p 2>/dev/null; done' > all.txt" },
+                ] }),
               ),
               m("div", { className: "ah-landing__actions" },
                 m("button", {
