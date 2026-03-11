@@ -235,6 +235,63 @@ describe("search on snapshot data", () => {
     // Just verify we have real data with different counts
     expect(snapProcs.length).not.toBe(liveProcs.length);
   });
+
+  it("snapshot search finds smaps groups (not found in live with no smaps)", () => {
+    // Live has 0 smaps pids, snapshot has 3 — a smaps-group-only query should
+    // find matches in snapshot but not in live
+    expect(snapSmaps.size).toBeGreaterThan(0);
+    expect(liveSmaps.size).toBe(0);
+
+    // Get a real smaps group name from snapshot data
+    const [pid, groups] = snapSmaps.entries().next().value!;
+    const groupName = groups[0].name;
+
+    const snapResults = searchProcesses(snapProcs, groupName, snapSmaps, snapRollups);
+    const liveResults = searchProcesses(liveProcs, groupName, liveSmaps, liveRollups);
+
+    // Snapshot should find the process via smaps path-to-root
+    expect(snapResults.has(pid)).toBe(true);
+    const match = snapResults.get(pid)!;
+    expect(match.smapsGroups.has(groupName)).toBe(true);
+
+    // Live won't find it via smaps (no smaps data loaded)
+    // It might still match if the group name happens to be in a process name/pid
+    // but the smapsGroups set should be empty
+    if (liveResults.has(pid)) {
+      expect(liveResults.get(pid)!.smapsGroups.size).toBe(0);
+    }
+  });
+
+  it("VMA search finds process via path-to-root in snapshot", () => {
+    // Search for a VMA address that exists in snapshot smaps data
+    const [pid, groups] = snapSmaps.entries().next().value!;
+    const entry = groups[0].entries[0];
+    const addr = entry.addrStart;
+
+    const r = searchProcesses(snapProcs, addr, snapSmaps, snapRollups);
+    expect(r.has(pid)).toBe(true);
+    const match = r.get(pid)!;
+    // Process matched via VMA sub-match, not directly
+    expect(match.vmaEntries.size).toBeGreaterThan(0);
+  });
+});
+
+// ── Cross-filter: no matches shows empty ─────────────────────────────────────
+
+describe("no-match produces empty filtered list", () => {
+  it("filterProcesses returns empty array for no-match query", () => {
+    const r = searchProcesses(liveProcs, "xyzzy_no_such_thing", liveSmaps, liveRollups);
+    expect(r.size).toBe(0);
+    const filtered = filterProcesses(liveProcs, r);
+    expect(filtered).toEqual([]);
+  });
+
+  it("filterProcesses returns empty even with many processes", () => {
+    expect(liveProcs.length).toBeGreaterThan(100);
+    const r = searchProcesses(liveProcs, "zzz_absolutely_nothing_matches_this", liveSmaps, liveRollups);
+    const filtered = filterProcesses(liveProcs, r);
+    expect(filtered.length).toBe(0);
+  });
 });
 
 // ── Highlight on real data ───────────────────────────────────────────────────

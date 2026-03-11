@@ -357,13 +357,14 @@ function SharedMappingsTable(): m.Component<{
   smapsData: Map<number, SmapsAggregated[]>;
   onDump: (pid: number, processName: string, label: string, regions: { addrStart: string; addrEnd: string }[]) => void;
   dumpDisabled: boolean;
+  searchResults?: SearchResults | null;
 }> {
   const sort = makeSort<SmapsNumericField | "processCount">("pssKb");
   let expandedMapping: string | null = null;
 
   return {
     view(vnode) {
-      const { mappings, loadedCount, loading, diffs, smapsData, onDump, dumpDisabled } = vnode.attrs;
+      const { mappings, loadedCount, loading, diffs, smapsData, onDump, dumpDisabled, searchResults } = vnode.attrs;
 
       const diffByName: Map<string, SharedMappingDiff> | null = diffs
         ? new Map(diffs.map(d => [d.current.name, d] as const))
@@ -493,7 +494,7 @@ function SharedMappingsTable(): m.Component<{
                         }, label),
                       ),
                     ]),
-                    mp.processes.map(p => {
+                    (searchResults ? mp.processes.filter(p => searchResults.has(p.pid)) : mp.processes).map(p => {
                       const procAgg = smapsData.get(p.pid);
                       const matchedGroup = procAgg?.find(g => g.name === mp.name);
                       const regions = matchedGroup?.entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }));
@@ -731,23 +732,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
   // Search state
   let searchQuery = "";
-  let searchResults: SearchResults = new Map();
-  let sharedMappingMatches = new Set<string>();
-  let lastSearchInput = ""; // for memoization
-
-  function updateSearch() {
-    const q = searchQuery.trim();
-    if (q === lastSearchInput) return;
-    lastSearchInput = q;
-    if (!q) {
-      searchResults = new Map();
-      sharedMappingMatches = new Set();
-      return;
-    }
-    const procs = processes ?? [];
-    searchResults = searchProcesses(procs, q, smapsData, smapsRollups);
-    // Shared mappings search will be done at render time (depends on aggregated data)
-  }
 
   function getBaseSnap(): Snapshot | null {
     if (!diffMode) return null;
@@ -1408,28 +1392,43 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
       const hasOomLabel = dProcs ? dProcs.some(p => p.oomLabel !== "") : false;
 
-      // Apply search filtering
-      updateSearch();
+      // Apply search filtering — computed at render time using display data (dProcs/dSmaps/dRollups)
       const isSearching = searchQuery.trim() !== "";
+
+      // Step 1: Search processes (name, pid, oomLabel, smaps groups, VMAs)
+      const searchResults: SearchResults = isSearching && dProcs
+        ? searchProcesses(dProcs, searchQuery, dSmaps, dRollups)
+        : new Map();
+
+      // Step 2: Search shared mappings by name
+      const sharedMappingNameMatches = isSearching && sharedMappings
+        ? searchSharedMappings(sharedMappings, searchQuery)
+        : new Set<string>();
+
+      // Step 3: Bidirectional cross-filter
+      // - Process match → include shared mappings that contain that process
+      // - Shared mapping name match → include processes that contribute to that mapping
+      const sharedMappingMatches = new Set(sharedMappingNameMatches);
+      if (isSearching && sharedMappings) {
+        for (const mp of sharedMappings) {
+          if (sharedMappingMatches.has(mp.name)) {
+            // Mapping matched by name → add its contributing processes to searchResults
+            for (const p of mp.processes) {
+              if (!searchResults.has(p.pid)) {
+                searchResults.set(p.pid, { process: false, smapsGroups: new Set(), vmaEntries: new Map() });
+              }
+            }
+          } else if (mp.processes.some(p => searchResults.has(p.pid))) {
+            // Process matched → include this mapping
+            sharedMappingMatches.add(mp.name);
+          }
+        }
+      }
+
       const filteredSorted = isSearching && sorted ? filterProcesses(sorted, searchResults) : sorted;
       const filteredDiffs = isSearching && sortedDiffs
         ? sortedDiffs.filter(d => searchResults.has(d.current.pid))
         : sortedDiffs;
-
-      // Update shared mapping search matches at render time
-      // Include mappings that match by name OR have a matching process
-      if (isSearching && sharedMappings) {
-        sharedMappingMatches = searchSharedMappings(sharedMappings, searchQuery);
-        // Also include mappings that contain processes matching the search
-        for (const mp of sharedMappings) {
-          if (sharedMappingMatches.has(mp.name)) continue;
-          if (mp.processes.some(p => searchResults.has(p.pid))) {
-            sharedMappingMatches.add(mp.name);
-          }
-        }
-      } else {
-        sharedMappingMatches = new Set();
-      }
       const filteredSharedMappings = isSearching && sharedMappings
         ? filterSharedMappings(sharedMappings, sharedMappingMatches)
         : sharedMappings;
@@ -1670,12 +1669,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     value: searchQuery,
                     oninput: (e: Event) => {
                       searchQuery = (e.target as HTMLInputElement).value;
-                      updateSearch();
                     },
                   }),
                   searchQuery && m("button", {
                     className: "ah-search__clear",
-                    onclick: () => { searchQuery = ""; updateSearch(); },
+                    onclick: () => { searchQuery = ""; },
                     title: "Clear search",
                   }, "\u00D7"),
                   searchQuery && (() => {
@@ -1978,6 +1976,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     smapsData: dSmaps,
                     onDump: handleVmaDump,
                     dumpDisabled: !connected || !isLive || !!vmaDumpStatus,
+                    searchResults: isSearching ? searchResults : null,
                   })
                 ),
               ])
