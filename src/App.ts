@@ -607,21 +607,6 @@ export default function App(): m.Component {
                 m("p", { className: "ah-landing__drop-hint" }, "Supports J2SE HPROF format with Android extensions")
               ),
               m("div", { className: "ah-landing__session-row" },
-                m("label", { className: "ah-landing__session-load" }, [
-                  "or load a saved session",
-                  m("input", {
-                    type: "file",
-                    accept: ".json",
-                    style: { display: "none" },
-                    onchange: (e: Event) => {
-                      const file = (e.target as HTMLInputElement).files?.[0];
-                      if (file) { pendingSessionFile = file; captureUsed = true; }
-                      (e.target as HTMLInputElement).value = "";
-                    },
-                  }),
-                ]),
-              ),
-              m("div", { className: "ah-landing__session-row" },
                 m("label", {
                   className: "ah-landing__session-load",
                   title: "Capture with:\n"
@@ -654,6 +639,21 @@ export default function App(): m.Component {
                     "Capture from device"
                   )
                 ),
+              ),
+              m("div", { className: "ah-landing__session-row" },
+                m("label", { className: "ah-landing__session-load" }, [
+                  "or load a saved session",
+                  m("input", {
+                    type: "file",
+                    accept: ".json",
+                    style: { display: "none" },
+                    onchange: (e: Event) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) { pendingSessionFile = file; captureUsed = true; }
+                      (e.target as HTMLInputElement).value = "";
+                    },
+                  }),
+                ]),
               ),
               error && (
                 m("div", { className: "ah-error-banner ah-mt-4" }, error)
