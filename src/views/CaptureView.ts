@@ -180,9 +180,10 @@ const SmapsSubTable: m.Component<{
   showDeltaCols: boolean;
   leadingColCount: number;
   searchMatch?: SearchMatch | null;
+  groupRenderPending?: boolean;
 }> = {
   view(vnode) {
-    const { pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated, showDeltaCols, leadingColCount, searchMatch } = vnode.attrs;
+    const { pid, processName, aggregated, expandedGroup, onToggleGroup, sortField, sortAsc, onToggleSort, vmaSortField, vmaSortAsc, onToggleVmaSort, onDump, dumpDisabled, smapsDiffs, prevAggregated, showDeltaCols, leadingColCount, searchMatch, groupRenderPending } = vnode.attrs;
 
     const diffByName: Map<string, SmapsDiff> | null = smapsDiffs
       ? new Map(smapsDiffs.map(d => [d.current.name, d] as const))
@@ -328,7 +329,16 @@ const SmapsSubTable: m.Component<{
               return cells;
             }),
           ]),
-          expandedGroup === g.name && sd?.status !== "removed" && (
+          expandedGroup === g.name && sd?.status !== "removed" && groupRenderPending && (
+            m("tr", [
+              m("td", {
+                colSpan: leadingColCount + SMAPS_COLUMNS.length * (showDeltaCols ? 2 : 1) + 1,
+                className: "ah-capture-td ah-animate-pulse",
+                style: { paddingLeft: "2rem", fontSize: "0.75rem", color: "var(--ah-text-faint)" },
+              }, "\u2026"),
+            ])
+          ),
+          expandedGroup === g.name && sd?.status !== "removed" && !groupRenderPending && (
             m(VmaEntries, {
               entries: g.entries,
               groupName: g.name,
@@ -768,6 +778,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   let searchQuery = "";
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
+  // Session loading state
+  let sessionLoading = false;
+
+  // Deferred render state for heavy expansions
+  let smapsPidRenderPending = false;
+  let smapsGroupRenderPending = false;
+
   function getBaseSnap(): Snapshot | null {
     if (!diffMode) return null;
     if (diffBaseIdx === null) {
@@ -881,6 +898,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   }
 
   function importSession(file: File) {
+    sessionLoading = true;
+    m.redraw();
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -915,9 +934,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
           hideDiff();
         }
         error = null;
+        sessionLoading = false;
         m.redraw();
       } catch (e) {
         error = `Failed to load session: ${e instanceof Error ? e.message : String(e)}`;
+        sessionLoading = false;
         m.redraw();
       }
     };
@@ -1429,7 +1450,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       const hasOomLabel = dProcs ? dProcs.some(p => p.oomLabel !== "") : false;
 
       // Apply search filtering — computed at render time using display data (dProcs/dSmaps/dRollups)
-      const isSearching = searchQuery.trim() !== "";
+      // Only run search after debounce settles (searchTimer === null)
+      const isSearching = searchQuery.trim() !== "" && searchTimer === null;
 
       // Step 1: Search processes (name, pid, oomLabel, smaps groups, VMAs)
       const searchResults: SearchResults = isSearching && dProcs
@@ -1487,7 +1509,15 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
       return m("div", [
         // Connection
-        !connected && !processes && (
+        sessionLoading && (
+          m("div", { className: "ah-capture-connect" }, [
+            m("div", {
+              className: "ah-animate-pulse",
+              style: { textAlign: "center", padding: "2rem", color: "var(--ah-text-secondary)" },
+            }, "Loading session\u2026"),
+          ])
+        ),
+        !sessionLoading && !connected && !processes && (
           m("div", { className: "ah-capture-connect" }, [
             m("button", {
               className: "ah-capture-connect__btn",
@@ -1697,14 +1727,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   m("input", {
                     type: "text",
                     className: "ah-search__input",
-                    placeholder: "Filter processes, mappings, VMAs\u2026",
+                    placeholder: "Filter process, state, mappings\u2026",
                     value: searchQuery,
                     oninput: (e: Event) => {
                       searchQuery = (e.target as HTMLInputElement).value;
-                      // Debounce: skip this redraw, schedule one after typing pause
-                      (e as any).redraw = false;
+                      // Debounce: allow redraw for "..." indicator, but gate search on timer
                       if (searchTimer) clearTimeout(searchTimer);
-                      searchTimer = setTimeout(() => { searchTimer = null; m.redraw(); }, 150);
+                      searchTimer = setTimeout(() => { searchTimer = null; m.redraw(); }, 2000);
                     },
                   }),
                   searchQuery && m("button", {
@@ -1712,7 +1741,10 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     onclick: () => { searchQuery = ""; if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; } },
                     title: "Clear search",
                   }, "\u00D7"),
-                  searchQuery && (() => {
+                  searchQuery && searchTimer !== null && (
+                    m("span", { className: "ah-search__count ah-animate-pulse" }, "\u2026")
+                  ),
+                  searchQuery && searchTimer === null && (() => {
                     const procCount = filteredSorted?.length ?? 0;
                     const sharedCount = filteredSharedMappings?.length ?? 0;
                     const total = procCount + sharedCount;
@@ -1890,10 +1922,16 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             if (isExpanded) {
                               expandedSmapsPid = null;
                               expandedSmapsGroup = null;
+                              smapsPidRenderPending = false;
                             } else if (conn.isRoot || hasSmaps) {
                               expandedSmapsPid = p.pid;
                               expandedSmapsGroup = null;
-                              if (!hasSmaps) fetchSmapsOnDemand(p.pid);
+                              if (!hasSmaps) {
+                                fetchSmapsOnDemand(p.pid);
+                              } else {
+                                smapsPidRenderPending = true;
+                                requestAnimationFrame(() => { smapsPidRenderPending = false; m.redraw(); });
+                              }
                             }
                           },
                         }, [
@@ -1967,13 +2005,31 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             }, "Fetching process smaps\u2026"),
                           ])
                         ),
-                        isSmapsExpanded && d.status !== "removed" && (
+                        isSmapsExpanded && d.status !== "removed" && smapsPidRenderPending && (
+                          m("tr", [
+                            m("td", {
+                              colSpan: colCount,
+                              className: "ah-capture-td ah-animate-pulse",
+                              style: { fontSize: "0.75rem", color: "var(--ah-text-faint)", borderTop: "1px solid var(--ah-border)" },
+                            }, "\u2026"),
+                          ])
+                        ),
+                        isSmapsExpanded && d.status !== "removed" && !smapsPidRenderPending && (
                           m(SmapsSubTable, {
                             pid: p.pid,
                             processName: p.name,
                             aggregated: dSmaps.get(p.pid)!,
                             expandedGroup: expandedSmapsGroup,
-                            onToggleGroup: (name: string) => { expandedSmapsGroup = expandedSmapsGroup === name ? null : name; },
+                            onToggleGroup: (name: string) => {
+                              if (expandedSmapsGroup === name) {
+                                expandedSmapsGroup = null;
+                                smapsGroupRenderPending = false;
+                              } else {
+                                expandedSmapsGroup = name;
+                                smapsGroupRenderPending = true;
+                                requestAnimationFrame(() => { smapsGroupRenderPending = false; m.redraw(); });
+                              }
+                            },
                             sortField: smapsSort.field,
                             sortAsc: smapsSort.asc,
                             onToggleSort: (f: SmapsSortFieldType) => smapsSort.toggle(f),
@@ -1987,6 +2043,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             showDeltaCols: diffMode,
                             leadingColCount: 3 + (hasOomLabel ? 1 : 0),
                             searchMatch: isSearching ? searchResults.get(p.pid) ?? null : null,
+                            groupRenderPending: smapsGroupRenderPending,
                           })
                         ),
                       ]);
