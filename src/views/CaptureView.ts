@@ -1731,9 +1731,24 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     value: searchQuery,
                     oninput: (e: Event) => {
                       searchQuery = (e.target as HTMLInputElement).value;
-                      // Debounce: allow redraw for "..." indicator, but gate search on timer
+                      // Suppress expensive Mithril redraw; show "..." via DOM
+                      (e as any).redraw = false;
                       if (searchTimer) clearTimeout(searchTimer);
                       searchTimer = setTimeout(() => { searchTimer = null; m.redraw(); }, 2000);
+                      // Show "..." indicator directly in DOM (no redraw needed)
+                      const inner = (e.target as HTMLElement).parentElement;
+                      if (inner) {
+                        let indicator = inner.querySelector(".ah-search__pending") as HTMLElement | null;
+                        if (!indicator) {
+                          indicator = document.createElement("span");
+                          indicator.className = "ah-search__count ah-animate-pulse ah-search__pending";
+                          indicator.textContent = "\u2026";
+                          inner.appendChild(indicator);
+                        }
+                        // Hide the real count if visible
+                        const count = inner.querySelector(".ah-search__count:not(.ah-search__pending)") as HTMLElement | null;
+                        if (count) count.style.display = "none";
+                      }
                     },
                   }),
                   searchQuery && m("button", {
@@ -1930,7 +1945,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                                 fetchSmapsOnDemand(p.pid);
                               } else {
                                 smapsPidRenderPending = true;
-                                requestAnimationFrame(() => { smapsPidRenderPending = false; m.redraw(); });
+                                // Double-RAF: ensures placeholder paints before heavy render
+                                requestAnimationFrame(() => { requestAnimationFrame(() => { smapsPidRenderPending = false; m.redraw(); }); });
                               }
                             }
                           },
@@ -2027,7 +2043,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                               } else {
                                 expandedSmapsGroup = name;
                                 smapsGroupRenderPending = true;
-                                requestAnimationFrame(() => { smapsGroupRenderPending = false; m.redraw(); });
+                                requestAnimationFrame(() => { requestAnimationFrame(() => { smapsGroupRenderPending = false; m.redraw(); }); });
                               }
                             },
                             sortField: smapsSort.field,
