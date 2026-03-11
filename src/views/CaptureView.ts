@@ -402,7 +402,12 @@ function SharedMappingsTable(): m.Component<{
         return sortWithDiffPinning(displayMappings, diffs, cmp);
       })();
 
-      const totals = computeSmapsTotals(displayMappings, diffs);
+      // Filter diffs to match displayMappings so totals/deltas are consistent
+      const displayNames = matchedPids ? new Set(displayMappings.map(mp => mp.name)) : null;
+      const displayDiffs = displayNames && diffs
+        ? diffs.filter(d => displayNames.has(d.current.name))
+        : diffs;
+      const totals = computeSmapsTotals(displayMappings, displayDiffs);
 
       const displayProcessCount = matchedPids
         ? new Set(displayMappings.flatMap(mp => mp.processes.map(p => p.pid))).size

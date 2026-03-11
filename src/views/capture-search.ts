@@ -22,8 +22,11 @@ export type SearchResults = Map<number, SearchMatch>;
 // ── Qualifier parsing ─────────────────────────────────────────────────────────
 
 /** Scoped search qualifier, e.g. "pss:>5mb" → { scope: "pss", value: ">5mb" } */
+/** All numeric fields searchable by column qualifier (SmapsNumericField + sizeKb). */
+type SizeField = SmapsNumericField | "sizeKb";
+
 interface ParsedQuery {
-  scope: "all" | "process" | "vma" | "mapping" | SmapsNumericField | "sizeKb";
+  scope: "all" | "process" | "vma" | "mapping" | SizeField;
   value: string;
 }
 
@@ -111,10 +114,10 @@ function processMatchesText(p: ProcessInfo, query: string): boolean {
     || textMatch(p.oomLabel, query);
 }
 
-function processMatchesSize(p: ProcessInfo, sizeQuery: { op: string; valueKb: number }, rollup?: SmapsRollup, field?: SmapsNumericField): boolean {
+function processMatchesSize(p: ProcessInfo, sizeQuery: { op: string; valueKb: number }, rollup?: SmapsRollup, field?: SizeField): boolean {
   if (field) {
-    // Single-field match
-    if (rollup && field in rollup) return matchesSize(rollup[field], sizeQuery.op, sizeQuery.valueKb);
+    // Single-field match — check rollup first (has all smaps fields), fallback to process
+    if (rollup && field in rollup) return matchesSize((rollup as any)[field], sizeQuery.op, sizeQuery.valueKb);
     if (field in p) return matchesSize((p as any)[field], sizeQuery.op, sizeQuery.valueKb);
     return false;
   }
@@ -184,7 +187,7 @@ export function searchProcesses(
     } else if (scope === "process") {
       processMatched = processMatchesText(p, q);
     } else if (isSizeScope) {
-      processMatched = processMatchesSize(p, sizeQuery!, rollup, scope as SmapsNumericField);
+      processMatched = processMatchesSize(p, sizeQuery!, rollup, scope as SizeField);
     }
     // vma/mapping scopes skip process-level matching
 
@@ -204,7 +207,7 @@ export function searchProcesses(
               if (sizeQuery) {
                 if (isSizeScope) {
                   // Single column
-                  const f = scope as SmapsNumericField;
+                  const f = scope as SizeField;
                   if (f in e && matchesSize((e as any)[f], sizeQuery.op, sizeQuery.valueKb)) {
                     matchedVmas.add(e.addrStart);
                   }
@@ -269,7 +272,7 @@ export function searchSharedMappings(
   for (const mp of mappings) {
     if (sizeQuery) {
       if (isSizeScope) {
-        const f = scope as SmapsNumericField;
+        const f = scope as SizeField;
         if (f in mp && matchesSize((mp as any)[f], sizeQuery.op, sizeQuery.valueKb)) {
           result.add(mp.name);
         }
@@ -309,7 +312,6 @@ export function filterSmapsGroups(
   match: SearchMatch,
 ): SmapsAggregated[] {
   if (match.process) return groups; // process-level match shows everything
-  if (match.smapsGroups.size === 0) return groups;
   return groups.filter(g => match.smapsGroups.has(g.name));
 }
 

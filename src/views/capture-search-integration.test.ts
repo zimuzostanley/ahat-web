@@ -4,7 +4,7 @@
  * exact render-time logic from CaptureView.
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import {
   searchProcesses,
   searchSharedMappings,
@@ -35,6 +35,9 @@ interface SessionFile {
   };
 }
 
+const SESSION_PATH = "/home/zimvm/projects/ahat-session-2026-03-07T21-58-36.json";
+const hasSession = existsSync(SESSION_PATH);
+
 let session: SessionFile;
 let liveProcs: ProcessInfo[];
 let liveRollups: Map<number, SmapsRollup>;
@@ -47,7 +50,8 @@ let snapSmaps: Map<number, SmapsAggregated[]>;
 let snapSharedMappings: SharedMapping[];
 
 beforeAll(() => {
-  const raw = readFileSync("/home/zimvm/projects/ahat-session-2026-03-07T21-58-36.json", "utf8");
+  if (!hasSession) return;
+  const raw = readFileSync(SESSION_PATH, "utf8");
   session = JSON.parse(raw);
 
   liveProcs = session.live.processes!;
@@ -106,9 +110,11 @@ function simulateRenderSearch(
   return { searchResults, filteredProcesses, filteredMappings, sharedMappingMatches };
 }
 
+const d = hasSession ? describe : describe.skip;
+
 // ── Process name search ──────────────────────────────────────────────────────
 
-describe("process name search on real data", () => {
+d("process name search on real data", () => {
   it("finds system_server by name", () => {
     const r = searchProcesses(liveProcs, "system_server", liveSmaps, liveRollups);
     expect(r.size).toBeGreaterThanOrEqual(1);
@@ -151,7 +157,7 @@ describe("process name search on real data", () => {
 
 // ── PID search ───────────────────────────────────────────────────────────────
 
-describe("PID search on real data", () => {
+d("PID search on real data", () => {
   it("finds process by exact PID", () => {
     const pid = liveProcs[0].pid;
     const r = searchProcesses(liveProcs, String(pid), liveSmaps, liveRollups);
@@ -166,7 +172,7 @@ describe("PID search on real data", () => {
 
 // ── OomLabel search ──────────────────────────────────────────────────────────
 
-describe("oomLabel search on real data", () => {
+d("oomLabel search on real data", () => {
   it("finds processes by oomLabel 'System'", () => {
     const sysProcs = liveProcs.filter(p => p.oomLabel.toLowerCase().includes("system"));
     if (sysProcs.length === 0) return;
@@ -179,7 +185,7 @@ describe("oomLabel search on real data", () => {
 
 // ── Smaps group search (path-to-root) ────────────────────────────────────────
 
-describe("smaps group search on real data", () => {
+d("smaps group search on real data", () => {
   it("finds processes with matching smaps groups", () => {
     if (snapSmaps.size === 0) return;
     const firstEntry = snapSmaps.entries().next().value;
@@ -198,7 +204,7 @@ describe("smaps group search on real data", () => {
 
 // ── Full render pipeline on live data ────────────────────────────────────────
 
-describe("full render pipeline on live data (no smaps)", () => {
+d("full render pipeline on live data (no smaps)", () => {
   it("system_server search: only system_server in process table", () => {
     const { filteredProcesses } = simulateRenderSearch(
       "system_server", liveProcs, liveSmaps, liveRollups, null,
@@ -224,7 +230,7 @@ describe("full render pipeline on live data (no smaps)", () => {
 
 // ── Full render pipeline on snapshot data (with smaps) ───────────────────────
 
-describe("full render pipeline on snapshot data (with smaps)", () => {
+d("full render pipeline on snapshot data (with smaps)", () => {
   it("system_server search: ONLY system_server in process table", () => {
     const { filteredProcesses } = simulateRenderSearch(
       "system_server", snapProcs, snapSmaps, snapRollups, snapSharedMappings,
@@ -326,7 +332,7 @@ describe("full render pipeline on snapshot data (with smaps)", () => {
 
 // ── Cross-filter: process → shared mappings ──────────────────────────────────
 
-describe("cross-filter: process → shared mappings", () => {
+d("cross-filter: process → shared mappings", () => {
   it("searching process name shows mappings from all matching processes", () => {
     const { filteredMappings, searchResults } = simulateRenderSearch(
       "system_server", snapProcs, snapSmaps, snapRollups, snapSharedMappings,
@@ -367,7 +373,7 @@ describe("cross-filter: process → shared mappings", () => {
 
 // ── Cross-filter: smaps sub-filtering ────────────────────────────────────────
 
-describe("smaps sub-table filtering", () => {
+d("smaps sub-table filtering", () => {
   it("process name match shows all smaps groups (no sub-filter)", () => {
     const r = searchProcesses(snapProcs, "system_server", snapSmaps, snapRollups);
     const ssPid = snapProcs.find(p => p.name === "system_server")!.pid;
@@ -421,7 +427,7 @@ describe("smaps sub-table filtering", () => {
 
 // ── Diff mode with search ────────────────────────────────────────────────────
 
-describe("diff mode with search", () => {
+d("diff mode with search", () => {
   it("search filters diffs correctly", () => {
     // Simulate diff between snapshot and live
     const diffs = diffProcesses(snapProcs, liveProcs);
@@ -448,7 +454,7 @@ describe("diff mode with search", () => {
 
 // ── No-match produces empty ──────────────────────────────────────────────────
 
-describe("no-match produces empty filtered list", () => {
+d("no-match produces empty filtered list", () => {
   it("filterProcesses returns empty array for no-match query", () => {
     const r = searchProcesses(liveProcs, "xyzzy_no_such_thing", liveSmaps, liveRollups);
     expect(r.size).toBe(0);
@@ -472,7 +478,7 @@ describe("no-match produces empty filtered list", () => {
 
 // ── Snapshot vs live search consistency ───────────────────────────────────────
 
-describe("snapshot vs live consistency", () => {
+d("snapshot vs live consistency", () => {
   it("same process name gives same results on both (modulo smaps)", () => {
     const liveR = simulateRenderSearch("system_server", liveProcs, liveSmaps, liveRollups, null);
     const snapR = simulateRenderSearch("system_server", snapProcs, snapSmaps, snapRollups, snapSharedMappings);
@@ -505,7 +511,7 @@ describe("snapshot vs live consistency", () => {
 
 // ── Highlight on real data ───────────────────────────────────────────────────
 
-describe("highlight on real data", () => {
+d("highlight on real data", () => {
   it("highlights process name match", () => {
     expect(highlightText("system_server", "system")).toEqual([
       { text: "system", highlight: true },
@@ -524,7 +530,7 @@ describe("highlight on real data", () => {
 
 // ── Size queries on real data ────────────────────────────────────────────────
 
-describe("size queries on real data", () => {
+d("size queries on real data", () => {
   it("finds large processes with >100mb", () => {
     const r = searchProcesses(liveProcs, ">100mb", liveSmaps, liveRollups);
     expect(r.size).toBeGreaterThanOrEqual(1);
@@ -561,7 +567,7 @@ describe("size queries on real data", () => {
 
 // ── Performance ──────────────────────────────────────────────────────────────
 
-describe("search performance", () => {
+d("search performance", () => {
   it("searches 386+ processes in under 10ms", () => {
     const start = performance.now();
     for (let i = 0; i < 100; i++) {

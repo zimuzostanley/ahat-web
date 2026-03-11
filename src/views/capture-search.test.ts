@@ -333,9 +333,9 @@ describe("qualified search (scope:value)", () => {
     makeProc(3, "surfaceflinger", { pssKb: 10_000, rssKb: 15_000 }),
   ];
   const rollups = new Map<number, SmapsRollup>([
-    [1, { pssKb: 200_000, rssKb: 300_000, privateDirtyKb: 150_000, privateCleanKb: 20_000, sharedDirtyKb: 5_000, sharedCleanKb: 25_000, swapKb: 1_000 }],
-    [2, { pssKb: 50_000, rssKb: 80_000, privateDirtyKb: 40_000, privateCleanKb: 5_000, sharedDirtyKb: 2_000, sharedCleanKb: 3_000, swapKb: 0 }],
-    [3, { pssKb: 10_000, rssKb: 15_000, privateDirtyKb: 8_000, privateCleanKb: 1_000, sharedDirtyKb: 500, sharedCleanKb: 500, swapKb: 0 }],
+    [1, { sizeKb: 400_000, pssKb: 200_000, rssKb: 300_000, privateDirtyKb: 150_000, privateCleanKb: 20_000, sharedDirtyKb: 5_000, sharedCleanKb: 25_000, swapKb: 1_000, swapPssKb: 500 }],
+    [2, { sizeKb: 100_000, pssKb: 50_000, rssKb: 80_000, privateDirtyKb: 40_000, privateCleanKb: 5_000, sharedDirtyKb: 2_000, sharedCleanKb: 3_000, swapKb: 0, swapPssKb: 0 }],
+    [3, { sizeKb: 20_000, pssKb: 10_000, rssKb: 15_000, privateDirtyKb: 8_000, privateCleanKb: 1_000, sharedDirtyKb: 500, sharedCleanKb: 500, swapKb: 0, swapPssKb: 0 }],
   ]);
   const smaps = new Map([
     [1, [makeGroup("/system/lib64/libc.so", [makeEntry("libc.so", "a000", { pssKb: 5_000, privateDirtyKb: 3_000 })])]],
