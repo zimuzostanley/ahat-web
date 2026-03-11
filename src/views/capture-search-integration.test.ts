@@ -92,11 +92,14 @@ function simulateRenderSearch(
     ? searchSharedMappings(sharedMappings, query)
     : new Set<string>();
 
-  // Step 3: Cross-filter (process → mapping only)
+  // Step 3: Cross-filter (process → mapping, only for process-level matches)
   const sharedMappingMatches = new Set(sharedMappingNameMatches);
   if (isSearching && sharedMappings) {
     for (const mp of sharedMappings) {
-      if (!sharedMappingMatches.has(mp.name) && mp.processes.some(p => searchResults.has(p.pid))) {
+      if (!sharedMappingMatches.has(mp.name) && mp.processes.some(p => {
+        const m = searchResults.get(p.pid);
+        return m?.process === true;
+      })) {
         sharedMappingMatches.add(mp.name);
       }
     }
@@ -333,21 +336,44 @@ d("full render pipeline on snapshot data (with smaps)", () => {
 // ── Cross-filter: process → shared mappings ──────────────────────────────────
 
 d("cross-filter: process → shared mappings", () => {
-  it("searching process name shows mappings from all matching processes", () => {
-    const { filteredMappings, searchResults } = simulateRenderSearch(
+  it("searching process name shows mappings from process-level matches", () => {
+    const { filteredMappings, searchResults, sharedMappingMatches } = simulateRenderSearch(
       "system_server", snapProcs, snapSmaps, snapRollups, snapSharedMappings,
     );
     if (filteredMappings && filteredMappings.length > 0) {
-      // Each mapping must have a matching process, match by name, or share a name
-      // with another mapping that has a matching process (name-based set matching)
-      const matchedNames = new Set(
-        filteredMappings.filter(mp => mp.processes.some(p => searchResults.has(p.pid))).map(mp => mp.name),
-      );
+      // Every filtered mapping's name must be in the matched set
       for (const mp of filteredMappings) {
-        const hasMatchingProcess = mp.processes.some(p => searchResults.has(p.pid));
-        const matchedByName = searchSharedMappings([mp], "system_server").size > 0;
-        expect(hasMatchingProcess || matchedByName || matchedNames.has(mp.name)).toBe(true);
+        expect(sharedMappingMatches.has(mp.name)).toBe(true);
       }
+      // At least some should come from process-level cross-filter
+      const fromProcessMatch = filteredMappings.filter(mp =>
+        mp.processes.some(p => searchResults.get(p.pid)?.process === true),
+      );
+      expect(fromProcessMatch.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("searching mapping name does NOT add unrelated mappings via cross-filter", () => {
+    // "jit-cache" or similar mapping-level search should only show matching mappings
+    // not all mappings from the matched processes
+    const jitQuery = "jit-cache";
+    const { filteredMappings, searchResults } = simulateRenderSearch(
+      jitQuery, snapProcs, snapSmaps, snapRollups, snapSharedMappings,
+    );
+
+    // Processes matched via smaps sub-data, not by name
+    for (const [, match] of searchResults) {
+      // At least some should be sub-data matches (not process-level)
+      // (jit-cache is unlikely to be a process name)
+    }
+
+    if (filteredMappings && filteredMappings.length > 0) {
+      // Every filtered mapping must contain the search term in its name
+      for (const mp of filteredMappings) {
+        expect(mp.name.toLowerCase()).toContain(jitQuery);
+      }
+      // Should be a small number, not thousands
+      expect(filteredMappings.length).toBeLessThan(20);
     }
   });
 

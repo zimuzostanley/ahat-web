@@ -1784,6 +1784,9 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
               )
             ) : (
               m("div", { className: "ah-capture-table-wrap" }, [
+                isSearching && sharedMappingNameMatches.size > 0 && (
+                  m("p", { className: "ah-search-hint" }, "Process sizes are from rollups, not filtered to matched mappings. See the Shared Mappings table below for filtered sizes.")
+                ),
                 m("table", { className: "ah-capture-table" }, [
                   m("thead", [
                     m("tr", { className: "ah-capture-table-header" }, [

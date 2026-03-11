@@ -1793,7 +1793,6 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  max-width: 400px;
 }
 .ah-search__input {
   flex: 1;
@@ -1828,6 +1827,13 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   font-size: 0.75rem;
   color: var(--ah-text-muted);
   white-space: nowrap;
+}
+
+.ah-search-hint {
+  font-size: 0.6875rem;
+  color: var(--ah-text-faint);
+  margin: 0 0 0.25rem;
+  font-style: italic;
 }
 
 .ah-capture-table-wrap {
