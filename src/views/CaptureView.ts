@@ -357,14 +357,14 @@ function SharedMappingsTable(): m.Component<{
   smapsData: Map<number, SmapsAggregated[]>;
   onDump: (pid: number, processName: string, label: string, regions: { addrStart: string; addrEnd: string }[]) => void;
   dumpDisabled: boolean;
-  searchResults?: SearchResults | null;
+  matchedPids?: Set<number> | null;
 }> {
   const sort = makeSort<SmapsNumericField | "processCount">("pssKb");
   let expandedMapping: string | null = null;
 
   return {
     view(vnode) {
-      const { mappings, loadedCount, loading, diffs, smapsData, onDump, dumpDisabled, searchResults } = vnode.attrs;
+      const { mappings, loadedCount, loading, diffs, smapsData, onDump, dumpDisabled, matchedPids } = vnode.attrs;
 
       const diffByName: Map<string, SharedMappingDiff> | null = diffs
         ? new Map(diffs.map(d => [d.current.name, d] as const))
@@ -494,7 +494,7 @@ function SharedMappingsTable(): m.Component<{
                         }, label),
                       ),
                     ]),
-                    (searchResults ? mp.processes.filter(p => searchResults.has(p.pid)) : mp.processes).map(p => {
+                    (matchedPids ? mp.processes.filter(p => matchedPids.has(p.pid)) : mp.processes).map(p => {
                       const procAgg = smapsData.get(p.pid);
                       const matchedGroup = procAgg?.find(g => g.name === mp.name);
                       const regions = matchedGroup?.entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }));
@@ -1405,21 +1405,15 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         ? searchSharedMappings(sharedMappings, searchQuery)
         : new Set<string>();
 
-      // Step 3: Bidirectional cross-filter
-      // - Process match → include shared mappings that contain that process
-      // - Shared mapping name match → include processes that contribute to that mapping
+      // Step 3: Cross-filter (process → mapping only)
+      // If a process matched, also show shared mappings that contain it.
+      // We do NOT do the reverse (mapping name match → inject processes) because
+      // a mapping like /system/lib/foo.so matching "system" should not pull in
+      // every process that uses that library.
       const sharedMappingMatches = new Set(sharedMappingNameMatches);
       if (isSearching && sharedMappings) {
         for (const mp of sharedMappings) {
-          if (sharedMappingMatches.has(mp.name)) {
-            // Mapping matched by name → add its contributing processes to searchResults
-            for (const p of mp.processes) {
-              if (!searchResults.has(p.pid)) {
-                searchResults.set(p.pid, { process: false, smapsGroups: new Set(), vmaEntries: new Map() });
-              }
-            }
-          } else if (mp.processes.some(p => searchResults.has(p.pid))) {
-            // Process matched → include this mapping
+          if (!sharedMappingMatches.has(mp.name) && mp.processes.some(p => searchResults.has(p.pid))) {
             sharedMappingMatches.add(mp.name);
           }
         }
@@ -1976,7 +1970,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     smapsData: dSmaps,
                     onDump: handleVmaDump,
                     dumpDisabled: !connected || !isLive || !!vmaDumpStatus,
-                    searchResults: isSearching ? searchResults : null,
+                    matchedPids: isSearching ? new Set(searchResults.keys()) : null,
                   })
                 ),
               ])
