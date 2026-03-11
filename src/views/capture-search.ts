@@ -19,6 +19,39 @@ export interface SearchMatch {
 /** Map from pid → SearchMatch. Only pids with at least one match are included. */
 export type SearchResults = Map<number, SearchMatch>;
 
+// ── Qualifier parsing ─────────────────────────────────────────────────────────
+
+/** Scoped search qualifier, e.g. "pss:>5mb" → { scope: "pss", value: ">5mb" } */
+interface ParsedQuery {
+  scope: "all" | "process" | "vma" | "mapping" | SmapsNumericField | "sizeKb";
+  value: string;
+}
+
+const SCOPE_ALIASES: Record<string, ParsedQuery["scope"]> = {
+  process: "process", proc: "process", p: "process",
+  vma: "vma", v: "vma",
+  mapping: "mapping", group: "mapping", map: "mapping", m: "mapping",
+  pss: "pssKb", rss: "rssKb",
+  pd: "privateDirtyKb", "private-dirty": "privateDirtyKb", privatedirty: "privateDirtyKb",
+  pc: "privateCleanKb", "private-clean": "privateCleanKb", privateclean: "privateCleanKb",
+  sd: "sharedDirtyKb", "shared-dirty": "sharedDirtyKb", shareddirty: "sharedDirtyKb",
+  sc: "sharedCleanKb", "shared-clean": "sharedCleanKb", sharedclean: "sharedCleanKb",
+  swap: "swapKb",
+  size: "sizeKb",
+};
+
+function parseQualifiedQuery(raw: string): ParsedQuery {
+  const colon = raw.indexOf(":");
+  if (colon > 0) {
+    const prefix = raw.slice(0, colon).toLowerCase().trim();
+    const scope = SCOPE_ALIASES[prefix];
+    if (scope) {
+      return { scope, value: raw.slice(colon + 1).trim().toLowerCase() };
+    }
+  }
+  return { scope: "all", value: raw.toLowerCase().trim() };
+}
+
 // ── Core search ──────────────────────────────────────────────────────────────
 
 const SIZE_SUFFIXES: [string, number][] = [
@@ -70,7 +103,13 @@ function processMatchesText(p: ProcessInfo, query: string): boolean {
     || textMatch(p.oomLabel, query);
 }
 
-function processMatchesSize(p: ProcessInfo, sizeQuery: { op: string; valueKb: number }, rollup?: SmapsRollup): boolean {
+function processMatchesSize(p: ProcessInfo, sizeQuery: { op: string; valueKb: number }, rollup?: SmapsRollup, field?: SmapsNumericField): boolean {
+  if (field) {
+    // Single-field match
+    if (rollup && field in rollup) return matchesSize(rollup[field], sizeQuery.op, sizeQuery.valueKb);
+    if (field in p) return matchesSize((p as any)[field], sizeQuery.op, sizeQuery.valueKb);
+    return false;
+  }
   // Check rollup fields first, then basic ProcessInfo fields
   if (rollup) {
     for (const f of PROCESS_SIZE_FIELDS) {
@@ -109,45 +148,80 @@ export function searchProcesses(
   rollups: Map<number, SmapsRollup>,
 ): SearchResults {
   const results: SearchResults = new Map();
-  const q = query.toLowerCase().trim();
+  const raw = query.trim();
+  if (!raw) return results;
+
+  const parsed = parseQualifiedQuery(raw);
+  const q = parsed.value;
   if (!q) return results;
 
-  const sizeQuery = parseSizeQuery(q);
+  const { scope } = parsed;
+
+  // For column-scoped size queries (pss:>5mb), the value must be a size expression
+  const isSizeScope = scope !== "all" && scope !== "process" && scope !== "vma" && scope !== "mapping";
+  const sizeQuery = isSizeScope ? parseSizeQuery(q) : (scope === "all" ? parseSizeQuery(q) : null);
+
+  // Column-scoped query requires a valid size expression
+  if (isSizeScope && !sizeQuery) return results;
 
   for (const p of processes) {
     const rollup = rollups.get(p.pid);
-    const processMatched = sizeQuery
-      ? processMatchesSize(p, sizeQuery, rollup)
-      : processMatchesText(p, q);
+
+    // Process-level match
+    let processMatched = false;
+    if (scope === "all") {
+      processMatched = sizeQuery
+        ? processMatchesSize(p, sizeQuery, rollup)
+        : processMatchesText(p, q);
+    } else if (scope === "process") {
+      processMatched = processMatchesText(p, q);
+    } else if (isSizeScope) {
+      processMatched = processMatchesSize(p, sizeQuery!, rollup, scope as SmapsNumericField);
+    }
+    // vma/mapping scopes skip process-level matching
 
     const smapsGroups = new Set<string>();
     const vmaEntries = new Map<string, Set<string>>();
 
-    // Search smaps sub-data for this process
-    const aggs = smapsData.get(p.pid);
-    if (aggs) {
-      for (const g of aggs) {
-        const groupMatched = !sizeQuery && smapsGroupMatchesText(g, q);
-        const matchedVmas = new Set<string>();
+    // Search smaps sub-data (skip for process-only scope)
+    if (scope !== "process") {
+      const aggs = smapsData.get(p.pid);
+      if (aggs) {
+        for (const g of aggs) {
+          const groupMatched = !sizeQuery && (scope === "all" || scope === "mapping") && smapsGroupMatchesText(g, q);
+          const matchedVmas = new Set<string>();
 
-        for (const e of g.entries) {
-          if (sizeQuery) {
-            // Check VMA size fields
-            for (const f of PROCESS_SIZE_FIELDS) {
-              if (matchesSize(e[f], sizeQuery.op, sizeQuery.valueKb)) {
-                matchedVmas.add(e.addrStart);
-                break;
+          if (scope !== "mapping") {
+            for (const e of g.entries) {
+              if (sizeQuery) {
+                if (isSizeScope) {
+                  // Single column
+                  const f = scope as SmapsNumericField;
+                  if (f in e && matchesSize((e as any)[f], sizeQuery.op, sizeQuery.valueKb)) {
+                    matchedVmas.add(e.addrStart);
+                  }
+                } else {
+                  // All size fields
+                  for (const f of PROCESS_SIZE_FIELDS) {
+                    if (matchesSize(e[f], sizeQuery.op, sizeQuery.valueKb)) {
+                      matchedVmas.add(e.addrStart);
+                      break;
+                    }
+                  }
+                }
+              } else if (scope === "all" || scope === "vma") {
+                if (vmaEntryMatchesText(e, q)) {
+                  matchedVmas.add(e.addrStart);
+                }
               }
             }
-          } else if (vmaEntryMatchesText(e, q)) {
-            matchedVmas.add(e.addrStart);
           }
-        }
 
-        if (groupMatched || matchedVmas.size > 0) {
-          smapsGroups.add(g.name);
-          if (matchedVmas.size > 0) {
-            vmaEntries.set(g.name, matchedVmas);
+          if (groupMatched || matchedVmas.size > 0) {
+            smapsGroups.add(g.name);
+            if (matchedVmas.size > 0) {
+              vmaEntries.set(g.name, matchedVmas);
+            }
           }
         }
       }
@@ -169,17 +243,34 @@ export function searchSharedMappings(
   query: string,
 ): Set<string> {
   const result = new Set<string>();
-  const q = query.toLowerCase().trim();
+  const raw = query.trim();
+  if (!raw) return result;
+
+  const parsed = parseQualifiedQuery(raw);
+  const q = parsed.value;
   if (!q) return result;
 
-  const sizeQuery = parseSizeQuery(q);
+  const { scope } = parsed;
+  // process-only or vma-only scopes don't match shared mappings by name
+  if (scope === "process" || scope === "vma") return result;
+
+  const isSizeScope = scope !== "all" && scope !== "mapping";
+  const sizeQuery = isSizeScope ? parseSizeQuery(q) : (scope === "all" ? parseSizeQuery(q) : null);
+  if (isSizeScope && !sizeQuery) return result;
 
   for (const mp of mappings) {
     if (sizeQuery) {
-      for (const f of PROCESS_SIZE_FIELDS) {
+      if (isSizeScope) {
+        const f = scope as SmapsNumericField;
         if (f in mp && matchesSize((mp as any)[f], sizeQuery.op, sizeQuery.valueKb)) {
           result.add(mp.name);
-          break;
+        }
+      } else {
+        for (const f of PROCESS_SIZE_FIELDS) {
+          if (f in mp && matchesSize((mp as any)[f], sizeQuery.op, sizeQuery.valueKb)) {
+            result.add(mp.name);
+            break;
+          }
         }
       }
     } else if (sharedMappingMatchesText(mp, q)) {

@@ -1688,7 +1688,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   m("input", {
                     type: "text",
                     className: "ah-search__input",
-                    placeholder: "Filter processes, mappings, VMAs\u2026",
+                    placeholder: "Filter (try pss:>5mb, process:, vma:, pd:)\u2026",
                     value: searchQuery,
                     oninput: (e: Event) => {
                       searchQuery = (e.target as HTMLInputElement).value;

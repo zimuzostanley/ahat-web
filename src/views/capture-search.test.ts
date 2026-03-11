@@ -323,3 +323,127 @@ describe("highlightText", () => {
     ]);
   });
 });
+
+// ── Qualified / scoped search ─────────────────────────────────────────────────
+
+describe("qualified search (scope:value)", () => {
+  const procs = [
+    makeProc(1, "system_server", { pssKb: 200_000, rssKb: 300_000 }),
+    makeProc(2, "com.google.chrome", { pssKb: 50_000, rssKb: 80_000 }),
+    makeProc(3, "surfaceflinger", { pssKb: 10_000, rssKb: 15_000 }),
+  ];
+  const rollups = new Map<number, SmapsRollup>([
+    [1, { pssKb: 200_000, rssKb: 300_000, privateDirtyKb: 150_000, privateCleanKb: 20_000, sharedDirtyKb: 5_000, sharedCleanKb: 25_000, swapKb: 1_000 }],
+    [2, { pssKb: 50_000, rssKb: 80_000, privateDirtyKb: 40_000, privateCleanKb: 5_000, sharedDirtyKb: 2_000, sharedCleanKb: 3_000, swapKb: 0 }],
+    [3, { pssKb: 10_000, rssKb: 15_000, privateDirtyKb: 8_000, privateCleanKb: 1_000, sharedDirtyKb: 500, sharedCleanKb: 500, swapKb: 0 }],
+  ]);
+  const smaps = new Map([
+    [1, [makeGroup("/system/lib64/libc.so", [makeEntry("libc.so", "a000", { pssKb: 5_000, privateDirtyKb: 3_000 })])]],
+  ]);
+
+  it("process: scope only matches process name/pid/oomLabel", () => {
+    const r = searchProcesses(procs, "process:system", smaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+    expect(r.get(1)!.process).toBe(true);
+  });
+
+  it("process: scope does NOT search smaps groups", () => {
+    const r = searchProcesses(procs, "process:libc", smaps, rollups);
+    expect(r.size).toBe(0);
+  });
+
+  it("vma: scope only matches VMA entries", () => {
+    const r = searchProcesses(procs, "vma:libc", smaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+    expect(r.get(1)!.process).toBe(false);
+    expect(r.get(1)!.smapsGroups.size).toBeGreaterThan(0);
+  });
+
+  it("vma: scope does NOT match process names", () => {
+    const r = searchProcesses(procs, "vma:system", smaps, rollups);
+    expect(r.size).toBe(0);
+  });
+
+  it("mapping: scope only matches smaps group names", () => {
+    const r = searchProcesses(procs, "mapping:libc", smaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+    expect(r.get(1)!.process).toBe(false);
+    expect(r.get(1)!.smapsGroups.has("/system/lib64/libc.so")).toBe(true);
+  });
+
+  it("pss: scope matches only PSS column", () => {
+    const r = searchProcesses(procs, "pss:>100mb", smaps, rollups);
+    // Only system_server has pss > 100mb (200_000kb = ~195mb)
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+  });
+
+  it("pd: scope matches only private dirty", () => {
+    const r = searchProcesses(procs, "pd:>100mb", smaps, rollups);
+    // Only system_server has privateDirty > 100mb (150_000kb = ~146mb)
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+  });
+
+  it("pd: scope with lower threshold matches more", () => {
+    const r = searchProcesses(procs, "pd:>30mb", smaps, rollups);
+    // system_server (150mb) and chrome (40mb) match
+    expect(r.size).toBe(2);
+  });
+
+  it("rss: scope matches only RSS column", () => {
+    const r = searchProcesses(procs, "rss:>200mb", smaps, rollups);
+    // Only system_server has rss > 200mb
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+  });
+
+  it("swap: scope matches swap column", () => {
+    const r = searchProcesses(procs, "swap:>0kb", smaps, rollups);
+    // Only system_server has swap > 0
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+  });
+
+  it("column-scoped query without valid size returns empty", () => {
+    const r = searchProcesses(procs, "pss:system", smaps, rollups);
+    expect(r.size).toBe(0);
+  });
+
+  it("pss: scope also matches VMA-level pss", () => {
+    const r = searchProcesses(procs, "pss:>4mb", smaps, rollups);
+    // system_server matches both at process level (200mb) and VMA level (5mb)
+    expect(r.has(1)).toBe(true);
+  });
+
+  it("proc: is alias for process:", () => {
+    const r = searchProcesses(procs, "proc:chrome", smaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(2)).toBe(true);
+  });
+
+  it("unrecognized prefix is treated as plain text", () => {
+    // "foo:bar" — "foo" not a known prefix, so search for literal "foo:bar"
+    const r = searchProcesses(procs, "foo:bar", smaps, rollups);
+    expect(r.size).toBe(0);
+  });
+
+  it("searchSharedMappings respects process: scope (returns empty)", () => {
+    const mappings = [makeSharedMapping("libc.so", { pssKb: 5000 })];
+    const r = searchSharedMappings(mappings, "process:libc");
+    expect(r.size).toBe(0);
+  });
+
+  it("searchSharedMappings respects pss: scope", () => {
+    const mappings = [
+      makeSharedMapping("libc.so", { pssKb: 5000 }),
+      makeSharedMapping("libm.so", { pssKb: 100 }),
+    ];
+    const r = searchSharedMappings(mappings, "pss:>3mb");
+    expect(r.size).toBe(1);
+    expect(r.has("libc.so")).toBe(true);
+  });
+});
