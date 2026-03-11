@@ -405,18 +405,19 @@ function SharedMappingsTable(): m.Component<{
           }).filter(mp => mp.processCount > 0)
         : mappings;
 
-      const sorted = (() => {
-        const cmp = (a: SharedMapping, b: SharedMapping) => {
-          return sort.asc ? a[sort.field] - b[sort.field] : b[sort.field] - a[sort.field];
-        };
-        return sortWithDiffPinning(displayMappings, diffs, cmp);
-      })();
-
-      // Filter diffs to match displayMappings so totals/deltas are consistent
+      // Filter diffs to match displayMappings so sort/totals/deltas are consistent
       const displayNames = matchedPids ? new Set(displayMappings.map(mp => mp.name)) : null;
       const displayDiffs = displayNames && diffs
         ? diffs.filter(d => displayNames.has(d.current.name))
         : diffs;
+
+      const sorted = (() => {
+        const cmp = (a: SharedMapping, b: SharedMapping) => {
+          return sort.asc ? a[sort.field] - b[sort.field] : b[sort.field] - a[sort.field];
+        };
+        return sortWithDiffPinning(displayMappings, displayDiffs, cmp);
+      })();
+
       const totals = computeSmapsTotals(displayMappings, displayDiffs);
 
       const displayProcessCount = matchedPids
@@ -1731,29 +1732,9 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     value: searchQuery,
                     oninput: (e: Event) => {
                       searchQuery = (e.target as HTMLInputElement).value;
-                      // Suppress expensive Mithril redraw; show "..." via DOM
                       (e as any).redraw = false;
                       if (searchTimer) clearTimeout(searchTimer);
-                      searchTimer = setTimeout(() => {
-                        searchTimer = null;
-                        // Remove DOM-injected indicator before Mithril redraws
-                        document.querySelectorAll(".ah-search__pending").forEach(el => el.remove());
-                        m.redraw();
-                      }, 1000);
-                      // Show "..." indicator directly in DOM (no redraw needed)
-                      const inner = (e.target as HTMLElement).parentElement;
-                      if (inner) {
-                        let indicator = inner.querySelector(".ah-search__pending") as HTMLElement | null;
-                        if (!indicator) {
-                          indicator = document.createElement("span");
-                          indicator.className = "ah-search__count ah-animate-pulse ah-search__pending";
-                          indicator.textContent = "\u2026";
-                          inner.appendChild(indicator);
-                        }
-                        // Hide the real count if visible
-                        const count = inner.querySelector(".ah-search__count:not(.ah-search__pending)") as HTMLElement | null;
-                        if (count) count.style.display = "none";
-                      }
+                      searchTimer = setTimeout(() => { searchTimer = null; m.redraw(); }, 500);
                     },
                   }),
                   searchQuery && m("button", {
@@ -1761,10 +1742,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     onclick: () => { searchQuery = ""; if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; } },
                     title: "Clear search",
                   }, "\u00D7"),
-                  searchQuery && searchTimer !== null && (
-                    m("span", { className: "ah-search__count ah-animate-pulse" }, "\u2026")
-                  ),
-                  searchQuery && searchTimer === null && (() => {
+                  isSearching && (() => {
                     const procCount = filteredSorted?.length ?? 0;
                     const sharedCount = filteredSharedMappings?.length ?? 0;
                     const total = procCount + sharedCount;
