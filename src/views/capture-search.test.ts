@@ -62,9 +62,15 @@ describe("searchProcesses", () => {
     expect(r.get(123)!.process).toBe(true);
   });
 
-  it("matches oomLabel", () => {
+  it("matches oomLabel with State: prefix", () => {
     const procs = [makeProc(1, "app", { oomLabel: "Foreground" })];
-    const r = searchProcesses(procs, "foreground", noSmaps, noRollups);
+    const r = searchProcesses(procs, "state: foreground", noSmaps, noRollups);
+    expect(r.size).toBe(1);
+  });
+
+  it("matches partial oomLabel", () => {
+    const procs = [makeProc(1, "app", { oomLabel: "Foreground" })];
+    const r = searchProcesses(procs, "foregr", noSmaps, noRollups);
     expect(r.size).toBe(1);
   });
 
@@ -83,25 +89,13 @@ describe("searchProcesses", () => {
     expect(r.get(1)!.smapsGroups.has("/system/lib/libc.so")).toBe(true);
   });
 
-  it("matches VMA entry name → path-to-root through group and process", () => {
+  it("does not match VMA entry names (only group/mapping names)", () => {
     const procs = [makeProc(1, "app")];
     const smaps = new Map([[1, [makeGroup("[heap]", [
       makeEntry("dalvik-main", "1000"),
-      makeEntry("dalvik-alloc", "2000"),
     ])]]]);
     const r = searchProcesses(procs, "dalvik-main", smaps, noRollups);
-    expect(r.size).toBe(1);
-    expect(r.get(1)!.smapsGroups.has("[heap]")).toBe(true);
-    expect(r.get(1)!.vmaEntries.get("[heap]")?.has("1000")).toBe(true);
-    expect(r.get(1)!.vmaEntries.get("[heap]")?.has("2000")).toBeUndefined;
-  });
-
-  it("matches VMA address", () => {
-    const procs = [makeProc(1, "app")];
-    const smaps = new Map([[1, [makeGroup("lib", [makeEntry("libc.so", "7f000000")])]]]);
-    const r = searchProcesses(procs, "7f000000", smaps, noRollups);
-    expect(r.size).toBe(1);
-    expect(r.get(1)!.vmaEntries.get("lib")?.has("7f000000")).toBe(true);
+    expect(r.size).toBe(0);
   });
 
   it("returns empty for no matches", () => {
@@ -125,19 +119,16 @@ describe("searchProcesses", () => {
     expect(r.get(1)!.smapsGroups.size).toBeGreaterThan(0);
   });
 
-  it("group name match also records matching VMA entries for sub-filtering", () => {
+  it("group name match does not populate vmaEntries", () => {
     const procs = [makeProc(1, "app")];
     const smaps = new Map([[1, [makeGroup("/memfd:jit-cache (deleted)", [
-      makeEntry("jit-cache", "1000"),  // name contains "jit-cache"
+      makeEntry("jit-cache", "1000"),
       makeEntry("other-stuff", "2000"),
     ])]]]);
     const r = searchProcesses(procs, "jit-cache", smaps, noRollups);
     expect(r.size).toBe(1);
     expect(r.get(1)!.smapsGroups.has("/memfd:jit-cache (deleted)")).toBe(true);
-    // VMA "jit-cache" also matched by name
-    expect(r.get(1)!.vmaEntries.get("/memfd:jit-cache (deleted)")?.has("1000")).toBe(true);
-    // VMA "other-stuff" did NOT match
-    expect(r.get(1)!.vmaEntries.get("/memfd:jit-cache (deleted)")?.has("2000")).toBeFalsy();
+    expect(r.get(1)!.vmaEntries.size).toBe(0);
   });
 });
 

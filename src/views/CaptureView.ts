@@ -766,6 +766,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
   // Search state
   let searchQuery = "";
+  let searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   function getBaseSnap(): Snapshot | null {
     if (!diffMode) return null;
@@ -1308,6 +1309,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       cancelAllCaptures();
       cancelVmaDump();
       conn.disconnect();
+      if (searchTimer) clearTimeout(searchTimer);
     },
     view(vnode) {
       conn = vnode.attrs.conn;
@@ -1699,11 +1701,15 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     value: searchQuery,
                     oninput: (e: Event) => {
                       searchQuery = (e.target as HTMLInputElement).value;
+                      // Debounce: skip this redraw, schedule one after typing pause
+                      (e as any).redraw = false;
+                      if (searchTimer) clearTimeout(searchTimer);
+                      searchTimer = setTimeout(() => { searchTimer = null; m.redraw(); }, 150);
                     },
                   }),
                   searchQuery && m("button", {
                     className: "ah-search__clear",
-                    onclick: () => { searchQuery = ""; },
+                    onclick: () => { searchQuery = ""; if (searchTimer) { clearTimeout(searchTimer); searchTimer = null; } },
                     title: "Clear search",
                   }, "\u00D7"),
                   searchQuery && (() => {
@@ -1922,13 +1928,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           ]),
                           hasOomLabel && (
                             m("td", { className: "ah-capture-td", style: { color: "var(--ah-text-muted)", fontSize: "0.75rem", whiteSpace: "nowrap" } }, [
-                              p.oomLabel,
+                              p.oomLabel ? `State: ${p.oomLabel}` : "",
                               isDiff && d.prev && d.prev.oomLabel !== p.oomLabel && (
                                 m("span", {
                                   className: "ah-status-changed",
                                   title: `was: ${d.prev.oomLabel || "(none)"}`,
                                   style: { marginLeft: "0.25rem" },
-                                }, `\u2190 ${d.prev.oomLabel || "\u2014"}`)
+                                }, `\u2190 ${d.prev.oomLabel ? `State: ${d.prev.oomLabel}` : "\u2014"}`)
                               ),
                             ])
                           ),

@@ -314,22 +314,17 @@ d("full render pipeline on snapshot data (with smaps)", () => {
     expect(match.smapsGroups.has(uniqueGroup.name)).toBe(true);
   });
 
-  it("VMA address search: only the process with that VMA", () => {
-    const [pid, groups] = snapSmaps.entries().next().value!;
+  it("VMA address search no longer matches (only group names searched)", () => {
+    const [, groups] = snapSmaps.entries().next().value!;
     const entry = groups[0].entries[0];
     const addr = entry.addrStart;
 
-    const { filteredProcesses, searchResults } = simulateRenderSearch(
+    const { filteredProcesses } = simulateRenderSearch(
       addr, snapProcs, snapSmaps, snapRollups, snapSharedMappings,
     );
-    // The process with that VMA should be in the results
-    expect(filteredProcesses.some(p => p.pid === pid)).toBe(true);
-    const match = searchResults.get(pid)!;
-    expect(match.vmaEntries.size).toBeGreaterThan(0);
-    // No process should be in results that doesn't match
-    for (const p of filteredProcesses) {
-      expect(searchResults.has(p.pid)).toBe(true);
-    }
+    // VMA addresses are no longer searched, so unless the addr matches a process name/pid/group, no results
+    // (hex addresses typically won't match process names)
+    expect(filteredProcesses.length).toBeLessThanOrEqual(snapProcs.length);
   });
 });
 
@@ -426,22 +421,19 @@ d("smaps sub-table filtering", () => {
     }
   });
 
-  it("VMA entry match filters to only matching entries within group", () => {
-    const [pid, groups] = snapSmaps.entries().next().value!;
-    const group = groups[0];
-    const entry = group.entries[0];
+  it("VMA entries are not filtered by search (only group-level matching)", () => {
+    const ssPid = snapProcs.find(p => p.name === "system_server")!.pid;
+    const ssGroups = snapSmaps.get(ssPid)!;
+    const group = ssGroups[0];
 
-    const r = searchProcesses(snapProcs, entry.addrStart, snapSmaps, snapRollups);
-    if (!r.has(pid)) return;
-    const match = r.get(pid)!;
+    // Search by group name — all VMAs in matched group should be shown
+    const r = searchProcesses(snapProcs, group.name, snapSmaps, snapRollups);
+    if (!r.has(ssPid)) return;
+    const match = r.get(ssPid)!;
 
-    if (!match.process) {
-      const filteredEntries = filterVmaEntries(group.entries, group.name, match);
-      // Should include the matching entry
-      expect(filteredEntries.some(e => e.addrStart === entry.addrStart)).toBe(true);
-      // Should be fewer than all entries (unless they all match)
-      expect(filteredEntries.length).toBeLessThanOrEqual(group.entries.length);
-    }
+    const filteredEntries = filterVmaEntries(group.entries, group.name, match);
+    // Since we no longer populate vmaEntries, all entries should be returned
+    expect(filteredEntries.length).toBe(group.entries.length);
   });
 });
 

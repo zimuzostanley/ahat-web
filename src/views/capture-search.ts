@@ -26,8 +26,7 @@ function textMatch(haystack: string, needle: string): boolean {
 
 /**
  * Search all process data for a text query. Case-insensitive substring match
- * across process name, PID, oomLabel, smaps group names, and VMA names/addresses.
- * Path-to-root: a VMA match keeps its parent group and process.
+ * across process name, PID, oomLabel, and smaps group (mapping) names.
  */
 export function searchProcesses(
   processes: ProcessInfo[],
@@ -42,7 +41,7 @@ export function searchProcesses(
   for (const p of processes) {
     const processMatched = textMatch(p.name, q)
       || textMatch(String(p.pid), q)
-      || textMatch(p.oomLabel, q);
+      || (!!p.oomLabel && textMatch(`state: ${p.oomLabel}`, q));
 
     const smapsGroups = new Set<string>();
     const vmaEntries = new Map<string, Set<string>>();
@@ -50,20 +49,8 @@ export function searchProcesses(
     const aggs = smapsData.get(p.pid);
     if (aggs) {
       for (const g of aggs) {
-        const groupMatched = textMatch(g.name, q);
-        const matchedVmas = new Set<string>();
-
-        for (const e of g.entries) {
-          if (textMatch(e.name, q) || textMatch(`${e.addrStart}-${e.addrEnd}`, q)) {
-            matchedVmas.add(e.addrStart);
-          }
-        }
-
-        if (groupMatched || matchedVmas.size > 0) {
+        if (textMatch(g.name, q)) {
           smapsGroups.add(g.name);
-          if (matchedVmas.size > 0) {
-            vmaEntries.set(g.name, matchedVmas);
-          }
         }
       }
     }
