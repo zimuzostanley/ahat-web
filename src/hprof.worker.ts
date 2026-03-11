@@ -689,13 +689,13 @@ function handleGetStringList(): StringListRow[] {
   for (const [, inst] of snap.instances) {
     const ci = inst.asClassInstance?.();
     if (!ci || !ci.isInstanceOfClass("java.lang.String")) continue;
-    const str = ci.asString(1000);
+    const str = ci.asString(-1);
     if (str === null) continue;
     const [className, display] = deobRow(ci);
     results.push({
       id: ci.id,
       value: str,
-      length: ci.stringLength(),
+      length: str.length,
       retainedSize: ci.getTotalRetainedSize().total,
       shallowSize: ci.getSize().java + ci.getSize().native_,
       heap: ci.heap?.name ?? "?",

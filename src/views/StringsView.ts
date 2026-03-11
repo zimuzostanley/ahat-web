@@ -19,7 +19,6 @@ function StringsView(): m.Component<StringsViewAttrs> {
   let exactMatch = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let scrollToResults = false;
-  let copyingId: number | null = null;
 
   function updateUrl(q: string) {
     const prev = window.history.state;
@@ -181,20 +180,9 @@ function StringsView(): m.Component<StringsViewAttrs> {
                       title: "Copy full string",
                       onclick: (e: Event) => {
                         e.stopPropagation();
-                        if (copyingId === r.id) return;
-                        copyingId = r.id;
-                        m.redraw();
-                        vnode.attrs.proxy.query<string | null>("getFullString", { id: r.id }).then(full => {
-                          navigator.clipboard.writeText(full ?? r.value);
-                          copyingId = null;
-                          m.redraw();
-                        }).catch(() => {
-                          navigator.clipboard.writeText(r.value);
-                          copyingId = null;
-                          m.redraw();
-                        });
+                        navigator.clipboard.writeText(r.value);
                       },
-                    }, copyingId === r.id ? "\u2026" : "\u2398"),
+                    }, "\u2398"),
                   ]),
                 },
               ],
