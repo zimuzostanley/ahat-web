@@ -603,19 +603,6 @@ export default function App(): m.Component {
                 m("p", { className: "ah-landing__drop-text" }, "Drop an .hprof file here or click to browse"),
                 m("p", { className: "ah-landing__drop-hint" }, "Supports J2SE HPROF format with Android extensions")
               ),
-              m("div", { className: "ah-landing__actions" },
-                m("button", {
-                  className: "ah-landing__capture-btn",
-                  onclick: () => { captureUsed = true; },
-                },
-                  m("span", { className: "ah-landing__capture-inner" },
-                    m("svg", { className: "ah-landing__capture-icon", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 1.5 },
-                      m("path", { strokeLinecap: "round", strokeLinejoin: "round", d: "M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" })
-                    ),
-                    "Capture from device"
-                  )
-                ),
-              ),
               m("div", { className: "ah-landing__session-row" },
                 m("label", { className: "ah-landing__session-load" }, [
                   "or load a saved session",
@@ -651,6 +638,19 @@ export default function App(): m.Component {
                     },
                   }),
                 ]),
+              ),
+              m("div", { className: "ah-landing__actions" },
+                m("button", {
+                  className: "ah-landing__capture-btn",
+                  onclick: () => { captureUsed = true; },
+                },
+                  m("span", { className: "ah-landing__capture-inner" },
+                    m("svg", { className: "ah-landing__capture-icon", fill: "none", viewBox: "0 0 24 24", stroke: "currentColor", strokeWidth: 1.5 },
+                      m("path", { strokeLinecap: "round", strokeLinejoin: "round", d: "M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.75.75 0 011.06 0z" })
+                    ),
+                    "Capture from device"
+                  )
+                ),
               ),
               error && (
                 m("div", { className: "ah-error-banner ah-mt-4" }, error)
