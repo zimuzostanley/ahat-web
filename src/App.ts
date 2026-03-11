@@ -34,15 +34,6 @@ function CmdTooltip(): m.Component<{ commands: { label: string; cmd: string }[] 
   function scheduleHide() {
     hideTimer = setTimeout(() => { open = false; copiedIdx = null; m.redraw(); }, 300);
   }
-  function copyCmd(cmd: string, idx: number, e: Event) {
-    e.stopPropagation();
-    e.preventDefault();
-    navigator.clipboard.writeText(cmd).then(() => {
-      copiedIdx = idx;
-      m.redraw();
-      setTimeout(() => { if (copiedIdx === idx) { copiedIdx = null; m.redraw(); } }, 1500);
-    });
-  }
 
   return {
     view(vnode) {
@@ -53,26 +44,31 @@ function CmdTooltip(): m.Component<{ commands: { label: string; cmd: string }[] 
         onmouseleave: scheduleHide,
         onclick: (e: Event) => { e.stopPropagation(); e.preventDefault(); show(); m.redraw(); },
       }, [
-        m("span", { className: "ah-cmd-tip__icon" }, "?"),
+        m("span", { className: "ah-cmd-tip__trigger" }, "adb commands"),
         open && m("div", {
           className: "ah-cmd-tip__popup",
           onmouseenter: show,
           onmouseleave: scheduleHide,
           onclick: (e: Event) => { e.stopPropagation(); e.preventDefault(); },
-        }, [
-          m("div", { className: "ah-cmd-tip__title" }, "adb commands"),
+        },
           commands.map((c, i) =>
             m("div", { className: "ah-cmd-tip__row", key: i }, [
-              m("span", { className: "ah-cmd-tip__label" }, c.label),
-              m("code", { className: "ah-cmd-tip__cmd" }, c.cmd),
-              m("button", {
-                className: "ah-cmd-tip__copy",
-                onclick: (e: Event) => copyCmd(c.cmd, i, e),
-                title: "Copy",
-              }, copiedIdx === i ? "\u2713" : "\u2398"),
+              m("div", { className: "ah-cmd-tip__label" }, c.label),
+              m("code", {
+                className: `ah-cmd-tip__cmd${copiedIdx === i ? " ah-cmd-tip__cmd--copied" : ""}`,
+                onclick: (e: Event) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  navigator.clipboard.writeText(c.cmd).then(() => {
+                    copiedIdx = i;
+                    m.redraw();
+                    setTimeout(() => { if (copiedIdx === i) { copiedIdx = null; m.redraw(); } }, 1500);
+                  });
+                },
+              }, copiedIdx === i ? "copied!" : c.cmd),
             ])
           ),
-        ]),
+        ),
       ]);
     },
   };
