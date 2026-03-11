@@ -357,15 +357,9 @@ d("cross-filter: process → shared mappings", () => {
     // "jit-cache" or similar mapping-level search should only show matching mappings
     // not all mappings from the matched processes
     const jitQuery = "jit-cache";
-    const { filteredMappings, searchResults } = simulateRenderSearch(
+    const { filteredMappings } = simulateRenderSearch(
       jitQuery, snapProcs, snapSmaps, snapRollups, snapSharedMappings,
     );
-
-    // Processes matched via smaps sub-data, not by name
-    for (const [, match] of searchResults) {
-      // At least some should be sub-data matches (not process-level)
-      // (jit-cache is unlikely to be a process name)
-    }
 
     if (filteredMappings && filteredMappings.length > 0) {
       // Every filtered mapping must contain the search term in its name

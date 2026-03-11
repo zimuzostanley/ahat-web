@@ -1829,6 +1829,22 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   white-space: nowrap;
 }
 
+.ah-smaps-file {
+  padding: 1rem;
+}
+.ah-smaps-file__title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ah-text);
+  margin: 0 0 0.75rem;
+}
+.ah-smaps-file__meta {
+  font-weight: normal;
+  font-size: 0.8125rem;
+  color: var(--ah-text-faint);
+  margin-left: 0.5rem;
+}
+
 .ah-search-hint {
   font-size: 0.6875rem;
   color: var(--ah-text-faint);

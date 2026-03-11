@@ -1,7 +1,7 @@
 import m from "mithril";
 import { Fragment } from "./mithril-helpers";
 import type { OverviewData } from "./hprof.worker";
-import { AdbConnection } from "./adb/capture";
+import { AdbConnection, parseSmaps, aggregateSmaps, type SmapsAggregated } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
 import { Breadcrumbs } from "./components";
@@ -18,6 +18,7 @@ import SearchView from "./views/SearchView";
 import ObjectsView from "./views/ObjectsView";
 import BitmapGalleryView from "./views/BitmapGalleryView";
 import StringsView from "./views/StringsView";
+import SmapsFileView from "./views/SmapsFileView";
 
 // ─── Session type ─────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ export interface VmaRegion { addrStart: string; addrEnd: string }
 interface Session {
   id: string;
   name: string;
-  kind: "hprof" | "vmadump";
+  kind: "hprof" | "vmadump" | "smaps";
   status: SessionStatus;
   buffer: ArrayBuffer | null;
   proxy: WorkerProxy | null;
@@ -38,6 +39,7 @@ interface Session {
   worker: Worker | null;
   errorMsg: string | null;
   vmaRegions?: VmaRegion[];
+  smapsAggregated?: SmapsAggregated[];
 }
 
 let nextSessionId = 1;
@@ -296,6 +298,35 @@ export default function App(): m.Component {
     activeTab = sessionId;
   }
 
+  async function loadSmapsFile(file: File) {
+    error = null;
+    try {
+      const text = await file.text();
+      const entries = parseSmaps(text);
+      if (entries.length === 0) {
+        error = "No smaps data found in file. Expected /proc/[pid]/smaps or smaps_rollup format.";
+        m.redraw();
+        return;
+      }
+      const aggregated = aggregateSmaps(entries);
+      const sessionId = `session-${nextSessionId++}`;
+      const newSession: Session = {
+        id: sessionId, name: file.name.replace(/\.(txt|smaps)$/i, ""), kind: "smaps", status: "ready",
+        buffer: null, proxy: null, overview: null,
+        progress: { msg: "", pct: 100 },
+        worker: null, errorMsg: null,
+        smapsAggregated: aggregated,
+      };
+      sessions = [...sessions, newSession];
+      activeTab = sessionId;
+      m.redraw();
+    } catch (err: unknown) {
+      console.error(err);
+      error = err instanceof Error ? err.message : "Failed to read smaps file";
+      m.redraw();
+    }
+  }
+
   // postMessage handler for opening hprof from opener/parent
   function messageHandler(e: MessageEvent) {
     const d = e.data;
@@ -398,7 +429,7 @@ export default function App(): m.Component {
                       key: s.id,
                       className: `ah-tab__group ah-tab${activeTab === s.id ? " ah-tab--active" : ""}`,
                       onclick: () => switchToTab(s.id),
-                      title: s.name + (s.kind === "vmadump" ? " (VMA dump)" : " (heap dump)"),
+                      title: s.name + (s.kind === "vmadump" ? " (VMA dump)" : s.kind === "smaps" ? " (smaps)" : " (heap dump)"),
                     },
                       s.status === "loading" && m("span", { className: "ah-tab__dot ah-tab__dot--loading" }),
                       s.status === "error" && m("span", { className: "ah-tab__dot ah-tab__dot--error" }),
@@ -557,6 +588,21 @@ export default function App(): m.Component {
                   }),
                 ]),
               ),
+              m("div", { className: "ah-landing__session-row" },
+                m("label", { className: "ah-landing__session-load" }, [
+                  "or load a smaps text file",
+                  m("input", {
+                    type: "file",
+                    accept: ".txt,.smaps",
+                    style: { display: "none" },
+                    onchange: (e: Event) => {
+                      const file = (e.target as HTMLInputElement).files?.[0];
+                      if (file) loadSmapsFile(file);
+                      (e.target as HTMLInputElement).value = "";
+                    },
+                  }),
+                ]),
+              ),
               error && (
                 m("div", { className: "ah-error-banner ah-mt-4" }, error)
               )
@@ -634,6 +680,13 @@ export default function App(): m.Component {
                     .filter(s => s.kind === "vmadump" && s.id !== activeSession.id && s.status === "ready" && s.buffer)
                     .map(s => ({ id: s.id, name: s.name, buffer: s.buffer! })),
                 })
+              )
+            ),
+
+            // Ready — smaps file view
+            activeSession.status === "ready" && activeSession.kind === "smaps" && activeSession.smapsAggregated && (
+              m("main", { className: "ah-main" },
+                m(SmapsFileView, { aggregated: activeSession.smapsAggregated, name: activeSession.name }),
               )
             ),
 
