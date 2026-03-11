@@ -209,7 +209,11 @@ const SmapsSubTable: m.Component<{
     // Apply search filtering to smaps groups
     const displayGroups = searchMatch ? filterSmapsGroups(sorted, searchMatch) : sorted;
 
-    const totals = computeSmapsTotals(aggregated, smapsDiffs);
+    // Totals should reflect filtered groups, not all groups
+    const filteredDiffs = searchMatch && !searchMatch.process && searchMatch.smapsGroups.size > 0 && smapsDiffs
+      ? smapsDiffs.filter(d => searchMatch.smapsGroups.has(d.current.name))
+      : smapsDiffs;
+    const totals = computeSmapsTotals(displayGroups, filteredDiffs);
 
     return m(Fragment, [
       // Sub-table header
@@ -370,20 +374,45 @@ function SharedMappingsTable(): m.Component<{
         ? new Map(diffs.map(d => [d.current.name, d] as const))
         : null;
 
+      // Recompute mapping stats when filtering by matched pids
+      const displayMappings = matchedPids
+        ? mappings.map(mp => {
+            const filteredProcs = mp.processes.filter(p => matchedPids.has(p.pid));
+            if (filteredProcs.length === mp.processes.length) return mp;
+            return {
+              ...mp,
+              processCount: filteredProcs.length,
+              pssKb: filteredProcs.reduce((s, p) => s + p.pssKb, 0),
+              rssKb: filteredProcs.reduce((s, p) => s + p.rssKb, 0),
+              sizeKb: filteredProcs.reduce((s, p) => s + p.sizeKb, 0),
+              sharedCleanKb: filteredProcs.reduce((s, p) => s + p.sharedCleanKb, 0),
+              sharedDirtyKb: filteredProcs.reduce((s, p) => s + p.sharedDirtyKb, 0),
+              privateCleanKb: filteredProcs.reduce((s, p) => s + p.privateCleanKb, 0),
+              privateDirtyKb: filteredProcs.reduce((s, p) => s + p.privateDirtyKb, 0),
+              swapKb: filteredProcs.reduce((s, p) => s + p.swapKb, 0),
+              processes: filteredProcs,
+            };
+          }).filter(mp => mp.processCount > 0)
+        : mappings;
+
       const sorted = (() => {
         const cmp = (a: SharedMapping, b: SharedMapping) => {
           return sort.asc ? a[sort.field] - b[sort.field] : b[sort.field] - a[sort.field];
         };
-        return sortWithDiffPinning(mappings, diffs, cmp);
+        return sortWithDiffPinning(displayMappings, diffs, cmp);
       })();
 
-      const totals = computeSmapsTotals(mappings, diffs);
+      const totals = computeSmapsTotals(displayMappings, diffs);
+
+      const displayProcessCount = matchedPids
+        ? new Set(displayMappings.flatMap(mp => mp.processes.map(p => p.pid))).size
+        : loadedCount;
 
       return m("div", { className: "ah-shared-mappings" }, [
         m("h3", { className: "ah-sub-heading" }, [
           "Shared Mappings",
           m("span", { style: { fontWeight: "normal", marginLeft: "0.5rem" } },
-            `(${mappings.length} mappings across ${loadedCount} processes)`,
+            `(${displayMappings.length} mappings across ${displayProcessCount} processes)`,
           ),
           loading && m("span", { className: "ah-animate-pulse", style: { marginLeft: "0.5rem", color: "var(--ah-link-alt)" } }, "loading\u2026"),
         ]),
