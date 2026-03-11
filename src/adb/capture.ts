@@ -686,6 +686,38 @@ export function parseSmapsRollups(output: string): Map<number, SmapsRollup & { n
   return result;
 }
 
+/** Parse batch full-smaps output delimited by ===PID:N===name markers.
+ *  Each block contains raw /proc/[pid]/smaps data (VMA headers + KV lines). */
+export function parseBatchSmaps(output: string): Map<number, { name: string; aggregated: SmapsAggregated[] }> {
+  const result = new Map<number, { name: string; aggregated: SmapsAggregated[] }>();
+  const PID_RE = /^===PID:(\d+)===(.*)$/;
+  let pid = -1;
+  let name = "";
+  let block: string[] = [];
+
+  function flushBlock() {
+    if (pid < 0) return;
+    const entries = parseSmaps(block.join("\n"));
+    if (entries.length > 0) {
+      result.set(pid, { name: name || `pid ${pid}`, aggregated: aggregateSmaps(entries) });
+    }
+  }
+
+  for (const line of output.split("\n")) {
+    const m = PID_RE.exec(line);
+    if (m) {
+      flushBlock();
+      pid = parseInt(m[1], 10);
+      name = m[2] || "";
+      block = [];
+      continue;
+    }
+    if (pid >= 0) block.push(line);
+  }
+  flushBlock();
+  return result;
+}
+
 /** Aggregate smaps data across all processes, grouping by mapping identity.
  *  File-backed mappings (inode > 0) are keyed by dev:inode to avoid pathname collisions.
  *  Anonymous mappings (inode == 0) are keyed by name. Sorted by total PSS descending. */

@@ -1,7 +1,7 @@
 import m from "mithril";
 import { Fragment } from "./mithril-helpers";
 import type { OverviewData } from "./hprof.worker";
-import { AdbConnection, parseSmaps, aggregateSmaps, type SmapsAggregated } from "./adb/capture";
+import { AdbConnection, parseSmaps, aggregateSmaps, parseSmapsRollups, parseBatchSmaps, type SmapsAggregated } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
 import { Breadcrumbs } from "./components";
@@ -40,6 +40,7 @@ interface Session {
   errorMsg: string | null;
   vmaRegions?: VmaRegion[];
   smapsAggregated?: SmapsAggregated[];
+  smapsProcesses?: { pid: number; name: string; aggregated: SmapsAggregated[] }[];
 }
 
 let nextSessionId = 1;
@@ -302,22 +303,64 @@ export default function App(): m.Component {
     error = null;
     try {
       const text = await file.text();
+      const isBatch = /^===PID:\d+===/m.test(text);
+      const sessionName = file.name.replace(/\.(txt|smaps)$/i, "");
+
+      if (isBatch) {
+        // Try batch full smaps first (has VMA headers inside PID blocks)
+        const batchFull = parseBatchSmaps(text);
+        if (batchFull.size > 0) {
+          const procs = [...batchFull.entries()].map(([pid, d]) => ({ pid, name: d.name, aggregated: d.aggregated }));
+          const sessionId = `session-${nextSessionId++}`;
+          sessions = [...sessions, {
+            id: sessionId, name: sessionName, kind: "smaps", status: "ready",
+            buffer: null, proxy: null, overview: null,
+            progress: { msg: "", pct: 100 },
+            worker: null, errorMsg: null,
+            smapsProcesses: procs,
+          }];
+          activeTab = sessionId;
+          m.redraw();
+          return;
+        }
+        // Fall back to batch rollup format
+        const rollups = parseSmapsRollups(text);
+        if (rollups.size > 0) {
+          const procs = [...rollups.entries()].map(([pid, r]) => ({
+            pid,
+            name: r.name ?? `pid ${pid}`,
+            aggregated: [{ name: "[rollup]", count: 1, ...r, entries: [] }] as SmapsAggregated[],
+          }));
+          const sessionId = `session-${nextSessionId++}`;
+          sessions = [...sessions, {
+            id: sessionId, name: sessionName, kind: "smaps", status: "ready",
+            buffer: null, proxy: null, overview: null,
+            progress: { msg: "", pct: 100 },
+            worker: null, errorMsg: null,
+            smapsProcesses: procs,
+          }];
+          activeTab = sessionId;
+          m.redraw();
+          return;
+        }
+      }
+
+      // Single process smaps or smaps_rollup
       const entries = parseSmaps(text);
       if (entries.length === 0) {
-        error = "No smaps data found in file. Expected /proc/[pid]/smaps or smaps_rollup format.";
+        error = "No smaps data found. Expected /proc/[pid]/smaps, smaps_rollup, or batch ===PID:N=== format.";
         m.redraw();
         return;
       }
       const aggregated = aggregateSmaps(entries);
       const sessionId = `session-${nextSessionId++}`;
-      const newSession: Session = {
-        id: sessionId, name: file.name.replace(/\.(txt|smaps)$/i, ""), kind: "smaps", status: "ready",
+      sessions = [...sessions, {
+        id: sessionId, name: sessionName, kind: "smaps", status: "ready",
         buffer: null, proxy: null, overview: null,
         progress: { msg: "", pct: 100 },
         worker: null, errorMsg: null,
         smapsAggregated: aggregated,
-      };
-      sessions = [...sessions, newSession];
+      }];
       activeTab = sessionId;
       m.redraw();
     } catch (err: unknown) {
@@ -589,7 +632,13 @@ export default function App(): m.Component {
                 ]),
               ),
               m("div", { className: "ah-landing__session-row" },
-                m("label", { className: "ah-landing__session-load" }, [
+                m("label", {
+                  className: "ah-landing__session-load",
+                  title: "Capture with:\n"
+                    + "  Single:  adb shell cat /proc/<pid>/smaps > smaps.txt\n"
+                    + "  Rollup:  adb shell cat /proc/<pid>/smaps_rollup > rollup.txt\n"
+                    + "  All:     adb shell 'for p in /proc/[0-9]*/smaps_rollup; do pid=$(basename $(dirname $p)); name=$(cat /proc/$pid/cmdline 2>/dev/null | tr \"\\\\0\" \" \"); echo \"===PID:$pid===$name\"; cat $p 2>/dev/null; done' > all.txt",
+                }, [
                   "or load a smaps text file",
                   m("input", {
                     type: "file",
@@ -684,9 +733,13 @@ export default function App(): m.Component {
             ),
 
             // Ready — smaps file view
-            activeSession.status === "ready" && activeSession.kind === "smaps" && activeSession.smapsAggregated && (
+            activeSession.status === "ready" && activeSession.kind === "smaps" && (activeSession.smapsAggregated || activeSession.smapsProcesses) && (
               m("main", { className: "ah-main" },
-                m(SmapsFileView, { aggregated: activeSession.smapsAggregated, name: activeSession.name }),
+                m(SmapsFileView, {
+                  aggregated: activeSession.smapsAggregated ?? null,
+                  processes: activeSession.smapsProcesses ?? null,
+                  name: activeSession.name,
+                }),
               )
             ),
 
