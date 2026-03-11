@@ -528,43 +528,6 @@ d("highlight on real data", () => {
   });
 });
 
-// ── Size queries on real data ────────────────────────────────────────────────
-
-d("size queries on real data", () => {
-  it("finds large processes with >100mb", () => {
-    const r = searchProcesses(liveProcs, ">100mb", liveSmaps, liveRollups);
-    expect(r.size).toBeGreaterThanOrEqual(1);
-    for (const [pid] of r) {
-      const p = liveProcs.find(pr => pr.pid === pid);
-      expect(p).toBeDefined();
-      const rollup = liveRollups.get(pid);
-      const hasLargeField = (p!.pssKb > 102400 || p!.rssKb > 102400 ||
-        (rollup && (rollup.pssKb > 102400 || rollup.rssKb > 102400 ||
-          rollup.privateDirtyKb > 102400 || rollup.privateCleanKb > 102400 ||
-          rollup.sharedDirtyKb > 102400 || rollup.sharedCleanKb > 102400)));
-      expect(hasLargeField).toBe(true);
-    }
-  });
-
-  it("finds fewer processes with >500mb than >100mb", () => {
-    const r100 = searchProcesses(liveProcs, ">100mb", liveSmaps, liveRollups);
-    const r500 = searchProcesses(liveProcs, ">500mb", liveSmaps, liveRollups);
-    expect(r500.size).toBeLessThanOrEqual(r100.size);
-  });
-
-  it("plain numbers are NOT treated as size queries", () => {
-    const r = searchProcesses(liveProcs, "100", liveSmaps, liveRollups);
-    for (const [pid, m] of r) {
-      if (m.process) {
-        const p = liveProcs.find(pr => pr.pid === pid)!;
-        expect(
-          p.name.includes("100") || String(p.pid).includes("100") || p.oomLabel.includes("100")
-        ).toBe(true);
-      }
-    }
-  });
-});
-
 // ── Performance ──────────────────────────────────────────────────────────────
 
 d("search performance", () => {

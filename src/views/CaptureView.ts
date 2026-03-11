@@ -1439,15 +1439,17 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         ? searchSharedMappings(sharedMappings, searchQuery)
         : new Set<string>();
 
-      // Step 3: Cross-filter (process → mapping only)
-      // If a process matched, also show shared mappings that contain it.
-      // We do NOT do the reverse (mapping name match → inject processes) because
-      // a mapping like /system/lib/foo.so matching "system" should not pull in
-      // every process that uses that library.
+      // Step 3: Cross-filter (process → mapping, only for process-level matches)
+      // If a process matched by name/pid/oomLabel, show its shared mappings too.
+      // If a process matched only via smaps sub-data (e.g. "jit-cache"), do NOT
+      // pull in all its shared mappings — that would show thousands of unrelated ones.
       const sharedMappingMatches = new Set(sharedMappingNameMatches);
       if (isSearching && sharedMappings) {
         for (const mp of sharedMappings) {
-          if (!sharedMappingMatches.has(mp.name) && mp.processes.some(p => searchResults.has(p.pid))) {
+          if (!sharedMappingMatches.has(mp.name) && mp.processes.some(p => {
+            const m = searchResults.get(p.pid);
+            return m?.process === true; // only process-level matches
+          })) {
             sharedMappingMatches.add(mp.name);
           }
         }
@@ -1693,7 +1695,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                   m("input", {
                     type: "text",
                     className: "ah-search__input",
-                    placeholder: "Filter (try pss:>5mb, process:, vma:, pd:)\u2026",
+                    placeholder: "Filter processes, mappings, VMAs\u2026",
                     value: searchQuery,
                     oninput: (e: Event) => {
                       searchQuery = (e.target as HTMLInputElement).value;
