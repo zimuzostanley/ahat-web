@@ -1928,13 +1928,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           ]),
                           hasOomLabel && (
                             m("td", { className: "ah-capture-td", style: { color: "var(--ah-text-muted)", fontSize: "0.75rem", whiteSpace: "nowrap" } }, [
-                              p.oomLabel ? `State: ${p.oomLabel}` : "",
+                              p.oomLabel ? `State:${p.oomLabel.toLowerCase()}` : "",
                               isDiff && d.prev && d.prev.oomLabel !== p.oomLabel && (
                                 m("span", {
                                   className: "ah-status-changed",
                                   title: `was: ${d.prev.oomLabel || "(none)"}`,
                                   style: { marginLeft: "0.25rem" },
-                                }, `\u2190 ${d.prev.oomLabel ? `State: ${d.prev.oomLabel}` : "\u2014"}`)
+                                }, `\u2190 ${d.prev.oomLabel ? `State:${d.prev.oomLabel.toLowerCase()}` : "\u2014"}`)
                               ),
                             ])
                           ),

@@ -41,7 +41,7 @@ export function searchProcesses(
   for (const p of processes) {
     const processMatched = textMatch(p.name, q)
       || textMatch(String(p.pid), q)
-      || (!!p.oomLabel && textMatch(`state: ${p.oomLabel}`, q));
+      || (!!p.oomLabel && textMatch(`state:${p.oomLabel}`, q));
 
     const smapsGroups = new Set<string>();
     const vmaEntries = new Map<string, Set<string>>();

@@ -64,7 +64,7 @@ describe("searchProcesses", () => {
 
   it("matches oomLabel with State: prefix", () => {
     const procs = [makeProc(1, "app", { oomLabel: "Foreground" })];
-    const r = searchProcesses(procs, "state: foreground", noSmaps, noRollups);
+    const r = searchProcesses(procs, "state:foreground", noSmaps, noRollups);
     expect(r.size).toBe(1);
   });
 
