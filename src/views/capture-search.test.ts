@@ -437,6 +437,24 @@ describe("qualified search (scope:value)", () => {
     expect(r.size).toBe(0);
   });
 
+  it("process: scope with double quotes groups text", () => {
+    const r = searchProcesses(procs, 'process:"system_server"', smaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+  });
+
+  it("process: scope with single quotes groups text", () => {
+    const r = searchProcesses(procs, "process:'system_server'", smaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+  });
+
+  it("unqualified double quotes work as plain text", () => {
+    const r = searchProcesses(procs, '"system"', smaps, rollups);
+    expect(r.size).toBe(1);
+    expect(r.has(1)).toBe(true);
+  });
+
   it("searchSharedMappings respects pss: scope", () => {
     const mappings = [
       makeSharedMapping("libc.so", { pssKb: 5000 }),

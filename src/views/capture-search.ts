@@ -40,16 +40,24 @@ const SCOPE_ALIASES: Record<string, ParsedQuery["scope"]> = {
   size: "sizeKb",
 };
 
+/** Strip matching surrounding quotes (single or double). */
+function stripQuotes(s: string): string {
+  if (s.length >= 2 && ((s[0] === '"' && s[s.length - 1] === '"') || (s[0] === "'" && s[s.length - 1] === "'"))) {
+    return s.slice(1, -1);
+  }
+  return s;
+}
+
 function parseQualifiedQuery(raw: string): ParsedQuery {
   const colon = raw.indexOf(":");
   if (colon > 0) {
     const prefix = raw.slice(0, colon).toLowerCase().trim();
     const scope = SCOPE_ALIASES[prefix];
     if (scope) {
-      return { scope, value: raw.slice(colon + 1).trim().toLowerCase() };
+      return { scope, value: stripQuotes(raw.slice(colon + 1).trim()).toLowerCase() };
     }
   }
-  return { scope: "all", value: raw.toLowerCase().trim() };
+  return { scope: "all", value: stripQuotes(raw.toLowerCase().trim()) };
 }
 
 // ── Core search ──────────────────────────────────────────────────────────────
