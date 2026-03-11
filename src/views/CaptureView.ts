@@ -1734,7 +1734,12 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                       // Suppress expensive Mithril redraw; show "..." via DOM
                       (e as any).redraw = false;
                       if (searchTimer) clearTimeout(searchTimer);
-                      searchTimer = setTimeout(() => { searchTimer = null; m.redraw(); }, 2000);
+                      searchTimer = setTimeout(() => {
+                        searchTimer = null;
+                        // Remove DOM-injected indicator before Mithril redraws
+                        document.querySelectorAll(".ah-search__pending").forEach(el => el.remove());
+                        m.redraw();
+                      }, 2000);
                       // Show "..." indicator directly in DOM (no redraw needed)
                       const inner = (e.target as HTMLElement).parentElement;
                       if (inner) {
