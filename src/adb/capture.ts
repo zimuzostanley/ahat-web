@@ -199,6 +199,9 @@ export class AdbConnection {
   private keyMgr = new AdbKeyManager();
   private _isRoot = false;
   private _suPrefix = "";
+  private _usbDev: USBDevice | null = null;
+  private _disconnectListener: ((e: USBConnectionEvent) => void) | null = null;
+  onDisconnect: (() => void) | null = null;
 
   get connected(): boolean { return this.device?.connected ?? false; }
   get serial(): string { return this.device?.serial ?? ""; }
@@ -211,6 +214,8 @@ export class AdbConnection {
     const usbDev = await navigator.usb.requestDevice({ filters: [ADB_DEVICE_FILTER] });
     onStatus?.("Authorize on device\u2026");
     this.device = await AdbDevice.connect(usbDev, this.keyMgr);
+    this._usbDev = usbDev;
+    this._listenDisconnect();
     // Try to get root — best-effort, ignore failures (device may not be rooted)
     // Android su variants: "su 0 id" (toybox), "su -c id" (Magisk/SuperSU)
     this._isRoot = false;
@@ -536,9 +541,29 @@ export class AdbConnection {
     }
   }
 
+  private _listenDisconnect(): void {
+    this._removeDisconnectListener();
+    this._disconnectListener = (e: USBConnectionEvent) => {
+      if (e.device === this._usbDev) {
+        this.disconnect();
+        this.onDisconnect?.();
+      }
+    };
+    navigator.usb?.addEventListener("disconnect", this._disconnectListener);
+  }
+
+  private _removeDisconnectListener(): void {
+    if (this._disconnectListener) {
+      navigator.usb?.removeEventListener("disconnect", this._disconnectListener);
+      this._disconnectListener = null;
+    }
+  }
+
   disconnect(): void {
+    this._removeDisconnectListener();
     this.device?.close();
     this.device = null;
+    this._usbDev = null;
     this._isRoot = false;
     this._suPrefix = "";
   }

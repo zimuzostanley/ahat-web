@@ -1191,6 +1191,15 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     try {
       await conn.requestAndConnect((msg) => { connectStatus = msg; m.redraw(); });
       connected = true;
+      conn.onDisconnect = () => {
+        connected = false;
+        cancelEnrichment();
+        cancelSmapsFetch();
+        cancelAllCaptures();
+        cancelVmaDump();
+        error = "USB device disconnected";
+        m.redraw();
+      };
       m.redraw();
       refreshProcesses();
     } catch (e) {
