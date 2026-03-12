@@ -83,7 +83,7 @@ const VmaEntries: m.Component<{
             style: { marginLeft: "0.75rem" },
             disabled: dumpDisabled,
             title: "Dump all VMA memory in this group",
-            onclick: () => onDump(pid, processName, groupName, entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }))),
+            onclick: () => onDump(pid, processName, groupName, entries.filter(e => e.perms[0] === "r").map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }))),
           }, "dump all"),
         ]),
         SMAPS_COLUMNS.flatMap(([f, label]) => {
@@ -132,8 +132,8 @@ const VmaEntries: m.Component<{
             m("button", {
               className: "ah-smaps-action",
               style: { marginLeft: "0.5rem" },
-              disabled: dumpDisabled || ed?.status === "removed",
-              title: "Dump this VMA",
+              disabled: dumpDisabled || ed?.status === "removed" || e.perms[0] !== "r",
+              title: e.perms[0] !== "r" ? "Not readable" : "Dump this VMA",
               onclick: () => onDump(pid, processName, `${groupName}_${e.addrStart}-${e.addrEnd}`, [{ addrStart: e.addrStart, addrEnd: e.addrEnd }]),
             }, "dump"),
           ]),
@@ -305,7 +305,7 @@ const SmapsSubTable: m.Component<{
                   className: "ah-smaps-action",
                   disabled: dumpDisabled || sd?.status === "removed",
                   title: `Dump ${g.name} memory`,
-                  onclick: (e: Event) => { e.stopPropagation(); onDump(pid, processName, g.name, g.entries.map(en => ({ addrStart: en.addrStart, addrEnd: en.addrEnd }))); },
+                  onclick: (e: Event) => { e.stopPropagation(); onDump(pid, processName, g.name, g.entries.filter(en => en.perms[0] === "r").map(en => ({ addrStart: en.addrStart, addrEnd: en.addrEnd }))); },
                 }, "dump"),
               ]),
             ]),
@@ -542,7 +542,7 @@ function SharedMappingsTable(): m.Component<{
                     (matchedPids ? mp.processes.filter(p => matchedPids.has(p.pid)) : mp.processes).map(p => {
                       const procAgg = smapsData.get(p.pid);
                       const matchedGroup = procAgg?.find(g => g.name === mp.name);
-                      const regions = matchedGroup?.entries.map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }));
+                      const regions = matchedGroup?.entries.filter(e => e.perms[0] === "r").map(e => ({ addrStart: e.addrStart, addrEnd: e.addrEnd }));
                       return m("tr", {
                         key: p.pid,
                         className: "ah-vma-row",
