@@ -19,6 +19,7 @@ import ObjectsView from "./views/ObjectsView";
 import BitmapGalleryView from "./views/BitmapGalleryView";
 import StringsView from "./views/StringsView";
 import SmapsFileView from "./views/SmapsFileView";
+import PerfettoView from "./views/PerfettoView";
 
 // ─── CmdTooltip ──────────────────────────────────────────────────────────────
 
@@ -84,7 +85,7 @@ export interface VmaRegion { addrStart: string; addrEnd: string }
 interface Session {
   id: string;
   name: string;
-  kind: "hprof" | "vmadump" | "smaps";
+  kind: "hprof" | "vmadump" | "smaps" | "perfetto";
   status: SessionStatus;
   buffer: ArrayBuffer | null;
   proxy: WorkerProxy | null;
@@ -526,7 +527,7 @@ export default function App(): m.Component {
                       key: s.id,
                       className: `ah-tab__group ah-tab${activeTab === s.id ? " ah-tab--active" : ""}`,
                       onclick: () => switchToTab(s.id),
-                      title: s.name + (s.kind === "vmadump" ? " (VMA dump)" : s.kind === "smaps" ? " (smaps)" : " (heap dump)"),
+                      title: s.name + (s.kind === "vmadump" ? " (VMA dump)" : s.kind === "smaps" ? " (smaps)" : s.kind === "perfetto" ? " (Perfetto)" : " (heap dump)"),
                     },
                       s.status === "loading" && m("span", { className: "ah-tab__dot ah-tab__dot--loading" }),
                       s.status === "error" && m("span", { className: "ah-tab__dot ah-tab__dot--error" }),
@@ -589,6 +590,23 @@ export default function App(): m.Component {
                           activeSession.kind === "hprof" && (
                             m("button", { className: "ah-header__menu-item", onclick: () => { mapFileEl?.click(); menuOpen = false; } },
                               "Load Mapping")
+                          ),
+                          activeSession.kind === "hprof" && activeSession.proxy && (
+                            m("button", { className: "ah-header__menu-item", onclick: async () => {
+                              menuOpen = false;
+                              const buf = await activeSession.proxy!.query<ArrayBuffer | null>("getRawBuffer");
+                              if (!buf) return;
+                              const sessionId = `session-${nextSessionId++}`;
+                              sessions = [...sessions, {
+                                id: sessionId, name: activeSession.name, kind: "perfetto", status: "ready",
+                                buffer: buf, proxy: null, overview: null,
+                                progress: { msg: "", pct: 100 },
+                                worker: null, errorMsg: null,
+                              }];
+                              activeTab = sessionId;
+                              m.redraw();
+                            } },
+                              "Open in Perfetto")
                           ),
                           m("button", { className: "ah-header__menu-item", onclick: async () => {
                             menuOpen = false;
@@ -799,6 +817,13 @@ export default function App(): m.Component {
                   processes: activeSession.smapsProcesses ?? null,
                   name: activeSession.name,
                 }),
+              )
+            ),
+
+            // Ready — Perfetto embedded view
+            activeSession.status === "ready" && activeSession.kind === "perfetto" && activeSession.buffer && (
+              m("main", { style: { flex: "1", display: "flex", flexDirection: "column", minHeight: "0" } },
+                m(PerfettoView, { buffer: activeSession.buffer, name: activeSession.name }),
               )
             ),
 
