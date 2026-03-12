@@ -16,22 +16,22 @@ export function sortWithDiffPinning<T, D extends { status: string; current: T }>
   return [...items].sort(cmp);
 }
 
-export type SmapsNumericField = "pssKb" | "rssKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb";
-export type SmapsDeltaKey = "deltaPssKb" | "deltaRssKb" | "deltaSharedCleanKb" | "deltaSharedDirtyKb" | "deltaPrivateCleanKb" | "deltaPrivateDirtyKb" | "deltaSwapKb";
+export type SmapsNumericField = "pssKb" | "rssKb" | "sharedCleanKb" | "sharedDirtyKb" | "privateCleanKb" | "privateDirtyKb" | "swapKb" | "sizeKb";
+export type SmapsDeltaKey = "deltaPssKb" | "deltaRssKb" | "deltaSharedCleanKb" | "deltaSharedDirtyKb" | "deltaPrivateCleanKb" | "deltaPrivateDirtyKb" | "deltaSwapKb" | "deltaSizeKb";
 export type SmapsTotals = Record<SmapsNumericField, number> & Record<SmapsDeltaKey, number>;
 
 export const SMAPS_COLUMNS: [SmapsNumericField, string][] = [
   ["rssKb", "RSS"], ["pssKb", "PSS"],
   ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
   ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
-  ["swapKb", "Swap"],
+  ["swapKb", "Swap"], ["sizeKb", "VSS"],
 ];
 
 export const SMAPS_DELTA_KEY: Record<SmapsNumericField, SmapsDeltaKey> = {
   pssKb: "deltaPssKb", rssKb: "deltaRssKb",
   sharedCleanKb: "deltaSharedCleanKb", sharedDirtyKb: "deltaSharedDirtyKb",
   privateCleanKb: "deltaPrivateCleanKb", privateDirtyKb: "deltaPrivateDirtyKb",
-  swapKb: "deltaSwapKb",
+  swapKb: "deltaSwapKb", sizeKb: "deltaSizeKb",
 };
 
 // ── Snapshot timeline state machine ──────────────────────────────────────────
@@ -113,9 +113,9 @@ export function computeSmapsTotals(
 ): SmapsTotals {
   const t: SmapsTotals = {
     pssKb: 0, rssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0,
-    privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0,
+    privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, sizeKb: 0,
     deltaPssKb: 0, deltaRssKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0,
-    deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0,
+    deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0, deltaSizeKb: 0,
   };
   if (diffs) {
     for (const d of diffs) {

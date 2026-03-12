@@ -699,7 +699,7 @@ const ROLLUP_COLUMNS: [SmapsNumericField, string][] = [
   ["rssKb", "RSS"], ["pssKb", "PSS"],
   ["privateDirtyKb", "Priv Dirty"], ["privateCleanKb", "Priv Clean"],
   ["sharedDirtyKb", "Shared Dirty"], ["sharedCleanKb", "Shared Clean"],
-  ["swapKb", "Swap"],
+  ["swapKb", "Swap"], ["sizeKb", "VSS"],
 ];
 
 /** Get a sortable value from either rollup data or ProcessInfo fallback. */

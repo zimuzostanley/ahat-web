@@ -88,7 +88,7 @@ describe("sortWithDiffPinning", () => {
 
 describe("SMAPS_DELTA_KEY", () => {
   it("maps every SmapsNumericField to a delta key", () => {
-    const fields: SmapsNumericField[] = ["pssKb", "rssKb", "sharedCleanKb", "sharedDirtyKb", "privateCleanKb", "privateDirtyKb", "swapKb"];
+    const fields: SmapsNumericField[] = ["pssKb", "rssKb", "sharedCleanKb", "sharedDirtyKb", "privateCleanKb", "privateDirtyKb", "swapKb", "sizeKb"];
     for (const f of fields) {
       const dk = SMAPS_DELTA_KEY[f];
       expect(dk).toMatch(/^delta[A-Z]/);
@@ -104,7 +104,7 @@ describe("SMAPS_DELTA_KEY", () => {
 // ─── computeSmapsTotals ─────────────────────────────────────────────────────
 
 function makeItem(pss: number, rss = 0): Record<SmapsNumericField, number> {
-  return { pssKb: pss, rssKb: rss, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0 };
+  return { pssKb: pss, rssKb: rss, sharedCleanKb: 0, sharedDirtyKb: 0, privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, sizeKb: 0 };
 }
 
 function makeDiff(status: string, pss: number, deltaPss: number) {
@@ -112,7 +112,7 @@ function makeDiff(status: string, pss: number, deltaPss: number) {
     status,
     current: makeItem(pss),
     deltaPssKb: deltaPss, deltaRssKb: 0, deltaSharedCleanKb: 0, deltaSharedDirtyKb: 0,
-    deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0,
+    deltaPrivateCleanKb: 0, deltaPrivateDirtyKb: 0, deltaSwapKb: 0, deltaSizeKb: 0,
   };
 }
 
@@ -164,10 +164,10 @@ describe("computeSmapsTotals", () => {
     expect(totals.pssKb).toBe(10);
   });
 
-  it("accumulates all 7 numeric fields", () => {
+  it("accumulates all 8 numeric fields", () => {
     const item: Record<SmapsNumericField, number> = {
       pssKb: 1, rssKb: 2, sharedCleanKb: 3, sharedDirtyKb: 4,
-      privateCleanKb: 5, privateDirtyKb: 6, swapKb: 7,
+      privateCleanKb: 5, privateDirtyKb: 6, swapKb: 7, sizeKb: 8,
     };
     const totals = computeSmapsTotals([item, item], null);
     expect(totals.pssKb).toBe(2);
@@ -177,14 +177,15 @@ describe("computeSmapsTotals", () => {
     expect(totals.privateCleanKb).toBe(10);
     expect(totals.privateDirtyKb).toBe(12);
     expect(totals.swapKb).toBe(14);
+    expect(totals.sizeKb).toBe(16);
   });
 
-  it("accumulates all 7 delta fields from diffs", () => {
+  it("accumulates all 8 delta fields from diffs", () => {
     const diff = {
       status: "matched",
       current: makeItem(0),
       deltaPssKb: 1, deltaRssKb: 2, deltaSharedCleanKb: 3, deltaSharedDirtyKb: 4,
-      deltaPrivateCleanKb: 5, deltaPrivateDirtyKb: 6, deltaSwapKb: 7,
+      deltaPrivateCleanKb: 5, deltaPrivateDirtyKb: 6, deltaSwapKb: 7, deltaSizeKb: 8,
     };
     const totals = computeSmapsTotals([], [diff, diff]);
     expect(totals.deltaPssKb).toBe(2);
@@ -194,6 +195,7 @@ describe("computeSmapsTotals", () => {
     expect(totals.deltaPrivateCleanKb).toBe(10);
     expect(totals.deltaPrivateDirtyKb).toBe(12);
     expect(totals.deltaSwapKb).toBe(14);
+    expect(totals.deltaSizeKb).toBe(16);
   });
 });
 
