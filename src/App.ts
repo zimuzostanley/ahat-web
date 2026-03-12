@@ -821,15 +821,18 @@ export default function App(): m.Component {
             ),
 
             // Ready — Perfetto embedded views (always rendered, hidden when inactive to preserve iframe state)
-            ...sessions
-              .filter(s => s.kind === "perfetto" && s.status === "ready" && s.buffer)
-              .map(s => m("main", {
-                key: s.id,
-                style: {
-                  flex: "1", overflow: "hidden",
-                  display: activeTab === s.id ? "" : "none",
-                },
-              }, m(PerfettoView, { buffer: s.buffer!, name: s.name }))),
+            sessions.some(s => s.kind === "perfetto" && s.status === "ready" && s.buffer) &&
+              m("div", { style: { display: "contents" } },
+                sessions
+                  .filter(s => s.kind === "perfetto" && s.status === "ready" && s.buffer)
+                  .map(s => m("main", {
+                    key: s.id,
+                    style: {
+                      flex: "1", overflow: "hidden",
+                      display: activeTab === s.id ? "" : "none",
+                    },
+                  }, m(PerfettoView, { buffer: s.buffer!, name: s.name })))
+              ),
 
             // Ready — hprof content views
             activeSession.status === "ready" && activeSession.kind === "hprof" && activeProxy && activeOverview && (
