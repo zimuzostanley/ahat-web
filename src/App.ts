@@ -822,7 +822,7 @@ export default function App(): m.Component {
 
             // Ready — Perfetto embedded view
             activeSession.status === "ready" && activeSession.kind === "perfetto" && activeSession.buffer && (
-              m("main", { style: { flex: "1", display: "flex", flexDirection: "column", minHeight: "0" } },
+              m("main", { style: { flex: "1", overflow: "hidden" } },
                 m(PerfettoView, { buffer: activeSession.buffer, name: activeSession.name }),
               )
             ),
