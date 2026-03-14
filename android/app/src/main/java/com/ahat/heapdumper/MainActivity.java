@@ -235,7 +235,7 @@ public class MainActivity extends AppCompatActivity {
                 String label = snap.enriched ? "" : " (states only)";
                 statusText.setText("\u23F1 " + sdf.format(new Date(timestamp)) + label
                         + " \u2022 " + procs.size() + " procs");
-                swipeRefresh.setEnabled(false);
+                // Keep swipeRefresh enabled — pull down exits snapshot and fetches live
                 btnEnrichAll.setVisibility(View.GONE);
                 findViewById(R.id.btnScheduleEnrich).setVisibility(View.GONE);
                 findViewById(R.id.btnRecord).setVisibility(View.GONE);
@@ -490,7 +490,16 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void refresh() {
-        if (viewingSnapshot) return;
+        if (viewingSnapshot) {
+            // Exit snapshot view and fetch live data
+            viewingSnapshot = false;
+            swipeRefresh.setEnabled(true);
+            btnEnrichAll.setVisibility(View.VISIBLE);
+            findViewById(R.id.btnScheduleEnrich).setVisibility(View.VISIBLE);
+            findViewById(R.id.btnRecord).setVisibility(View.VISIBLE);
+            loadProcesses();
+            return;
+        }
         if (showingDumps) loadDumps();
         else loadProcesses();
     }

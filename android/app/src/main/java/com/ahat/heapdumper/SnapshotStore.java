@@ -47,6 +47,7 @@ public class SnapshotStore {
             obj.put("codeKb", ps.codeKb);
             obj.put("graphicsKb", ps.graphicsKb);
             obj.put("enriched", ps.enriched);
+            if (ps.lastSeenMs > 0) obj.put("lastSeenMs", ps.lastSeenMs);
             procs.put(obj);
         }
         root.put("processes", procs);
@@ -133,7 +134,8 @@ public class SnapshotStore {
                     obj.getLong("nativeHeapKb"),
                     obj.getLong("codeKb"),
                     obj.getLong("graphicsKb"),
-                    obj.optBoolean("enriched", true)));
+                    obj.optBoolean("enriched", true),
+                    obj.optLong("lastSeenMs", 0)));
         }
         return new Snapshot(ts, enriched, procs);
     }

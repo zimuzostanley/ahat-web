@@ -6,6 +6,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import java.text.SimpleDateFormat;
+import java.util.Date;
+
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -186,6 +189,15 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
             holder.meminfo.setVisibility(View.GONE);
         }
 
+        // Show last-seen timestamp
+        if (p.lastSeenMs > 0) {
+            SimpleDateFormat sdf = new SimpleDateFormat(" \u2022 HH:mm:ss", Locale.US);
+            holder.timestamp.setText(sdf.format(new Date(p.lastSeenMs)));
+            holder.timestamp.setVisibility(View.VISIBLE);
+        } else {
+            holder.timestamp.setVisibility(View.GONE);
+        }
+
         int badgeColor = getBadgeColor(p.oomLabel);
         GradientDrawable bg = new GradientDrawable();
         bg.setShape(GradientDrawable.RECTANGLE);
@@ -230,7 +242,7 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
     }
 
     static class ViewHolder extends RecyclerView.ViewHolder {
-        final TextView name, pid, state, meminfo;
+        final TextView name, pid, state, meminfo, timestamp;
 
         ViewHolder(View v) {
             super(v);
@@ -238,6 +250,7 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
             pid = v.findViewById(R.id.processPid);
             state = v.findViewById(R.id.processState);
             meminfo = v.findViewById(R.id.processMeminfo);
+            timestamp = v.findViewById(R.id.processTimestamp);
         }
     }
 }

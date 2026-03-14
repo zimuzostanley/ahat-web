@@ -250,6 +250,10 @@ public class ShellHelper {
                 }
             } catch (Exception e) { log("pidof " + name + ": " + e.getMessage()); }
         }
+        // Stamp all processes with fetch time
+        long now = System.currentTimeMillis();
+        for (ProcessInfo p : list) p.lastSeenMs = now;
+
         log("Total: " + list.size() + " processes");
         return list;
     }

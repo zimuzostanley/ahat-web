@@ -51,6 +51,15 @@
                 android:fontFamily="monospace"
                 android:visibility="gone" />
 
+            <TextView
+                android:id="@+id/processTimestamp"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="?attr/textSecondaryColor"
+                android:textSize="10sp"
+                android:fontFamily="monospace"
+                android:visibility="gone" />
+
         </LinearLayout>
 
     </LinearLayout>
