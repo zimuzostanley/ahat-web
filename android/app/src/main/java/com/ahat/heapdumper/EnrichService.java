@@ -62,18 +62,22 @@ public class EnrichService extends Service {
         }
 
         int delaySeconds = intent != null ? intent.getIntExtra("delay_seconds", 0) : 0;
+        int recurringInterval = intent != null ? intent.getIntExtra("recurring_interval_seconds", 0) : 0;
 
-        // Acquire partial wake lock — keeps CPU awake with screen off
+        // Acquire partial wake lock
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ahat:enrich");
-        // Timeout: delay + 10 min for enrichment, as safety net
-        long timeoutMs = (delaySeconds + 600) * 1000L;
+        long timeoutMs = recurringInterval > 0
+                ? 24 * 3600 * 1000L  // 24h for recurring
+                : (delaySeconds + 600) * 1000L;
         wakeLock.acquire(timeoutMs);
         Log.i(TAG, "Wake lock acquired, timeout=" + timeoutMs + "ms");
 
-        String initialText = delaySeconds > 0
-                ? "Enriching in " + delaySeconds + "s\u2026"
-                : "Starting enrichment\u2026";
+        String initialText = recurringInterval > 0
+                ? "Recording every " + recurringInterval + "s\u2026"
+                : delaySeconds > 0
+                    ? "Enriching in " + delaySeconds + "s\u2026"
+                    : "Starting enrichment\u2026";
         Notification notification = buildNotification(initialText);
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(NOTIFICATION_ID, notification,
@@ -81,7 +85,7 @@ public class EnrichService extends Service {
         } else {
             startForeground(NOTIFICATION_ID, notification);
         }
-        Log.i(TAG, "startForeground called, delay=" + delaySeconds);
+        Log.i(TAG, "startForeground called, delay=" + delaySeconds + ", recurring=" + recurringInterval);
 
         final List<ProcessInfo> passedProcesses = pendingProcesses;
         pendingProcesses = null;
@@ -89,40 +93,54 @@ public class EnrichService extends Service {
         running = true;
 
         workerThread = new Thread(() -> {
+            // ── Recurring mode ──
+            if (recurringInterval > 0) {
+                int snapCount = 0;
+                while (!Thread.currentThread().isInterrupted()) {
+                    snapCount++;
+                    int enriched = runOneEnrichCycle(snapCount);
+                    if (Thread.currentThread().isInterrupted()) break;
+                    updateNotification("Snapshot #" + snapCount + " saved (" + enriched
+                            + " enriched). Next in " + recurringInterval + "s\u2026");
+                    try {
+                        Thread.sleep(recurringInterval * 1000L);
+                    } catch (InterruptedException e) {
+                        break;
+                    }
+                }
+                showDoneNotification("Recording stopped: " + snapCount + " snapshots saved");
+                finish();
+                return;
+            }
+
+            // ── One-shot mode ──
             List<ProcessInfo> processes = passedProcesses;
 
-            // Countdown delay
             if (delaySeconds > 0) {
                 for (int s = delaySeconds; s > 0; s--) {
                     if (Thread.currentThread().isInterrupted()) { finish(); return; }
                     updateNotification("Enriching in " + s + "s\u2026");
                     try { Thread.sleep(1000); } catch (InterruptedException e) {
-                        finish();
-                        return;
+                        finish(); return;
                     }
                 }
-                // Fetch fresh process list after delay
                 updateNotification("Fetching processes\u2026");
                 try {
                     processes = ShellHelper.getProcessList();
-                    Log.i(TAG, "Fresh process list: " + processes.size() + " processes");
                 } catch (Exception e) {
                     Log.e(TAG, "Failed to fetch process list", e);
                     updateNotification("Failed: " + e.getMessage());
-                    finish();
-                    return;
+                    finish(); return;
                 }
             }
 
             if (processes == null || processes.isEmpty()) {
                 updateNotification("Done: no processes to enrich");
-                finish();
-                return;
+                finish(); return;
             }
 
             int total = processes.size();
             int enriched = 0;
-
             for (int i = 0; i < total; i++) {
                 if (Thread.currentThread().isInterrupted()) { finish(); return; }
                 ProcessInfo process = processes.get(i);
@@ -150,6 +168,43 @@ public class EnrichService extends Service {
         workerThread.start();
 
         return START_NOT_STICKY;
+    }
+
+    /** Run one cycle: fetch processes, enrich all, save snapshot. Returns enriched count. */
+    private int runOneEnrichCycle(int cycleNum) {
+        updateNotification("Cycle #" + cycleNum + ": fetching processes\u2026");
+        List<ProcessInfo> processes;
+        try {
+            processes = ShellHelper.getProcessList();
+        } catch (Exception e) {
+            Log.e(TAG, "Cycle #" + cycleNum + " failed to fetch processes", e);
+            return 0;
+        }
+
+        int total = processes.size();
+        int enriched = 0;
+        for (int i = 0; i < total; i++) {
+            if (Thread.currentThread().isInterrupted()) return enriched;
+            ProcessInfo p = processes.get(i);
+            try {
+                MemInfo info = ShellHelper.getMemInfo(p.pid);
+                p.applyMemInfo(info);
+                enriched++;
+            } catch (Exception e) {
+                Log.w(TAG, "Cycle #" + cycleNum + " failed pid " + p.pid);
+            }
+            updateNotification("Cycle #" + cycleNum + ": " + (i + 1) + "/" + total);
+        }
+
+        try {
+            Snapshot snapshot = Snapshot.fromProcessList(processes);
+            SnapshotStore.save(this, snapshot);
+            Log.i(TAG, "Cycle #" + cycleNum + " saved: " + enriched + "/" + total);
+        } catch (Exception e) {
+            Log.e(TAG, "Cycle #" + cycleNum + " failed to save snapshot", e);
+        }
+        sendBroadcast(new Intent(ACTION_DONE));
+        return enriched;
     }
 
     /** Clean up: release wake lock, remove FGS notification, broadcast done, stop service. */

@@ -33,6 +33,7 @@ public class SnapshotStore {
     public static void save(Context ctx, Snapshot snapshot) throws JSONException, IOException {
         JSONObject root = new JSONObject();
         root.put("timestamp", snapshot.timestamp);
+        root.put("enriched", snapshot.enriched);
         JSONArray procs = new JSONArray();
         for (Snapshot.ProcessSnapshot ps : snapshot.processes) {
             JSONObject obj = new JSONObject();
@@ -45,6 +46,7 @@ public class SnapshotStore {
             obj.put("nativeHeapKb", ps.nativeHeapKb);
             obj.put("codeKb", ps.codeKb);
             obj.put("graphicsKb", ps.graphicsKb);
+            obj.put("enriched", ps.enriched);
             procs.put(obj);
         }
         root.put("processes", procs);
@@ -99,6 +101,12 @@ public class SnapshotStore {
         for (File f : files) f.delete();
     }
 
+    /** Count snapshots on disk. */
+    public static int count(Context ctx) {
+        File[] files = dir(ctx).listFiles();
+        return files != null ? files.length : 0;
+    }
+
     private static JSONObject readJson(File f) throws IOException, JSONException {
         byte[] data;
         try (FileInputStream fis = new FileInputStream(f)) {
@@ -110,6 +118,7 @@ public class SnapshotStore {
 
     private static Snapshot parseSnapshot(JSONObject root) throws JSONException {
         long ts = root.getLong("timestamp");
+        boolean enriched = root.optBoolean("enriched", true); // backwards compat
         JSONArray arr = root.getJSONArray("processes");
         List<Snapshot.ProcessSnapshot> procs = new ArrayList<>();
         for (int i = 0; i < arr.length(); i++) {
@@ -123,8 +132,9 @@ public class SnapshotStore {
                     obj.getLong("javaHeapKb"),
                     obj.getLong("nativeHeapKb"),
                     obj.getLong("codeKb"),
-                    obj.getLong("graphicsKb")));
+                    obj.getLong("graphicsKb"),
+                    obj.optBoolean("enriched", true)));
         }
-        return new Snapshot(ts, procs);
+        return new Snapshot(ts, enriched, procs);
     }
 }

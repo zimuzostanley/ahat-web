@@ -65,22 +65,9 @@ public class HistoryActivity extends AppCompatActivity {
     }
 
     private void viewSnapshot(Snapshot snapshot) {
-        StringBuilder sb = new StringBuilder();
-        SimpleDateFormat sdf = new SimpleDateFormat("MMM d, HH:mm:ss", Locale.US);
-        sb.append(sdf.format(new Date(snapshot.timestamp))).append("\n");
-        sb.append(snapshot.processes.size()).append(" processes\n\n");
-        for (Snapshot.ProcessSnapshot p : snapshot.processes) {
-            sb.append(p.name).append("\n");
-            sb.append("  PSS ").append(ShellHelper.formatKb(p.pssKb));
-            sb.append("  Java ").append(ShellHelper.formatKb(p.javaHeapKb));
-            sb.append("  Native ").append(ShellHelper.formatKb(p.nativeHeapKb));
-            sb.append("\n");
-        }
-        new AlertDialog.Builder(this)
-                .setTitle("Snapshot")
-                .setMessage(sb.toString())
-                .setPositiveButton("OK", null)
-                .show();
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.putExtra("snapshot_timestamp", snapshot.timestamp);
+        startActivity(intent);
     }
 
     private void showOptions(Snapshot snapshot) {

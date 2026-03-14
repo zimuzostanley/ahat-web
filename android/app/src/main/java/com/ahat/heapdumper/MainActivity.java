@@ -7,15 +7,19 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.InputType;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.View;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -30,8 +34,12 @@ import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -52,11 +60,17 @@ public class MainActivity extends AppCompatActivity {
     private TextView colPss, colJava, colNative, colCode, colGraphics, colRss;
     private ScrollView logPanel;
     private TextView logText;
+    private TextView memInfoBar;
+    private HorizontalScrollView stateSummaryScroll;
+    private LinearLayout stateSummaryBar;
     private final StringBuilder logBuffer = new StringBuilder();
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private boolean showingDumps = false;
     private boolean logVisible = false;
     private List<ProcessInfo> currentProcesses;
+    private boolean viewingSnapshot = false;
+    private long snapshotTimestamp;
+    private static long lastLightweightSnapshotMs;
 
     private final BroadcastReceiver enrichDoneReceiver = new BroadcastReceiver() {
         @Override
@@ -64,8 +78,7 @@ public class MainActivity extends AppCompatActivity {
             if (isFinishing() || isDestroyed()) return;
             btnEnrichAll.setText("Enrich All");
             btnEnrichAll.setEnabled(true);
-            appendLog("Enrichment complete — snapshot saved");
-            // Reload processes to show enriched data
+            appendLog("Enrichment complete \u2014 snapshot saved");
             if (currentProcesses != null) {
                 processAdapter.notifyDataSetChanged();
             }
@@ -100,13 +113,14 @@ public class MainActivity extends AppCompatActivity {
         colCode = findViewById(R.id.colCode);
         colGraphics = findViewById(R.id.colGraphics);
         colRss = findViewById(R.id.colRss);
+        memInfoBar = findViewById(R.id.memInfoBar);
+        stateSummaryScroll = findViewById(R.id.stateSummaryScroll);
+        stateSummaryBar = findViewById(R.id.stateSummaryBar);
 
         recyclerView.setLayoutManager(new LinearLayoutManager(this));
 
-        // Wire up in-app log, context, and dump dir
         ShellHelper.setLogCallback(msg -> runOnUiThread(() -> appendLog(msg)));
         ShellHelper.setContext(this);
-        // Use public Downloads/ahat on sdcard — world-writable, any process can write here
         File dumpsDir = new File(android.os.Environment.getExternalStoragePublicDirectory(
                 android.os.Environment.DIRECTORY_DOWNLOADS), "ahat");
         ShellHelper.setDumpDir(dumpsDir);
@@ -126,7 +140,6 @@ public class MainActivity extends AppCompatActivity {
         swipeRefresh.setOnRefreshListener(this::refresh);
         swipeRefresh.setColorSchemeColors(0xFF3b82f6);
 
-        // Request notification permission for FGS on Android 13+
         if (Build.VERSION.SDK_INT >= 33) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                     != PackageManager.PERMISSION_GRANTED) {
@@ -139,6 +152,7 @@ public class MainActivity extends AppCompatActivity {
         tabDumps.setOnClickListener(v -> showDumps());
         btnEnrichAll.setOnClickListener(v -> enrichAll());
         findViewById(R.id.btnScheduleEnrich).setOnClickListener(v -> showDelayedEnrichDialog());
+        findViewById(R.id.btnRecord).setOnClickListener(v -> showRecordDialog());
         findViewById(R.id.btnSettings).setOnClickListener(v ->
                 startActivity(new Intent(this, SettingsActivity.class)));
         findViewById(R.id.btnDumps).setOnClickListener(v -> showDumps());
@@ -146,7 +160,6 @@ public class MainActivity extends AppCompatActivity {
         findViewById(R.id.btnHistory).setOnClickListener(v ->
                 startActivity(new Intent(this, HistoryActivity.class)));
 
-        // Register broadcast receiver for enrich service completion
         IntentFilter filter = new IntentFilter(EnrichService.ACTION_DONE);
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(enrichDoneReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
@@ -154,22 +167,19 @@ public class MainActivity extends AppCompatActivity {
             registerReceiver(enrichDoneReceiver, filter);
         }
 
-        // Search filter
         searchInput.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {}
             @Override public void afterTextChanged(Editable s) {
                 processAdapter.setFilter(s.toString());
+                buildStateSummaryBar();
             }
         });
 
-        // Sort buttons
         sortName.setOnClickListener(v -> onSortClicked(ProcessAdapter.SortField.NAME));
         sortPid.setOnClickListener(v -> onSortClicked(ProcessAdapter.SortField.PID));
         sortState.setOnClickListener(v -> onSortClicked(ProcessAdapter.SortField.STATE));
         sortMem.setOnClickListener(v -> onSortClicked(ProcessAdapter.SortField.MEM));
-
-        // Memory column selector
         colPss.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.PSS));
         colJava.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.JAVA));
         colNative.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.NATIVE));
@@ -177,25 +187,187 @@ public class MainActivity extends AppCompatActivity {
         colGraphics.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.GRAPHICS));
         colRss.setOnClickListener(v -> onMemColumnClicked(ProcessAdapter.MemColumn.RSS));
 
-        // Detect permissions + root, then load processes
-        appendLog("ahat Heap Dumper starting...");
-        appendLog("App UID: " + android.os.Process.myUid());
+        // Check if we're viewing a snapshot from HistoryActivity
+        long snapTs = getIntent().getLongExtra("snapshot_timestamp", 0);
+        if (snapTs > 0) {
+            loadSnapshotView(snapTs);
+        } else {
+            appendLog("ahat Heap Dumper starting...");
+            appendLog("App UID: " + android.os.Process.myUid());
+            executor.execute(() -> {
+                ShellHelper.checkDumpPermission(this);
+                ShellHelper.detectRoot();
+                String mode = ShellHelper.getAccessMode();
+                if ("none".equals(mode)) {
+                    runOnUiThread(() -> {
+                        statusText.setText("Need permission \u2014 see log");
+                        appendLog("No access. Grant permissions:");
+                        appendLog("  adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
+                        appendLog("  adb shell pm grant com.ahat.heapdumper android.permission.PACKAGE_USAGE_STATS");
+                        if (!logVisible) toggleLog();
+                    });
+                }
+                runOnUiThread(this::loadProcesses);
+            });
+        }
+    }
+
+    // ── Snapshot viewing mode ────────────────────────────────────────────────
+
+    private void loadSnapshotView(long timestamp) {
+        viewingSnapshot = true;
+        snapshotTimestamp = timestamp;
         executor.execute(() -> {
-            ShellHelper.checkDumpPermission(this);
-            ShellHelper.detectRoot();
-            String mode = ShellHelper.getAccessMode();
-            if ("none".equals(mode)) {
-                runOnUiThread(() -> {
-                    statusText.setText("Need permission \u2014 see log");
-                    appendLog("No access. Grant permissions:");
-                    appendLog("  adb shell pm grant com.ahat.heapdumper android.permission.DUMP");
-                    appendLog("  adb shell pm grant com.ahat.heapdumper android.permission.PACKAGE_USAGE_STATS");
-                    if (!logVisible) toggleLog();
-                });
+            Snapshot snap = SnapshotStore.load(this, timestamp);
+            if (snap == null) {
+                runOnUiThread(this::finish);
+                return;
             }
-            runOnUiThread(this::loadProcesses);
+            List<ProcessInfo> procs = new ArrayList<>();
+            for (Snapshot.ProcessSnapshot ps : snap.processes) {
+                procs.add(ps.toProcessInfo());
+            }
+            runOnUiThread(() -> {
+                if (isFinishing() || isDestroyed()) return;
+                currentProcesses = procs;
+                processAdapter.setProcesses(procs);
+                SimpleDateFormat sdf = new SimpleDateFormat("MMM d, HH:mm:ss", Locale.US);
+                String label = snap.enriched ? "" : " (states only)";
+                statusText.setText("\u23F1 " + sdf.format(new Date(timestamp)) + label
+                        + " \u2022 " + procs.size() + " procs");
+                swipeRefresh.setEnabled(false);
+                btnEnrichAll.setVisibility(View.GONE);
+                findViewById(R.id.btnScheduleEnrich).setVisibility(View.GONE);
+                findViewById(R.id.btnRecord).setVisibility(View.GONE);
+                buildStateSummaryBar();
+            });
         });
     }
+
+    // ── State summary bar ────────────────────────────────────────────────────
+
+    private void buildStateSummaryBar() {
+        if (currentProcesses == null || currentProcesses.isEmpty()) {
+            stateSummaryScroll.setVisibility(View.GONE);
+            return;
+        }
+
+        String textFilter = searchInput.getText().toString();
+        LinkedHashMap<String, Integer> counts = ProcessAdapter.computeStateCounts(
+                currentProcesses, textFilter);
+
+        stateSummaryBar.removeAllViews();
+
+        // "All" chip
+        int total = 0;
+        for (int c : counts.values()) total += c;
+        addStateChip("All: " + total, null);
+
+        for (java.util.Map.Entry<String, Integer> e : counts.entrySet()) {
+            addStateChip(e.getKey() + ": " + e.getValue(), e.getKey());
+        }
+
+        stateSummaryScroll.setVisibility(View.VISIBLE);
+    }
+
+    private void addStateChip(String text, String stateLabel) {
+        TextView chip = new TextView(this);
+        chip.setText(text);
+        chip.setTextSize(11);
+        chip.setTypeface(Typeface.MONOSPACE);
+        int pad = (int) (6 * getResources().getDisplayMetrics().density);
+        chip.setPadding(pad * 2, pad, pad * 2, pad);
+
+        boolean active = (stateLabel == null && processAdapter.getStateFilter() == null)
+                || (stateLabel != null && stateLabel.equals(processAdapter.getStateFilter()));
+
+        if (active && stateLabel != null) {
+            int badgeColor = ProcessAdapter.getBadgeColor(stateLabel);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.RECTANGLE);
+            bg.setCornerRadius(12f);
+            bg.setColor(badgeColor);
+            chip.setBackground(bg);
+            chip.setTextColor(0xFFFFFFFF);
+        } else if (active) {
+            chip.setTextColor(0xFF3b82f6);
+            chip.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        } else {
+            chip.setTextColor(getThemeColor(R.attr.textSecondaryColor));
+        }
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMarginEnd((int) (4 * getResources().getDisplayMetrics().density));
+        chip.setLayoutParams(lp);
+
+        chip.setOnClickListener(v -> {
+            if (stateLabel == null) {
+                // "All" chip — clear filter
+                processAdapter.setStateFilter(null);
+            } else if (stateLabel.equals(processAdapter.getStateFilter())) {
+                // Same chip — toggle off
+                processAdapter.setStateFilter(null);
+            } else {
+                processAdapter.setStateFilter(stateLabel);
+            }
+            buildStateSummaryBar();
+        });
+
+        stateSummaryBar.addView(chip);
+    }
+
+    // ── Recording (recurring snapshots) ──────────────────────────────────────
+
+    private void showRecordDialog() {
+        if (EnrichService.running) {
+            appendLog("Service already running");
+            return;
+        }
+
+        EditText input = new EditText(this);
+        input.setInputType(InputType.TYPE_CLASS_NUMBER);
+        input.setHint("Seconds between snapshots");
+        input.setTextSize(16);
+        int pad = (int) (16 * getResources().getDisplayMetrics().density);
+        input.setPadding(pad, pad, pad, pad);
+
+        new AlertDialog.Builder(this)
+                .setTitle("Record snapshots")
+                .setMessage("Capture + enrich every X seconds.\nRuns as foreground service until stopped.")
+                .setView(input)
+                .setPositiveButton("Start", (d, w) -> {
+                    String text = input.getText().toString().trim();
+                    int seconds = 0;
+                    try { seconds = Integer.parseInt(text); } catch (NumberFormatException ignored) {}
+                    if (seconds > 0) {
+                        startRecording(seconds);
+                    }
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
+        input.requestFocus();
+    }
+
+    private void startRecording(int intervalSeconds) {
+        if (EnrichService.running) return;
+        btnEnrichAll.setText("Cancel");
+        btnEnrichAll.setEnabled(true);
+        EnrichService.pendingProcesses = null;
+        try {
+            Intent serviceIntent = new Intent(this, EnrichService.class);
+            serviceIntent.putExtra("recurring_interval_seconds", intervalSeconds);
+            ContextCompat.startForegroundService(this, serviceIntent);
+            appendLog("Recording every " + intervalSeconds + "s");
+        } catch (Exception e) {
+            appendLog("ERROR starting service: " + e.getMessage());
+            btnEnrichAll.setText("Enrich All");
+            btnEnrichAll.setEnabled(true);
+        }
+    }
+
+    // ── Core UI ──────────────────────────────────────────────────────────────
 
     private void appendLog(String msg) {
         logBuffer.append(msg).append('\n');
@@ -221,12 +393,12 @@ public class MainActivity extends AppCompatActivity {
         super.onResume();
         applyTheme();
         if (showingDumps) loadDumps();
-        // Sync button state with service
-        if (EnrichService.running) {
-            btnEnrichAll.setText("Cancel");
-            btnEnrichAll.setEnabled(true);
-        } else {
-            btnEnrichAll.setText("Enrich All");
+        if (!viewingSnapshot) {
+            if (EnrichService.running) {
+                btnEnrichAll.setText("Cancel");
+            } else {
+                btnEnrichAll.setText("Enrich All");
+            }
             btnEnrichAll.setEnabled(true);
         }
     }
@@ -240,21 +412,21 @@ public class MainActivity extends AppCompatActivity {
     private void showProcesses() {
         showingDumps = false;
         tabProcesses.setTextColor(0xFF3b82f6);
-        tabProcesses.setTypeface(null, android.graphics.Typeface.BOLD);
+        tabProcesses.setTypeface(null, Typeface.BOLD);
         tabDumps.setTextColor(getThemeColor(R.attr.textSecondaryColor));
-        tabDumps.setTypeface(null, android.graphics.Typeface.NORMAL);
+        tabDumps.setTypeface(null, Typeface.NORMAL);
         searchSortBar.setVisibility(View.VISIBLE);
-        btnEnrichAll.setVisibility(View.VISIBLE);
+        btnEnrichAll.setVisibility(viewingSnapshot ? View.GONE : View.VISIBLE);
         recyclerView.setAdapter(processAdapter);
-        if (processAdapter.getItemCount() == 0) loadProcesses();
+        if (processAdapter.getItemCount() == 0 && !viewingSnapshot) loadProcesses();
     }
 
     private void showDumps() {
         showingDumps = true;
         tabDumps.setTextColor(0xFF3b82f6);
-        tabDumps.setTypeface(null, android.graphics.Typeface.BOLD);
+        tabDumps.setTypeface(null, Typeface.BOLD);
         tabProcesses.setTextColor(getThemeColor(R.attr.textSecondaryColor));
-        tabProcesses.setTypeface(null, android.graphics.Typeface.NORMAL);
+        tabProcesses.setTypeface(null, Typeface.NORMAL);
         searchSortBar.setVisibility(View.GONE);
         btnEnrichAll.setVisibility(View.GONE);
         recyclerView.setAdapter(dumpAdapter);
@@ -279,20 +451,20 @@ public class MainActivity extends AppCompatActivity {
         int inactiveColor = getThemeColor(R.attr.textSecondaryColor);
 
         sortName.setTextColor(active == ProcessAdapter.SortField.NAME ? activeColor : inactiveColor);
-        sortName.setTypeface(null, active == ProcessAdapter.SortField.NAME ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        sortName.setTypeface(null, active == ProcessAdapter.SortField.NAME ? Typeface.BOLD : Typeface.NORMAL);
         sortName.setText(active == ProcessAdapter.SortField.NAME ? "Name" + arrow : "Name");
 
         sortPid.setTextColor(active == ProcessAdapter.SortField.PID ? activeColor : inactiveColor);
-        sortPid.setTypeface(null, active == ProcessAdapter.SortField.PID ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        sortPid.setTypeface(null, active == ProcessAdapter.SortField.PID ? Typeface.BOLD : Typeface.NORMAL);
         sortPid.setText(active == ProcessAdapter.SortField.PID ? "PID" + arrow : "PID");
 
         sortState.setTextColor(active == ProcessAdapter.SortField.STATE ? activeColor : inactiveColor);
-        sortState.setTypeface(null, active == ProcessAdapter.SortField.STATE ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        sortState.setTypeface(null, active == ProcessAdapter.SortField.STATE ? Typeface.BOLD : Typeface.NORMAL);
         sortState.setText(active == ProcessAdapter.SortField.STATE ? "State" + arrow : "State");
 
         String memLabel = processAdapter.getMemColumn().label;
         sortMem.setTextColor(active == ProcessAdapter.SortField.MEM ? activeColor : inactiveColor);
-        sortMem.setTypeface(null, active == ProcessAdapter.SortField.MEM ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+        sortMem.setTypeface(null, active == ProcessAdapter.SortField.MEM ? Typeface.BOLD : Typeface.NORMAL);
         sortMem.setText(active == ProcessAdapter.SortField.MEM ? memLabel + arrow : memLabel);
     }
 
@@ -306,9 +478,8 @@ public class MainActivity extends AppCompatActivity {
         for (int i = 0; i < buttons.length; i++) {
             boolean isActive = cols[i] == active;
             buttons[i].setTextColor(isActive ? activeColor : inactiveColor);
-            buttons[i].setTypeface(null, isActive ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
+            buttons[i].setTypeface(null, isActive ? Typeface.BOLD : Typeface.NORMAL);
         }
-
         updateSortButtons();
     }
 
@@ -319,18 +490,22 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void refresh() {
+        if (viewingSnapshot) return;
         if (showingDumps) loadDumps();
         else loadProcesses();
     }
 
     private void loadProcesses() {
+        if (viewingSnapshot) return;
         swipeRefresh.setRefreshing(true);
         statusText.setText("Loading\u2026");
 
         executor.execute(() -> {
             try {
                 List<ProcessInfo> list = ShellHelper.getProcessList();
+                GlobalMemInfo gmi = GlobalMemInfo.read();
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     currentProcesses = list;
                     processAdapter.setProcesses(list);
                     String mode = ShellHelper.getAccessMode();
@@ -338,9 +513,30 @@ public class MainActivity extends AppCompatActivity {
                             "dump".equals(mode) ? " [dump perm]" : " [no access]";
                     statusText.setText(list.size() + " processes" + modeLabel);
                     swipeRefresh.setRefreshing(false);
+
+                    // Show global memory
+                    if (gmi.memTotalKb > 0) {
+                        memInfoBar.setText(gmi.summary());
+                        memInfoBar.setVisibility(View.VISIBLE);
+                    }
+
+                    buildStateSummaryBar();
                 });
+
+                // Save lightweight snapshot (throttle: max once per 10s)
+                long now = System.currentTimeMillis();
+                if (now - lastLightweightSnapshotMs > 10_000) {
+                    lastLightweightSnapshotMs = now;
+                    try {
+                        Snapshot snap = Snapshot.fromProcessListAll(list);
+                        SnapshotStore.save(MainActivity.this, snap);
+                    } catch (Exception e) {
+                        Log.w("ahat", "Failed to save lightweight snapshot", e);
+                    }
+                }
             } catch (Exception e) {
                 runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) return;
                     statusText.setText("Error: " + e.getMessage());
                     appendLog("ERROR: " + e.toString());
                     swipeRefresh.setRefreshing(false);
@@ -350,10 +546,8 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /** Triggered by "Enrich All" button — starts or cancels enrichment. */
     private void enrichAll() {
         if (EnrichService.running) {
-            // Cancel running enrichment
             Intent stop = new Intent(this, EnrichService.class);
             stop.setAction(EnrichService.ACTION_STOP);
             startService(stop);
@@ -367,7 +561,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void showDelayedEnrichDialog() {
         if (EnrichService.running) {
-            appendLog("Enrichment already running");
+            appendLog("Service already running");
             return;
         }
 
@@ -375,7 +569,6 @@ public class MainActivity extends AppCompatActivity {
         input.setInputType(InputType.TYPE_CLASS_NUMBER);
         input.setHint("Seconds");
         input.setTextSize(16);
-        input.setFontFeatureSettings("monospace");
         int pad = (int) (16 * getResources().getDisplayMetrics().density);
         input.setPadding(pad, pad, pad, pad);
 
@@ -393,21 +586,19 @@ public class MainActivity extends AppCompatActivity {
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
-
         input.requestFocus();
     }
 
     private void startEnrichService(int delaySeconds) {
         if (delaySeconds == 0 && (currentProcesses == null || currentProcesses.isEmpty())) return;
         if (EnrichService.running) {
-            appendLog("Enrichment already running");
+            appendLog("Service already running");
             return;
         }
 
         btnEnrichAll.setText("Cancel");
         btnEnrichAll.setEnabled(true);
 
-        // For immediate: pass current process list. For delayed: service fetches fresh list.
         if (delaySeconds == 0) {
             EnrichService.pendingProcesses = new ArrayList<>(currentProcesses);
         } else {
@@ -418,7 +609,6 @@ public class MainActivity extends AppCompatActivity {
             Intent serviceIntent = new Intent(this, EnrichService.class);
             serviceIntent.putExtra("delay_seconds", delaySeconds);
             ContextCompat.startForegroundService(this, serviceIntent);
-
             if (delaySeconds > 0) {
                 appendLog("Enrichment scheduled in " + delaySeconds + "s");
             } else {
@@ -426,13 +616,12 @@ public class MainActivity extends AppCompatActivity {
             }
         } catch (Exception e) {
             appendLog("ERROR starting service: " + e.getMessage());
-            android.util.Log.e("ahat", "Failed to start EnrichService", e);
+            Log.e("ahat", "Failed to start EnrichService", e);
             btnEnrichAll.setText("Enrich All");
             btnEnrichAll.setEnabled(true);
         }
     }
 
-    /** Enrich a single process (called before opening detail screen). */
     private void enrichAndOpen(ProcessInfo process) {
         if (process.enriched) {
             onProcessClick(process);
@@ -453,7 +642,6 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     statusText.setText("");
-                    // Open detail anyway, it'll try to fetch its own meminfo
                     onProcessClick(process);
                 });
             }
@@ -491,7 +679,7 @@ public class MainActivity extends AppCompatActivity {
             sb.append("\nGraphics: ").append(ShellHelper.formatKb(process.graphicsKb));
             sb.append("\nRSS: ").append(ShellHelper.formatKb(process.rssKb));
         } else {
-            sb.append("\nNot enriched — tap to enrich");
+            sb.append("\nNot enriched \u2014 tap to enrich");
         }
         new AlertDialog.Builder(this)
                 .setTitle(process.name)
@@ -503,14 +691,12 @@ public class MainActivity extends AppCompatActivity {
     private void startDump(ProcessInfo process, boolean withBitmaps) {
         progressContainer.setVisibility(View.VISIBLE);
         progressText.setText("Starting dump\u2026");
-
         executor.execute(() -> {
             try {
                 String path = ShellHelper.dumpHeap(process.pid, withBitmaps,
                         msg -> runOnUiThread(() -> {
                             if (!(isFinishing() || isDestroyed())) progressText.setText(msg);
                         }));
-
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     progressContainer.setVisibility(View.GONE);

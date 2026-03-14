@@ -135,6 +135,20 @@
             android:layout_weight="1" />
 
         <TextView
+            android:id="@+id/btnRecord"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Record"
+            android:textColor="?attr/textSecondaryColor"
+            android:textSize="12sp"
+            android:fontFamily="monospace"
+            android:paddingStart="8dp"
+            android:paddingEnd="4dp"
+            android:paddingTop="4dp"
+            android:paddingBottom="4dp"
+            android:background="?attr/selectableItemBackground" />
+
+        <TextView
             android:id="@+id/btnScheduleEnrich"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -163,6 +177,38 @@
             android:background="?attr/selectableItemBackground" />
 
     </LinearLayout>
+
+    <!-- Global memory info bar -->
+    <TextView
+        android:id="@+id/memInfoBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:textColor="?attr/textSecondaryColor"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="4dp" />
+
+    <!-- State summary chips (scrollable) -->
+    <HorizontalScrollView
+        android:id="@+id/stateSummaryScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:visibility="gone"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="6dp">
+
+        <LinearLayout
+            android:id="@+id/stateSummaryBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+
+    </HorizontalScrollView>
 
     <!-- Search + sort bar (visible only on Processes tab) -->
     <LinearLayout

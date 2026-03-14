@@ -21,7 +21,7 @@ public class DiffLogicTest {
     }
 
     private Snapshot snap(long ts, Snapshot.ProcessSnapshot... procs) {
-        return new Snapshot(ts, Arrays.asList(procs));
+        return new Snapshot(ts, true, Arrays.asList(procs));
     }
 
     // ── Basic diff ──────────────────────────────────────────────────────────────

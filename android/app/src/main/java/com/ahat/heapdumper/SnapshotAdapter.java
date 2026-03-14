@@ -85,12 +85,15 @@ public class SnapshotAdapter extends RecyclerView.Adapter<SnapshotAdapter.ViewHo
         SimpleDateFormat sdf = new SimpleDateFormat("MMM d, HH:mm", Locale.US);
         holder.timestamp.setText(sdf.format(new Date(s.timestamp)));
 
-        // Compute total PSS
-        long totalPss = 0;
-        for (Snapshot.ProcessSnapshot p : s.processes) totalPss += p.pssKb;
-        String detail = s.processes.size() + " processes \u2022 PSS: "
-                + ShellHelper.formatKb(totalPss) + " total";
-        holder.detail.setText(detail);
+        if (s.enriched) {
+            long totalPss = 0;
+            for (Snapshot.ProcessSnapshot p : s.processes) totalPss += p.pssKb;
+            String detail = s.processes.size() + " processes \u2022 PSS: "
+                    + ShellHelper.formatKb(totalPss) + " total";
+            holder.detail.setText(detail);
+        } else {
+            holder.detail.setText(s.processes.size() + " processes (states only)");
+        }
 
         // Selection indicator: blue left bar
         holder.selectionBar.setBackgroundColor(selected ? 0xFF3b82f6 : 0x00000000);

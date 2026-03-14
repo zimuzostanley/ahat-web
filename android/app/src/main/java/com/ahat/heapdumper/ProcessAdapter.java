@@ -29,6 +29,7 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
     private OnProcessClickListener clickListener;
     private OnProcessLongClickListener longClickListener;
     private String filterText = "";
+    private String stateFilter = null; // null = show all
     private SortField sortField = SortField.NAME;
     private boolean sortAscending = true;
     private MemColumn memColumn = MemColumn.PSS;
@@ -57,6 +58,35 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
     public void setFilter(String text) {
         this.filterText = text.toLowerCase(Locale.ROOT);
         applyFilterAndSort();
+    }
+
+    public void setStateFilter(String state) {
+        this.stateFilter = state;
+        applyFilterAndSort();
+    }
+
+    public String getStateFilter() { return stateFilter; }
+
+    /** Compute process counts per OOM state (respects text filter but not state filter). */
+    public static java.util.LinkedHashMap<String, Integer> computeStateCounts(
+            List<ProcessInfo> procs, String textFilter) {
+        java.util.Map<String, Integer> counts = new java.util.LinkedHashMap<>();
+        String filter = textFilter != null ? textFilter.toLowerCase(Locale.ROOT) : "";
+        for (ProcessInfo p : procs) {
+            if (!filter.isEmpty()
+                    && !p.name.toLowerCase(Locale.ROOT).contains(filter)
+                    && !String.valueOf(p.pid).contains(filter)
+                    && !p.oomLabel.toLowerCase(Locale.ROOT).contains(filter)) {
+                continue;
+            }
+            counts.merge(p.oomLabel, 1, Integer::sum);
+        }
+        // Sort by count descending
+        java.util.LinkedHashMap<String, Integer> sorted = new java.util.LinkedHashMap<>();
+        counts.entrySet().stream()
+                .sorted((a, b) -> Integer.compare(b.getValue(), a.getValue()))
+                .forEach(e -> sorted.put(e.getKey(), e.getValue()));
+        return sorted;
     }
 
     public void setSort(SortField field) {
@@ -96,12 +126,16 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
     private void applyFilterAndSort() {
         List<ProcessInfo> filtered = new ArrayList<>();
         for (ProcessInfo p : allProcesses) {
-            if (filterText.isEmpty()
-                    || p.name.toLowerCase(Locale.ROOT).contains(filterText)
-                    || String.valueOf(p.pid).contains(filterText)
-                    || p.oomLabel.toLowerCase(Locale.ROOT).contains(filterText)) {
-                filtered.add(p);
+            if (!filterText.isEmpty()
+                    && !p.name.toLowerCase(Locale.ROOT).contains(filterText)
+                    && !String.valueOf(p.pid).contains(filterText)
+                    && !p.oomLabel.toLowerCase(Locale.ROOT).contains(filterText)) {
+                continue;
             }
+            if (stateFilter != null && !p.oomLabel.equals(stateFilter)) {
+                continue;
+            }
+            filtered.add(p);
         }
 
         Comparator<ProcessInfo> cmp;
