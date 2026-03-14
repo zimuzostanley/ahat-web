@@ -13,7 +13,10 @@ import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Foreground service that enriches each process with meminfo data,
@@ -34,6 +37,10 @@ public class EnrichService extends Service {
 
     /** Set by the caller before starting the service. */
     public static List<ProcessInfo> pendingProcesses;
+    /** For recording: whether to enrich (default false = lightweight snapshots only). */
+    public static boolean enrichEnabled;
+    /** For recording: process names to enrich (null = all, empty = none). */
+    public static ArrayList<String> enrichNames;
 
     public static volatile boolean running;
 
@@ -89,6 +96,10 @@ public class EnrichService extends Service {
 
         final List<ProcessInfo> passedProcesses = pendingProcesses;
         pendingProcesses = null;
+        final boolean doEnrich = enrichEnabled;
+        final List<String> enrichFilter = enrichNames;
+        enrichEnabled = false;
+        enrichNames = null;
 
         running = true;
 
@@ -98,10 +109,12 @@ public class EnrichService extends Service {
                 int snapCount = 0;
                 while (!Thread.currentThread().isInterrupted()) {
                     snapCount++;
-                    int enriched = runOneEnrichCycle(snapCount);
+                    int enriched = runOneEnrichCycle(snapCount, doEnrich, enrichFilter);
                     if (Thread.currentThread().isInterrupted()) break;
-                    updateNotification("Snapshot #" + snapCount + " saved (" + enriched
-                            + " enriched). Next in " + recurringInterval + "s\u2026");
+                    String statusMsg = doEnrich
+                            ? "Snapshot #" + snapCount + " (" + enriched + " enriched). Next in " + recurringInterval + "s\u2026"
+                            : "Snapshot #" + snapCount + " saved. Next in " + recurringInterval + "s\u2026";
+                    updateNotification(statusMsg);
                     try {
                         Thread.sleep(recurringInterval * 1000L);
                     } catch (InterruptedException e) {
@@ -171,8 +184,8 @@ public class EnrichService extends Service {
         return START_NOT_STICKY;
     }
 
-    /** Run one cycle: fetch processes, enrich all, save snapshot. Returns enriched count. */
-    private int runOneEnrichCycle(int cycleNum) {
+    /** Run one cycle: fetch processes, optionally enrich, save snapshot. Returns enriched count. */
+    private int runOneEnrichCycle(int cycleNum, boolean doEnrich, List<String> enrichFilter) {
         updateNotification("Cycle #" + cycleNum + ": fetching processes\u2026");
         List<ProcessInfo> processes;
         try {
@@ -182,26 +195,30 @@ public class EnrichService extends Service {
             return 0;
         }
 
-        int total = processes.size();
         int enriched = 0;
-        for (int i = 0; i < total; i++) {
-            if (Thread.currentThread().isInterrupted()) return enriched;
-            ProcessInfo p = processes.get(i);
-            try {
-                MemInfo info = ShellHelper.getMemInfo(p.pid);
-                p.applyMemInfo(info);
-                enriched++;
-            } catch (Exception e) {
-                Log.w(TAG, "Cycle #" + cycleNum + " failed pid " + p.pid);
+        if (doEnrich) {
+            Set<String> filterSet = (enrichFilter != null && !enrichFilter.isEmpty())
+                    ? new HashSet<>(enrichFilter) : null;
+            int target = filterSet != null ? filterSet.size() : processes.size();
+            for (ProcessInfo p : processes) {
+                if (Thread.currentThread().isInterrupted()) return enriched;
+                if (filterSet != null && !filterSet.contains(p.name)) continue;
+                try {
+                    MemInfo info = ShellHelper.getMemInfo(p.pid);
+                    p.applyMemInfo(info);
+                    enriched++;
+                } catch (Exception e) {
+                    Log.w(TAG, "Cycle #" + cycleNum + " failed pid " + p.pid);
+                }
+                updateNotification("Cycle #" + cycleNum + ": enriched " + enriched + "/" + target);
             }
-            updateNotification("Cycle #" + cycleNum + ": " + (i + 1) + "/" + total);
         }
 
         try {
-            Snapshot snapshot = Snapshot.fromProcessList(processes);
+            Snapshot snapshot = Snapshot.fromProcessListAll(processes);
             snapshot.setGlobalMem(GlobalMemInfo.read());
             SnapshotStore.save(this, snapshot);
-            Log.i(TAG, "Cycle #" + cycleNum + " saved: " + enriched + "/" + total);
+            Log.i(TAG, "Cycle #" + cycleNum + " saved: " + processes.size() + " procs, " + enriched + " enriched");
         } catch (Exception e) {
             Log.e(TAG, "Cycle #" + cycleNum + " failed to save snapshot", e);
         }

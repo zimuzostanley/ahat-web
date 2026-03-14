@@ -337,40 +337,104 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
+        float dp = getResources().getDisplayMetrics().density;
+        int pad = (int) (16 * dp);
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(pad, pad, pad, 0);
+
+        // Interval input
         EditText input = new EditText(this);
         input.setInputType(InputType.TYPE_CLASS_NUMBER);
         input.setHint("Seconds between snapshots");
         input.setTextSize(16);
-        int pad = (int) (16 * getResources().getDisplayMetrics().density);
-        input.setPadding(pad, pad, pad, pad);
+        layout.addView(input);
+
+        // Enrich checkbox
+        android.widget.CheckBox enrichCheck = new android.widget.CheckBox(this);
+        enrichCheck.setText("Enrich selected processes");
+        enrichCheck.setChecked(false);
+        LinearLayout.LayoutParams cbLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        cbLp.topMargin = (int) (12 * dp);
+        enrichCheck.setLayoutParams(cbLp);
+        layout.addView(enrichCheck);
+
+        // Process multi-select (initially hidden)
+        List<String> names = new ArrayList<>();
+        if (currentProcesses != null) {
+            java.util.TreeSet<String> unique = new java.util.TreeSet<>();
+            for (ProcessInfo p : currentProcesses) unique.add(p.name);
+            names.addAll(unique);
+        }
+
+        android.widget.ListView listView = new android.widget.ListView(this);
+        listView.setChoiceMode(android.widget.AbsListView.CHOICE_MODE_MULTIPLE);
+        android.widget.ArrayAdapter<String> listAdapter = new android.widget.ArrayAdapter<>(
+                this, android.R.layout.simple_list_item_multiple_choice, names);
+        listView.setAdapter(listAdapter);
+        LinearLayout.LayoutParams lvLp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, (int) (300 * dp));
+        lvLp.topMargin = (int) (8 * dp);
+        listView.setLayoutParams(lvLp);
+        listView.setVisibility(View.GONE);
+        layout.addView(listView);
+
+        enrichCheck.setOnCheckedChangeListener((btn, checked) ->
+                listView.setVisibility(checked ? View.VISIBLE : View.GONE));
 
         new AlertDialog.Builder(this)
                 .setTitle("Record snapshots")
-                .setMessage("Capture + enrich every X seconds.\nRuns as foreground service until stopped.")
-                .setView(input)
+                .setMessage("Capture snapshots every X seconds.\nCheck below to also enrich selected processes.")
+                .setView(layout)
                 .setPositiveButton("Start", (d, w) -> {
                     String text = input.getText().toString().trim();
                     int seconds = 0;
                     try { seconds = Integer.parseInt(text); } catch (NumberFormatException ignored) {}
-                    if (seconds > 0) {
-                        startRecording(seconds);
+                    if (seconds <= 0) return;
+
+                    boolean enrich = enrichCheck.isChecked();
+                    ArrayList<String> selectedNames = null;
+                    if (enrich) {
+                        selectedNames = new ArrayList<>();
+                        android.util.SparseBooleanArray checked =
+                                listView.getCheckedItemPositions();
+                        for (int i = 0; i < checked.size(); i++) {
+                            if (checked.valueAt(i)) {
+                                selectedNames.add(names.get(checked.keyAt(i)));
+                            }
+                        }
+                        if (selectedNames.isEmpty()) {
+                            enrich = false;
+                            selectedNames = null;
+                        }
                     }
+                    startRecording(seconds, enrich, selectedNames);
                 })
                 .setNegativeButton("Cancel", null)
                 .show();
         input.requestFocus();
     }
 
-    private void startRecording(int intervalSeconds) {
+    private void startRecording(int intervalSeconds, boolean enrichEnabled,
+                                ArrayList<String> enrichNames) {
         if (EnrichService.running) return;
         btnEnrichAll.setText("Cancel");
         btnEnrichAll.setEnabled(true);
         EnrichService.pendingProcesses = null;
+        EnrichService.enrichEnabled = enrichEnabled;
+        EnrichService.enrichNames = enrichNames;
         try {
             Intent serviceIntent = new Intent(this, EnrichService.class);
             serviceIntent.putExtra("recurring_interval_seconds", intervalSeconds);
             ContextCompat.startForegroundService(this, serviceIntent);
-            appendLog("Recording every " + intervalSeconds + "s");
+            String msg = enrichEnabled
+                    ? "Recording every " + intervalSeconds + "s (enriching "
+                        + enrichNames.size() + " processes)"
+                    : "Recording every " + intervalSeconds + "s (lightweight)";
+            appendLog(msg);
         } catch (Exception e) {
             appendLog("ERROR starting service: " + e.getMessage());
             btnEnrichAll.setText("Enrich All");
