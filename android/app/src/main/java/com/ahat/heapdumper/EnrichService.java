@@ -156,6 +156,7 @@ public class EnrichService extends Service {
 
             try {
                 Snapshot snapshot = Snapshot.fromProcessList(processes);
+                snapshot.setGlobalMem(GlobalMemInfo.read());
                 SnapshotStore.save(EnrichService.this, snapshot);
                 Log.i(TAG, "Snapshot saved: " + enriched + "/" + total);
             } catch (Exception e) {
@@ -198,6 +199,7 @@ public class EnrichService extends Service {
 
         try {
             Snapshot snapshot = Snapshot.fromProcessList(processes);
+            snapshot.setGlobalMem(GlobalMemInfo.read());
             SnapshotStore.save(this, snapshot);
             Log.i(TAG, "Cycle #" + cycleNum + " saved: " + enriched + "/" + total);
         } catch (Exception e) {

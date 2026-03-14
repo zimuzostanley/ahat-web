@@ -34,6 +34,13 @@ public class SnapshotStore {
         JSONObject root = new JSONObject();
         root.put("timestamp", snapshot.timestamp);
         root.put("enriched", snapshot.enriched);
+        if (snapshot.memTotalKb > 0) {
+            root.put("memTotalKb", snapshot.memTotalKb);
+            root.put("memAvailableKb", snapshot.memAvailableKb);
+            root.put("memFreeKb", snapshot.memFreeKb);
+            root.put("swapTotalKb", snapshot.swapTotalKb);
+            root.put("swapFreeKb", snapshot.swapFreeKb);
+        }
         JSONArray procs = new JSONArray();
         for (Snapshot.ProcessSnapshot ps : snapshot.processes) {
             JSONObject obj = new JSONObject();
@@ -139,6 +146,12 @@ public class SnapshotStore {
                     obj.optLong("lastSeenMs", 0),
                     obj.optLong("lastChangedMs", 0)));
         }
-        return new Snapshot(ts, enriched, procs);
+        Snapshot snap = new Snapshot(ts, enriched, procs);
+        snap.memTotalKb = root.optLong("memTotalKb", 0);
+        snap.memAvailableKb = root.optLong("memAvailableKb", 0);
+        snap.memFreeKb = root.optLong("memFreeKb", 0);
+        snap.swapTotalKb = root.optLong("swapTotalKb", 0);
+        snap.swapFreeKb = root.optLong("swapFreeKb", 0);
+        return snap;
     }
 }

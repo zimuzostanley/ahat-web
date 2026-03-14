@@ -579,6 +579,7 @@ public class MainActivity extends AppCompatActivity {
                     lastLightweightSnapshotMs = now;
                     try {
                         Snapshot snap = Snapshot.fromProcessListAll(list);
+                        snap.setGlobalMem(gmi);
                         SnapshotStore.save(MainActivity.this, snap);
                     } catch (Exception e) {
                         Log.w("ahat", "Failed to save lightweight snapshot", e);

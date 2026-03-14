@@ -17,6 +17,8 @@ import java.util.List;
  */
 public class DiffAdapter extends RecyclerView.Adapter<DiffAdapter.ViewHolder> {
 
+    public interface OnRowClickListener { void onClick(DiffRow row); }
+
     public static class DiffRow {
         public String name;
         public long oldValue;
@@ -24,14 +26,21 @@ public class DiffAdapter extends RecyclerView.Adapter<DiffAdapter.ViewHolder> {
         public long delta;
         public boolean onlyInA;  // removed in B
         public boolean onlyInB;  // new in B
+        public String oldState;  // OOM label in A
+        public String newState;  // OOM label in B
+        public Snapshot.ProcessSnapshot procA;  // full data for detail view
+        public Snapshot.ProcessSnapshot procB;
     }
 
     private List<DiffRow> rows = new ArrayList<>();
+    private OnRowClickListener rowClickListener;
 
     public void setRows(List<DiffRow> rows) {
         this.rows = new ArrayList<>(rows);
         notifyDataSetChanged();
     }
+
+    public void setOnRowClickListener(OnRowClickListener l) { this.rowClickListener = l; }
 
     @NonNull
     @Override
@@ -51,12 +60,12 @@ public class DiffAdapter extends RecyclerView.Adapter<DiffAdapter.ViewHolder> {
             holder.oldValue.setText("--");
             holder.newValue.setText(ShellHelper.formatKb(row.newValue));
             holder.delta.setText("new");
-            holder.delta.setTextColor(0xFFef4444); // red
+            holder.delta.setTextColor(0xFFef4444);
         } else if (row.onlyInA) {
             holder.oldValue.setText(ShellHelper.formatKb(row.oldValue));
             holder.newValue.setText("--");
             holder.delta.setText("removed");
-            holder.delta.setTextColor(0xFF22c55e); // green
+            holder.delta.setTextColor(0xFF22c55e);
         } else {
             holder.oldValue.setText(ShellHelper.formatKb(row.oldValue));
             holder.newValue.setText(ShellHelper.formatKb(row.newValue));
@@ -65,20 +74,41 @@ public class DiffAdapter extends RecyclerView.Adapter<DiffAdapter.ViewHolder> {
             holder.delta.setText(sign + ShellHelper.formatKb(row.delta));
 
             if (row.delta > 0) {
-                holder.delta.setTextColor(0xFFef4444); // red - memory grew
+                holder.delta.setTextColor(0xFFef4444);
             } else if (row.delta < 0) {
-                holder.delta.setTextColor(0xFF22c55e); // green - memory shrunk
+                holder.delta.setTextColor(0xFF22c55e);
             } else {
-                holder.delta.setTextColor(0xFF9ca3af); // gray - no change
+                holder.delta.setTextColor(0xFF9ca3af);
             }
         }
+
+        // State change indicator
+        if (row.oldState != null && row.newState != null && !row.oldState.equals(row.newState)) {
+            holder.stateChange.setText(row.oldState + " \u2192 " + row.newState);
+            holder.stateChange.setTextColor(0xFFf59e0b); // amber
+            holder.stateChange.setVisibility(View.VISIBLE);
+        } else if (row.onlyInB && row.newState != null) {
+            holder.stateChange.setText(row.newState);
+            holder.stateChange.setTextColor(0xFF9ca3af);
+            holder.stateChange.setVisibility(View.VISIBLE);
+        } else if (row.onlyInA && row.oldState != null) {
+            holder.stateChange.setText(row.oldState);
+            holder.stateChange.setTextColor(0xFF9ca3af);
+            holder.stateChange.setVisibility(View.VISIBLE);
+        } else {
+            holder.stateChange.setVisibility(View.GONE);
+        }
+
+        holder.itemView.setOnClickListener(v -> {
+            if (rowClickListener != null) rowClickListener.onClick(row);
+        });
     }
 
     @Override
     public int getItemCount() { return rows.size(); }
 
     static class ViewHolder extends RecyclerView.ViewHolder {
-        final TextView processName, oldValue, arrow, newValue, delta;
+        final TextView processName, oldValue, arrow, newValue, delta, stateChange;
 
         ViewHolder(View v) {
             super(v);
@@ -87,6 +117,7 @@ public class DiffAdapter extends RecyclerView.Adapter<DiffAdapter.ViewHolder> {
             arrow = v.findViewById(R.id.arrow);
             newValue = v.findViewById(R.id.newValue);
             delta = v.findViewById(R.id.delta);
+            stateChange = v.findViewById(R.id.stateChange);
         }
     }
 }

@@ -62,6 +62,32 @@
 
     </LinearLayout>
 
+    <!-- Global memory diff -->
+    <TextView
+        android:id="@+id/globalMemDiff"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:textColor="?attr/textSecondaryColor"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="4dp" />
+
+    <!-- State summary diff -->
+    <TextView
+        android:id="@+id/stateSummaryDiff"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:visibility="gone"
+        android:textColor="?attr/textSecondaryColor"
+        android:textSize="11sp"
+        android:fontFamily="monospace"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="6dp" />
+
     <!-- Column selector -->
     <LinearLayout
         android:layout_width="match_parent"

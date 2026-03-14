@@ -3,6 +3,7 @@ package com.ahat.heapdumper;
 import android.os.Bundle;
 import android.widget.TextView;
 
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -84,11 +85,145 @@ public class DiffActivity extends AppCompatActivity {
         RecyclerView recycler = findViewById(R.id.recyclerView);
         recycler.setLayoutManager(new LinearLayoutManager(this));
         adapter = new DiffAdapter();
+        adapter.setOnRowClickListener(this::showProcessDetail);
         recycler.setAdapter(adapter);
 
+        showGlobalMemDiff();
+        showStateSummaryDiff();
         computeDiff();
         updateColumnButtons();
         updateSortButtons();
+    }
+
+    private void showGlobalMemDiff() {
+        TextView globalMem = findViewById(R.id.globalMemDiff);
+        if (globalMem == null) return;
+        if (snapshotA.memTotalKb == 0 && snapshotB.memTotalKb == 0) {
+            globalMem.setVisibility(android.view.View.GONE);
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        if (snapshotA.memTotalKb > 0 && snapshotB.memTotalKb > 0) {
+            long usedA = snapshotA.memUsedKb();
+            long usedB = snapshotB.memUsedKb();
+            long delta = usedB - usedA;
+            String sign = delta > 0 ? "+" : "";
+            sb.append("RAM used: ").append(ShellHelper.formatKb(usedA))
+              .append(" \u2192 ").append(ShellHelper.formatKb(usedB))
+              .append(" (").append(sign).append(ShellHelper.formatKb(delta)).append(")");
+            if (snapshotA.memAvailableKb > 0) {
+                long availDelta = snapshotB.memAvailableKb - snapshotA.memAvailableKb;
+                String availSign = availDelta > 0 ? "+" : "";
+                sb.append("\nAvail: ").append(ShellHelper.formatKb(snapshotA.memAvailableKb))
+                  .append(" \u2192 ").append(ShellHelper.formatKb(snapshotB.memAvailableKb))
+                  .append(" (").append(availSign).append(ShellHelper.formatKb(availDelta)).append(")");
+            }
+        }
+        globalMem.setText(sb.toString());
+        globalMem.setVisibility(android.view.View.VISIBLE);
+    }
+
+    private void showStateSummaryDiff() {
+        TextView stateSummary = findViewById(R.id.stateSummaryDiff);
+        if (stateSummary == null) return;
+
+        // Count states in each snapshot
+        Map<String, Integer> countsA = new LinkedHashMap<>();
+        for (Snapshot.ProcessSnapshot p : snapshotA.processes) {
+            countsA.merge(p.oomLabel, 1, Integer::sum);
+        }
+        Map<String, Integer> countsB = new LinkedHashMap<>();
+        for (Snapshot.ProcessSnapshot p : snapshotB.processes) {
+            countsB.merge(p.oomLabel, 1, Integer::sum);
+        }
+
+        // Build diff string
+        java.util.TreeSet<String> allStates = new java.util.TreeSet<>();
+        allStates.addAll(countsA.keySet());
+        allStates.addAll(countsB.keySet());
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Procs: ").append(snapshotA.processes.size())
+          .append(" \u2192 ").append(snapshotB.processes.size());
+
+        // Count state transitions
+        Map<String, Snapshot.ProcessSnapshot> mapA = new LinkedHashMap<>();
+        for (Snapshot.ProcessSnapshot p : snapshotA.processes) mapA.put(p.name, p);
+        Map<String, Snapshot.ProcessSnapshot> mapB = new LinkedHashMap<>();
+        for (Snapshot.ProcessSnapshot p : snapshotB.processes) mapB.put(p.name, p);
+
+        int stateChanges = 0, added = 0, removed = 0;
+        for (String name : mapB.keySet()) {
+            if (!mapA.containsKey(name)) added++;
+            else if (!mapA.get(name).oomLabel.equals(mapB.get(name).oomLabel)) stateChanges++;
+        }
+        for (String name : mapA.keySet()) {
+            if (!mapB.containsKey(name)) removed++;
+        }
+
+        if (stateChanges > 0) sb.append(" | ").append(stateChanges).append(" state changes");
+        if (added > 0) sb.append(" | +").append(added).append(" new");
+        if (removed > 0) sb.append(" | -").append(removed).append(" removed");
+
+        // Per-state counts
+        sb.append("\n");
+        for (String state : allStates) {
+            int cA = countsA.getOrDefault(state, 0);
+            int cB = countsB.getOrDefault(state, 0);
+            if (cA != cB) {
+                sb.append(state).append(": ").append(cA).append("\u2192").append(cB).append("  ");
+            }
+        }
+
+        stateSummary.setText(sb.toString().trim());
+        stateSummary.setVisibility(android.view.View.VISIBLE);
+    }
+
+    private void showProcessDetail(DiffAdapter.DiffRow row) {
+        StringBuilder sb = new StringBuilder();
+
+        if (row.oldState != null && row.newState != null && !row.oldState.equals(row.newState)) {
+            sb.append("State: ").append(row.oldState).append(" \u2192 ").append(row.newState).append("\n\n");
+        } else if (row.onlyInB) {
+            sb.append("New process (").append(row.newState).append(")\n\n");
+        } else if (row.onlyInA) {
+            sb.append("Removed (was ").append(row.oldState).append(")\n\n");
+        }
+
+        // Header
+        sb.append(String.format(Locale.US, "%-12s %10s %10s %10s\n", "", "A", "B", "Delta"));
+        sb.append("────────────────────────────────────────\n");
+
+        // All memory columns
+        appendMemRow(sb, "PSS", row.procA, row.procB, p -> p.pssKb);
+        appendMemRow(sb, "Java", row.procA, row.procB, p -> p.javaHeapKb);
+        appendMemRow(sb, "Native", row.procA, row.procB, p -> p.nativeHeapKb);
+        appendMemRow(sb, "Code", row.procA, row.procB, p -> p.codeKb);
+        appendMemRow(sb, "Graphics", row.procA, row.procB, p -> p.graphicsKb);
+        appendMemRow(sb, "RSS", row.procA, row.procB, p -> p.rssKb);
+
+        new AlertDialog.Builder(this)
+                .setTitle(row.name)
+                .setMessage(sb.toString())
+                .setPositiveButton("OK", null)
+                .show();
+    }
+
+    private interface MemExtractor {
+        long get(Snapshot.ProcessSnapshot p);
+    }
+
+    private void appendMemRow(StringBuilder sb, String label,
+            Snapshot.ProcessSnapshot a, Snapshot.ProcessSnapshot b, MemExtractor ext) {
+        long valA = a != null ? ext.get(a) : 0;
+        long valB = b != null ? ext.get(b) : 0;
+        long delta = valB - valA;
+        String sign = delta > 0 ? "+" : "";
+        sb.append(String.format(Locale.US, "%-12s %10s %10s %10s\n",
+                label,
+                a != null ? ShellHelper.formatKb(valA) : "--",
+                b != null ? ShellHelper.formatKb(valB) : "--",
+                sign + ShellHelper.formatKb(delta)));
     }
 
     private void setColumn(MemColumn col) {
@@ -147,6 +282,10 @@ public class DiffActivity extends AppCompatActivity {
             row.delta = valB - valA;
             row.onlyInA = (pb == null);
             row.onlyInB = (pa == null);
+            row.oldState = pa != null ? pa.oomLabel : null;
+            row.newState = pb != null ? pb.oomLabel : null;
+            row.procA = pa;
+            row.procB = pb;
             rows.add(row);
         }
 

@@ -9,12 +9,25 @@ public class Snapshot implements Serializable {
     public final long timestamp;
     public final boolean enriched;
     public final List<ProcessSnapshot> processes;
+    // Global memory at time of snapshot (from /proc/meminfo)
+    public long memTotalKb, memAvailableKb, memFreeKb, swapTotalKb, swapFreeKb;
 
     public Snapshot(long timestamp, boolean enriched, List<ProcessSnapshot> processes) {
         this.timestamp = timestamp;
         this.enriched = enriched;
         this.processes = processes;
     }
+
+    public void setGlobalMem(GlobalMemInfo gmi) {
+        if (gmi == null) return;
+        this.memTotalKb = gmi.memTotalKb;
+        this.memAvailableKb = gmi.memAvailableKb;
+        this.memFreeKb = gmi.memFreeKb;
+        this.swapTotalKb = gmi.swapTotalKb;
+        this.swapFreeKb = gmi.swapFreeKb;
+    }
+
+    public long memUsedKb() { return memTotalKb - memFreeKb; }
 
     /** Create a snapshot from enriched ProcessInfo entries only (ignores non-enriched). */
     public static Snapshot fromProcessList(List<ProcessInfo> list) {
