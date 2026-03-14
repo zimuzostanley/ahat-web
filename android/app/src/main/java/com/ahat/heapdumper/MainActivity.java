@@ -71,6 +71,17 @@ public class MainActivity extends AppCompatActivity {
     private boolean viewingSnapshot = false;
     private long snapshotTimestamp;
     private static long lastLightweightSnapshotMs;
+    /** Previous process states keyed by "pid:name" for detecting OOM label changes. */
+    private final java.util.HashMap<String, PrevState> prevStates = new java.util.HashMap<>();
+
+    private static class PrevState {
+        final String oomLabel;
+        final long lastChangedMs;
+        PrevState(String oomLabel, long lastChangedMs) {
+            this.oomLabel = oomLabel;
+            this.lastChangedMs = lastChangedMs;
+        }
+    }
 
     private final BroadcastReceiver enrichDoneReceiver = new BroadcastReceiver() {
         @Override
@@ -367,6 +378,35 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // ── State change detection ─────────────────────────────────────────────
+
+    /** Compare current process list against previous, set lastChangedMs on each. */
+    private void computeStateChanges(List<ProcessInfo> list) {
+        long now = System.currentTimeMillis();
+        java.util.HashMap<String, PrevState> newStates = new java.util.HashMap<>();
+
+        for (ProcessInfo p : list) {
+            String key = p.pid + ":" + p.name;
+            PrevState prev = prevStates.get(key);
+
+            if (prev == null) {
+                // New process — first time seen
+                p.lastChangedMs = now;
+            } else if (!prev.oomLabel.equals(p.oomLabel)) {
+                // OOM label changed
+                p.lastChangedMs = now;
+            } else {
+                // Same state — carry forward
+                p.lastChangedMs = prev.lastChangedMs;
+            }
+
+            newStates.put(key, new PrevState(p.oomLabel, p.lastChangedMs));
+        }
+
+        prevStates.clear();
+        prevStates.putAll(newStates);
+    }
+
     // ── Core UI ──────────────────────────────────────────────────────────────
 
     private void appendLog(String msg) {
@@ -513,6 +553,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 List<ProcessInfo> list = ShellHelper.getProcessList();
                 GlobalMemInfo gmi = GlobalMemInfo.read();
+                computeStateChanges(list);
                 runOnUiThread(() -> {
                     if (isFinishing() || isDestroyed()) return;
                     currentProcesses = list;

@@ -53,11 +53,12 @@ public class Snapshot implements Serializable {
         public final long graphicsKb;
         public final boolean enriched;
         public final long lastSeenMs;
+        public final long lastChangedMs;
 
         public ProcessSnapshot(String name, String oomLabel, int pid,
                                long pssKb, long rssKb, long javaHeapKb,
                                long nativeHeapKb, long codeKb, long graphicsKb,
-                               boolean enriched, long lastSeenMs) {
+                               boolean enriched, long lastSeenMs, long lastChangedMs) {
             this.name = name;
             this.oomLabel = oomLabel;
             this.pid = pid;
@@ -69,15 +70,16 @@ public class Snapshot implements Serializable {
             this.graphicsKb = graphicsKb;
             this.enriched = enriched;
             this.lastSeenMs = lastSeenMs;
+            this.lastChangedMs = lastChangedMs;
         }
 
-        /** Convenience constructor (no lastSeenMs, assumes enriched). */
+        /** Convenience constructor (no timestamps, assumes enriched). */
         public ProcessSnapshot(String name, String oomLabel, int pid,
                                long pssKb, long rssKb, long javaHeapKb,
                                long nativeHeapKb, long codeKb, long graphicsKb,
                                boolean enriched) {
             this(name, oomLabel, pid, pssKb, rssKb, javaHeapKb,
-                    nativeHeapKb, codeKb, graphicsKb, enriched, 0);
+                    nativeHeapKb, codeKb, graphicsKb, enriched, 0, 0);
         }
 
         /** Convenience constructor for backwards compat (assumes enriched). */
@@ -85,20 +87,21 @@ public class Snapshot implements Serializable {
                                long pssKb, long rssKb, long javaHeapKb,
                                long nativeHeapKb, long codeKb, long graphicsKb) {
             this(name, oomLabel, pid, pssKb, rssKb, javaHeapKb,
-                    nativeHeapKb, codeKb, graphicsKb, true, 0);
+                    nativeHeapKb, codeKb, graphicsKb, true, 0, 0);
         }
 
         static ProcessSnapshot from(ProcessInfo pi) {
             return new ProcessSnapshot(pi.name, pi.oomLabel, pi.pid,
                     pi.pssKb, pi.rssKb, pi.javaHeapKb,
                     pi.nativeHeapKb, pi.codeKb, pi.graphicsKb, pi.enriched,
-                    pi.lastSeenMs);
+                    pi.lastSeenMs, pi.lastChangedMs);
         }
 
         /** Convert back to ProcessInfo for display in main view. */
         public ProcessInfo toProcessInfo() {
             ProcessInfo p = new ProcessInfo(pid, name, oomLabel);
             p.lastSeenMs = lastSeenMs;
+            p.lastChangedMs = lastChangedMs;
             if (enriched) {
                 p.pssKb = pssKb;
                 p.rssKb = rssKb;

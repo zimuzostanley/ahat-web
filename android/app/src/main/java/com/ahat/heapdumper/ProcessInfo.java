@@ -8,8 +8,10 @@ public class ProcessInfo implements Serializable {
     public final String name;
     public final String oomLabel;
 
-    /** Timestamp of last fetch or state change (millis). */
+    /** Timestamp of last fetch (millis). */
     public long lastSeenMs;
+    /** Timestamp of last OOM state change (millis). 0 = first seen this session. */
+    public long lastChangedMs;
 
     // Enriched by background meminfo (0 = not yet loaded)
     public long pssKb;

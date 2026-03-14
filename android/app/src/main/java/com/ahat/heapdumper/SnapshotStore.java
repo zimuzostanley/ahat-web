@@ -48,6 +48,7 @@ public class SnapshotStore {
             obj.put("graphicsKb", ps.graphicsKb);
             obj.put("enriched", ps.enriched);
             if (ps.lastSeenMs > 0) obj.put("lastSeenMs", ps.lastSeenMs);
+            if (ps.lastChangedMs > 0) obj.put("lastChangedMs", ps.lastChangedMs);
             procs.put(obj);
         }
         root.put("processes", procs);
@@ -135,7 +136,8 @@ public class SnapshotStore {
                     obj.getLong("codeKb"),
                     obj.getLong("graphicsKb"),
                     obj.optBoolean("enriched", true),
-                    obj.optLong("lastSeenMs", 0)));
+                    obj.optLong("lastSeenMs", 0),
+                    obj.optLong("lastChangedMs", 0)));
         }
         return new Snapshot(ts, enriched, procs);
     }
