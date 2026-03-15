@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+// Uses MaterialTheme.shapes
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
@@ -239,7 +239,7 @@ fun QueryScreen(
                                         Icon(Icons.Default.Close, "Remove",
                                             Modifier.size(14.dp))
                                     },
-                                    shape = RoundedCornerShape(6.dp),
+                                    shape = MaterialTheme.shapes.small,
                                     colors = AssistChipDefaults.assistChipColors(
                                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                         labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
