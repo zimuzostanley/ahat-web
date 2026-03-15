@@ -223,9 +223,10 @@ fun QueryScreen(
                     val result = tab.result
                     if (result != null && !result.isError) {
                         Text(
-                            text = "${result.rowCount} rows \u2022 ${result.executionTimeMs}ms",
+                            text = result.statusText,
                             style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = if (result.truncated) MaterialTheme.colorScheme.error
+                                   else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }

@@ -69,7 +69,10 @@ private val sqlSyntaxRules = listOf(
             "VIRTUAL|IF|BEGIN|COMMIT|ROLLBACK|TEMP|TEMPORARY|TRIGGER|" +
             "PRIMARY|KEY|FOREIGN|REFERENCES|CHECK|DEFAULT|UNIQUE|CONSTRAINT|" +
             "CAST|GLOB|MATCH|REGEXP|ESCAPE|COLLATE|INDEXED|REINDEX|" +
-            "ATTACH|DETACH|DATABASE|VACUUM|ANALYZE|AUTOINCREMENT)\\b",
+            "ATTACH|DETACH|DATABASE|VACUUM|ANALYZE|AUTOINCREMENT|" +
+            // PerfettoSQL-specific keywords
+            "CREATE_FUNCTION|CREATE_VIEW_FUNCTION|" +
+            "PERFETTO_TABLE|PERFETTO_VIEW|MACRO|RETURNS|SQL)\\b",
             RegexOption.IGNORE_CASE
         ),
         SpanStyle(color = SqlColors.Keyword)
@@ -79,7 +82,20 @@ private val sqlSyntaxRules = listOf(
         Regex("\\b(?:NULL|TRUE|FALSE)\\b", RegexOption.IGNORE_CASE),
         SpanStyle(color = SqlColors.Null)
     ),
-    // Common SQL aggregate/window functions
+    // Perfetto-specific table functions and macros
+    SyntaxRule(
+        Regex(
+            "\\b(?:_interval_intersect|_interval_agg|" +
+            "_counter_intervals|_slice_flattened|" +
+            "_graph_scan|_graph_aggregating_scan|" +
+            "_graph_reachable_weight_bounded_dfs|" +
+            "INTERVAL|METRIC|TRACE_METRICS|TRACE_BOUNDS|" +
+            "trace_start|trace_end|trace_dur)\\b",
+            RegexOption.IGNORE_CASE
+        ),
+        SpanStyle(color = SqlColors.Table)
+    ),
+    // Common SQL aggregate/window/scalar functions
     SyntaxRule(
         Regex(
             "\\b(?:COUNT|SUM|AVG|MIN|MAX|TOTAL|GROUP_CONCAT|" +
@@ -89,7 +105,11 @@ private val sqlSyntaxRules = listOf(
             "LTRIM|RTRIM|TRIM|SUBSTR|REPLACE|HEX|QUOTE|TYPEOF|" +
             "UNICODE|ZEROBLOB|LIKELY|UNLIKELY|" +
             "PRINTF|FORMAT|CHAR|NULLIF|RANDOM|" +
-            "ROUND|SIGN|MAX_VALUE|MIN_VALUE)\\b(?=\\s*\\()",
+            "ROUND|SIGN|MAX_VALUE|MIN_VALUE|" +
+            // Perfetto functions
+            "STR_SPLIT|EXTRACT_ARG|TO_REALTIME|TO_MONOTONIC|" +
+            "DUR_TO_STR|SPANS_OVERLAPPING_DUR|CAT_STACKS|" +
+            "EXPERIMENTAL_MEMOIZE)\\b(?=\\s*\\()",
             RegexOption.IGNORE_CASE
         ),
         SpanStyle(color = SqlColors.Function)

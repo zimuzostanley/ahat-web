@@ -21,6 +21,9 @@ class TraceProcessorSession private constructor(
     private var destroyed = false
 
     companion object {
+        /** Maximum rows to materialize per query. Prevents OOM on huge results. */
+        const val DEFAULT_MAX_ROWS = 100_000
+
         suspend fun open(tracePath: String, fileName: String): TraceProcessorSession =
             withContext(Dispatchers.IO) {
                 val handle = TraceProcessorNative.nativeCreate()
@@ -35,9 +38,9 @@ class TraceProcessorSession private constructor(
 
     /**
      * Execute a PerfettoSQL query via the native cursor API.
-     * Zero-copy: reads row data from DirectByteBuffer backed by native memory.
+     * Materializes up to [maxRows] rows. If there are more, [QueryResult.truncated] is true.
      */
-    suspend fun query(sql: String): QueryResult = mutex.withLock {
+    suspend fun query(sql: String, maxRows: Int = DEFAULT_MAX_ROWS): QueryResult = mutex.withLock {
         check(!destroyed) { "Session is closed" }
         withContext(Dispatchers.IO) {
             val startMs = System.currentTimeMillis()
@@ -45,12 +48,10 @@ class TraceProcessorSession private constructor(
             try {
                 cursor = TraceProcessorNative.nativeQueryStart(handle, sql)
                 if (cursor == 0L) {
-                    val elapsed = System.currentTimeMillis() - startMs
                     return@withContext QueryResult(
                         columns = emptyList(), rows = emptyList(),
-                        executionTimeMs = elapsed,
-                        error = "Failed to start query",
-                        sql = sql,
+                        executionTimeMs = System.currentTimeMillis() - startMs,
+                        error = "Failed to start query", sql = sql,
                     )
                 }
 
@@ -62,9 +63,14 @@ class TraceProcessorSession private constructor(
                     )
                 }
 
-                // Materialize rows by reading from the cursor
                 val rows = mutableListOf<List<String>>()
+                var truncated = false
+
                 while (TraceProcessorNative.nativeQueryNext(cursor)) {
+                    if (rows.size >= maxRows) {
+                        truncated = true
+                        break  // Stop reading, cursor will be closed in finally
+                    }
                     val buffer = TraceProcessorNative.nativeQueryGetRowBuffer(cursor)
                     if (buffer != null) {
                         val cells = decodeRowBuffer(buffer, colCount)
@@ -72,8 +78,7 @@ class TraceProcessorSession private constructor(
                     }
                 }
 
-                // Check for errors
-                val error = TraceProcessorNative.nativeQueryError(cursor)
+                val error = if (!truncated) TraceProcessorNative.nativeQueryError(cursor) else null
                 val elapsed = System.currentTimeMillis() - startMs
 
                 QueryResult(
@@ -83,14 +88,14 @@ class TraceProcessorSession private constructor(
                     rowCount = rows.size.toLong(),
                     sql = sql,
                     error = error,
+                    truncated = truncated,
+                    maxRowsHit = maxRows,
                 )
             } catch (e: Exception) {
-                val elapsed = System.currentTimeMillis() - startMs
                 QueryResult(
                     columns = emptyList(), rows = emptyList(),
-                    executionTimeMs = elapsed,
-                    error = e.message ?: "Unknown error",
-                    sql = sql,
+                    executionTimeMs = System.currentTimeMillis() - startMs,
+                    error = e.message ?: "Unknown error", sql = sql,
                 )
             } finally {
                 if (cursor != 0L) {

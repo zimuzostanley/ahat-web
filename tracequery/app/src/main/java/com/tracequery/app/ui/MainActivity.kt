@@ -1,5 +1,7 @@
 package com.tracequery.app.ui
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -16,15 +18,16 @@ import com.tracequery.app.ui.screen.TraceLoadScreen
 import com.tracequery.app.ui.theme.TraceQueryTheme
 
 class MainActivity : ComponentActivity() {
+
+    private lateinit var vm: MainViewModel
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         setContent {
             TraceQueryTheme {
-                val vm: MainViewModel = viewModel(
-                    factory = MainViewModel.Factory(applicationContext)
-                )
+                vm = viewModel(factory = MainViewModel.Factory(applicationContext))
                 val state by vm.state.collectAsState()
 
                 Scaffold(modifier = Modifier.fillMaxSize()) { padding ->
@@ -48,6 +51,24 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+        }
+
+        // Handle intent if opened from file manager
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent)
+    }
+
+    private fun handleIntent(intent: Intent?) {
+        if (intent == null) return
+        @Suppress("DEPRECATION")
+        val uri: Uri? = intent.data ?: intent.getParcelableExtra(Intent.EXTRA_STREAM)
+        if (uri != null && ::vm.isInitialized) {
+            val name = uri.lastPathSegment?.substringAfterLast('/') ?: "trace"
+            vm.openTrace(uri, name)
         }
     }
 }

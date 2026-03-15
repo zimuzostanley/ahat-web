@@ -22,11 +22,35 @@ data class StdlibTable(
 ) {
     /** The INCLUDE PERFETTO MODULE statement needed before querying this table. */
     val includeStatement: String
-        get() = "INCLUDE PERFETTO MODULE $moduleName;"
+        get() {
+            // Don't import prelude (auto-imported) or empty module names
+            if (moduleName.startsWith("prelude") || moduleName.isBlank()) return ""
+            return "INCLUDE PERFETTO MODULE $moduleName;"
+        }
+
+    /** Whether this is a table function (needs arguments to call). */
+    val isTableFunction: Boolean
+        get() = name.startsWith("_interval_intersect") ||
+                name.startsWith("_interval_agg") ||
+                name.startsWith("_counter_intervals") ||
+                type == "table_function"
 
     /** Generate a SELECT * query for this table. */
     fun selectQuery(limit: Int = 100): String {
-        return "$includeStatement\nSELECT * FROM $name LIMIT $limit;"
+        val include = if (includeStatement.isNotBlank()) "$includeStatement\n" else ""
+        return "${include}SELECT * FROM $name LIMIT $limit;"
+    }
+
+    /** Generate a query for table functions with placeholder args. */
+    fun selectQueryWithArgs(args: Map<String, String> = emptyMap(), limit: Int = 100): String {
+        val include = if (includeStatement.isNotBlank()) "$includeStatement\n" else ""
+        if (!isTableFunction || columns.isEmpty()) {
+            return "${include}SELECT * FROM $name LIMIT $limit;"
+        }
+        // For _interval_intersect, generate a template with argument placeholders
+        val argStr = args.entries.joinToString(", ") { "${it.key} => ${it.value}" }
+            .ifBlank { "/* add arguments */" }
+        return "${include}SELECT * FROM $name($argStr) LIMIT $limit;"
     }
 }
 

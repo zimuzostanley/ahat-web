@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.tracequery.app.data.QueryHistory
 import com.tracequery.app.data.TraceProcessorSession
 import com.tracequery.app.data.model.HistoryEntry
 import com.tracequery.app.data.model.QueryResult
@@ -56,6 +57,7 @@ class MainViewModel(
     private val _state = MutableStateFlow(MainUiState())
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
+    private val queryHistory = QueryHistory(appContext)
     private var nextTabId = 0
 
     init {
@@ -100,11 +102,16 @@ class MainViewModel(
                     fileName = fileName,
                 )
 
+                val history = queryHistory.getAll().filter { h ->
+                    h.traceFileName == fileName
+                }.take(50)
+
                 updateTab(tabId) {
                     it.copy(
                         session = session,
                         isLoading = false,
                         loadProgress = "",
+                        history = history,
                     )
                 }
             } catch (e: Exception) {
@@ -139,12 +146,17 @@ class MainViewModel(
                 error = result.error,
             )
 
+            // Persist to disk
+            queryHistory.add(entry)
+
             updateActiveTab {
                 it.copy(
                     result = result,
                     isQuerying = false,
                     error = result.error,
-                    history = listOf(entry) + it.history.take(99),
+                    history = queryHistory.getAll().filter { h ->
+                        h.traceFileName == tab.fileName
+                    }.take(50),
                 )
             }
         }
@@ -157,7 +169,11 @@ class MainViewModel(
     // ── Table browser ────────────────────────────────────────────────────
 
     fun selectTable(table: StdlibTable) {
-        val sql = table.selectQuery()
+        val sql = if (table.isTableFunction) {
+            table.selectQueryWithArgs()
+        } else {
+            table.selectQuery()
+        }
         updateActiveTab { it.copy(currentSql = sql, mode = QueryMode.SQL) }
         executeQuery(sql)
     }

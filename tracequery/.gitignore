@@ -1,0 +1,14 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+app/build/
+app/.cxx/
+trace_processor_shell_arm64
+trace_processor_shell_x64
+stdlib_docs.json
