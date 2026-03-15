@@ -71,9 +71,14 @@ data class StdlibDocs(
 ) {
     companion object {
         fun loadFromAssets(context: Context): StdlibDocs {
-            val json = context.assets.open("stdlib_docs.json")
-                .bufferedReader().use { it.readText() }
-            return parse(json)
+            return try {
+                val json = context.assets.open("stdlib_docs.json")
+                    .bufferedReader().use { it.readText() }
+                parse(json)
+            } catch (e: Exception) {
+                android.util.Log.e("StdlibDocs", "Failed to load stdlib_docs.json", e)
+                StdlibDocs(emptyList(), emptyList())
+            }
         }
 
         fun parse(json: String): StdlibDocs {

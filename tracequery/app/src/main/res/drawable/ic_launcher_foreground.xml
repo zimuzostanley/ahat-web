@@ -3,35 +3,24 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Database/query icon — clean geometric design -->
-    <!-- Outer cylinder (trace/database) -->
+    <!-- Simple clean icon: ">" prompt cursor + magnifying glass = query -->
+    <!-- Background circle -->
     <path
-        android:fillColor="#8B9CF7"
-        android:pathData="M54,28 C68,28 80,32 80,37 L80,71 C80,76 68,80 54,80 C40,80 28,76 28,71 L28,37 C28,32 40,28 54,28Z" />
-    <!-- Top ellipse -->
+        android:fillColor="#4A55A2"
+        android:pathData="M54,24 C70.6,24 84,37.4 84,54 C84,70.6 70.6,84 54,84 C37.4,84 24,70.6 24,54 C24,37.4 37.4,24 54,24Z" />
+    <!-- Prompt ">" symbol -->
     <path
-        android:fillColor="#A5B4FC"
-        android:pathData="M54,28 C68,28 80,32 80,37 C80,42 68,46 54,46 C40,46 28,42 28,37 C28,32 40,28 54,28Z" />
-    <!-- SQL query cursor line -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M38,55 L52,55"
-        android:strokeWidth="2.5"
-        android:strokeColor="#FFFFFF" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M38,62 L62,62"
-        android:strokeWidth="2"
+        android:pathData="M40,44 L52,54 L40,64"
+        android:strokeWidth="4"
         android:strokeColor="#FFFFFF"
-        android:strokeAlpha="0.7" />
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+    <!-- Underscore cursor -->
     <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M38,69 L56,69"
-        android:strokeWidth="2"
+        android:pathData="M56,64 L68,64"
+        android:strokeWidth="3.5"
         android:strokeColor="#FFFFFF"
-        android:strokeAlpha="0.5" />
-    <!-- Play/run triangle -->
-    <path
-        android:fillColor="#5EEAD4"
-        android:pathData="M62,50 L72,56 L62,62Z" />
+        android:strokeLineCap="round"
+        android:fillColor="#00000000" />
 </vector>

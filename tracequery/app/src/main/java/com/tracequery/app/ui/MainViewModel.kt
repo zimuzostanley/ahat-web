@@ -252,11 +252,16 @@ class MainViewModel(
     }
 
     override fun onCleared() {
-        // Deterministic cleanup: close ALL sessions
+        // Synchronous cleanup: close ALL sessions deterministically.
+        // Cannot use viewModelScope (already cancelled at this point).
         _state.value.tabs.forEach { tab ->
             tab.session?.let { session ->
-                viewModelScope.launch { session.close() }
+                kotlinx.coroutines.runBlocking {
+                    try { session.close() } catch (_: Exception) {}
+                }
             }
+            // Clean up cache files
+            File(appContext.cacheDir, "trace_${tab.id}").delete()
         }
     }
 

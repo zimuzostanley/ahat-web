@@ -56,7 +56,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tracequery.app.data.model.QueryResult
 import com.tracequery.app.ui.theme.CodeFontFamily
-import com.tracequery.app.ui.theme.GridColors
+// All colors resolved from MaterialTheme at composition time
 
 /** Action from cell/column context menus. */
 sealed class GridAction {
@@ -257,8 +257,8 @@ fun DataGrid(
                             Text(
                                 cell, style = cellText,
                                 color = when {
-                                    isNull -> GridColors.NullText
-                                    isNum -> GridColors.NumberText
+                                    isNull -> onVariant
+                                    isNum -> primary
                                     else -> onSurface
                                 },
                                 maxLines = 1, overflow = TextOverflow.Ellipsis,
