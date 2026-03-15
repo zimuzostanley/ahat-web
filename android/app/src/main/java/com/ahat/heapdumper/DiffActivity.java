@@ -165,14 +165,16 @@ public class DiffActivity extends AppCompatActivity {
         if (added > 0) sb.append(" | +").append(added).append(" new");
         if (removed > 0) sb.append(" | -").append(removed).append(" removed");
 
-        // Per-state counts
+        // Per-state counts (all states, highlight changes)
         sb.append("\n");
         for (String state : allStates) {
             int cA = countsA.getOrDefault(state, 0);
             int cB = countsB.getOrDefault(state, 0);
+            sb.append(state).append(": ").append(cA);
             if (cA != cB) {
-                sb.append(state).append(": ").append(cA).append("\u2192").append(cB).append("  ");
+                sb.append("\u2192").append(cB);
             }
+            sb.append("  ");
         }
 
         stateSummary.setText(sb.toString().trim());
@@ -182,13 +184,25 @@ public class DiffActivity extends AppCompatActivity {
     private void showProcessDetail(DiffAdapter.DiffRow row) {
         StringBuilder sb = new StringBuilder();
 
-        if (row.oldState != null && row.newState != null && !row.oldState.equals(row.newState)) {
-            sb.append("State: ").append(row.oldState).append(" \u2192 ").append(row.newState).append("\n\n");
+        // Always show state
+        if (row.oldState != null && row.newState != null) {
+            if (row.oldState.equals(row.newState)) {
+                sb.append("State: ").append(row.newState).append("\n");
+            } else {
+                sb.append("State: ").append(row.oldState).append(" \u2192 ").append(row.newState).append("\n");
+            }
         } else if (row.onlyInB) {
-            sb.append("New process (").append(row.newState).append(")\n\n");
+            sb.append("New process (").append(row.newState).append(")\n");
         } else if (row.onlyInA) {
-            sb.append("Removed (was ").append(row.oldState).append(")\n\n");
+            sb.append("Removed (was ").append(row.oldState).append(")\n");
         }
+
+        // PID
+        if (row.procA != null) sb.append("PID: ").append(row.procA.pid);
+        if (row.procB != null && (row.procA == null || row.procA.pid != row.procB.pid)) {
+            sb.append(row.procA != null ? " \u2192 " : "PID: ").append(row.procB.pid);
+        }
+        sb.append("\n\n");
 
         // Header
         sb.append(String.format(Locale.US, "%-12s %10s %10s %10s\n", "", "A", "B", "Delta"));
