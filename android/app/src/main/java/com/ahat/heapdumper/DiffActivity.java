@@ -98,10 +98,6 @@ public class DiffActivity extends AppCompatActivity {
     private void showGlobalMemDiff() {
         TextView globalMem = findViewById(R.id.globalMemDiff);
         if (globalMem == null) return;
-        if (snapshotA.memTotalKb == 0 && snapshotB.memTotalKb == 0) {
-            globalMem.setVisibility(android.view.View.GONE);
-            return;
-        }
         StringBuilder sb = new StringBuilder();
         if (snapshotA.memTotalKb > 0 && snapshotB.memTotalKb > 0) {
             long usedA = snapshotA.memUsedKb();
@@ -118,9 +114,25 @@ public class DiffActivity extends AppCompatActivity {
                   .append(" \u2192 ").append(ShellHelper.formatKb(snapshotB.memAvailableKb))
                   .append(" (").append(availSign).append(ShellHelper.formatKb(availDelta)).append(")");
             }
+        } else if (snapshotA.memTotalKb > 0) {
+            long usedA = snapshotA.memUsedKb();
+            int pct = (int) ((usedA * 100) / snapshotA.memTotalKb);
+            sb.append("RAM A: ").append(ShellHelper.formatKb(usedA))
+              .append(" / ").append(ShellHelper.formatKb(snapshotA.memTotalKb))
+              .append(" (").append(pct).append("%)");
+        } else if (snapshotB.memTotalKb > 0) {
+            long usedB = snapshotB.memUsedKb();
+            int pct = (int) ((usedB * 100) / snapshotB.memTotalKb);
+            sb.append("RAM B: ").append(ShellHelper.formatKb(usedB))
+              .append(" / ").append(ShellHelper.formatKb(snapshotB.memTotalKb))
+              .append(" (").append(pct).append("%)");
         }
-        globalMem.setText(sb.toString());
-        globalMem.setVisibility(android.view.View.VISIBLE);
+        if (sb.length() > 0) {
+            globalMem.setText(sb.toString());
+            globalMem.setVisibility(android.view.View.VISIBLE);
+        } else {
+            globalMem.setVisibility(android.view.View.GONE);
+        }
     }
 
     private void showStateSummaryDiff() {
