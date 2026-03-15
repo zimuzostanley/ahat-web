@@ -9,7 +9,6 @@ import com.tracequery.app.data.model.ColumnInfo
 
 /**
  * A session wrapping a single loaded trace. Thread-safe via mutex.
- *
  * Each session holds a TraceProcessor instance with a trace loaded
  * in memory. Multiple sessions can coexist (multi-tab support).
  */
@@ -22,10 +21,6 @@ class TraceProcessorSession private constructor(
     private var destroyed = false
 
     companion object {
-        /**
-         * Opens a trace file and creates a new session.
-         * This is a potentially long operation (seconds for large traces).
-         */
         suspend fun open(tracePath: String, fileName: String): TraceProcessorSession =
             withContext(Dispatchers.IO) {
                 val handle = TraceProcessorNative.nativeCreate()
@@ -39,54 +34,72 @@ class TraceProcessorSession private constructor(
     }
 
     /**
-     * Execute a PerfettoSQL query and return the result.
+     * Execute a PerfettoSQL query via the native cursor API.
+     * Zero-copy: reads row data from DirectByteBuffer backed by native memory.
      */
     suspend fun query(sql: String): QueryResult = mutex.withLock {
         check(!destroyed) { "Session is closed" }
         withContext(Dispatchers.IO) {
             val startMs = System.currentTimeMillis()
+            var cursor = 0L
             try {
-                val raw = TraceProcessorNative.nativeQuery(handle, sql)
-                val elapsed = System.currentTimeMillis() - startMs
-
-                if (raw.isEmpty()) {
+                cursor = TraceProcessorNative.nativeQueryStart(handle, sql)
+                if (cursor == 0L) {
+                    val elapsed = System.currentTimeMillis() - startMs
                     return@withContext QueryResult(
-                        columns = emptyList(),
-                        rows = emptyList(),
+                        columns = emptyList(), rows = emptyList(),
                         executionTimeMs = elapsed,
+                        error = "Failed to start query",
+                        sql = sql,
                     )
                 }
 
-                val columnNames = raw[0].toList()
-                val dataRows = (1 until raw.size).map { i ->
-                    raw[i].toList()
+                val colCount = TraceProcessorNative.nativeQueryColumnCount(cursor)
+                val columns = (0 until colCount).map { i ->
+                    ColumnInfo(
+                        name = TraceProcessorNative.nativeQueryColumnName(cursor, i),
+                        index = i,
+                    )
                 }
 
+                // Materialize rows by reading from the cursor
+                val rows = mutableListOf<List<String>>()
+                while (TraceProcessorNative.nativeQueryNext(cursor)) {
+                    val buffer = TraceProcessorNative.nativeQueryGetRowBuffer(cursor)
+                    if (buffer != null) {
+                        val cells = decodeRowBuffer(buffer, colCount)
+                        rows.add(cells.map { it.toString() })
+                    }
+                }
+
+                // Check for errors
+                val error = TraceProcessorNative.nativeQueryError(cursor)
+                val elapsed = System.currentTimeMillis() - startMs
+
                 QueryResult(
-                    columns = columnNames.mapIndexed { idx, name ->
-                        ColumnInfo(name = name, index = idx)
-                    },
-                    rows = dataRows,
+                    columns = columns,
+                    rows = rows,
                     executionTimeMs = elapsed,
-                    rowCount = dataRows.size.toLong(),
+                    rowCount = rows.size.toLong(),
                     sql = sql,
+                    error = error,
                 )
             } catch (e: Exception) {
                 val elapsed = System.currentTimeMillis() - startMs
                 QueryResult(
-                    columns = emptyList(),
-                    rows = emptyList(),
+                    columns = emptyList(), rows = emptyList(),
                     executionTimeMs = elapsed,
                     error = e.message ?: "Unknown error",
                     sql = sql,
                 )
+            } finally {
+                if (cursor != 0L) {
+                    TraceProcessorNative.nativeQueryClose(cursor)
+                }
             }
         }
     }
 
-    /**
-     * Close this session, releasing the native TraceProcessor instance.
-     */
     suspend fun close() = mutex.withLock {
         if (!destroyed) {
             destroyed = true

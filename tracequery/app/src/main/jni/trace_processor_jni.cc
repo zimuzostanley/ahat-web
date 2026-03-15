@@ -233,21 +233,6 @@ Java_com_tracequery_app_data_TraceProcessorNative_nativeLoadTrace(
 
 // Opens a query cursor. Returns cursor handle.
 JNIEXPORT jlong JNICALL
-Java_com_tracequery_app_data_TraceProcessorNative_nativeQueryOpen(
-        JNIEnv*, jclass, jlong tpHandle, jstring jsql) {
-    auto* inst = toTp(tpHandle);
-    if (!inst || !inst->tp) return 0;
-
-    const char* sql = reinterpret_cast<const char*>(
-        // Use JNIEnv from parameter
-        nullptr);  // Will be set below
-
-    // Need env for GetStringUTFChars
-    return 0;  // placeholder
-}
-
-// Actual implementation with proper env access:
-JNIEXPORT jlong JNICALL
 Java_com_tracequery_app_data_TraceProcessorNative_nativeQueryStart(
         JNIEnv* env, jclass, jlong tpHandle, jstring jsql) {
     auto* inst = toTp(tpHandle);
