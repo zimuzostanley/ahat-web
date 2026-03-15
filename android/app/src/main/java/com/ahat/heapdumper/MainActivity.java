@@ -246,6 +246,23 @@ public class MainActivity extends AppCompatActivity {
                 String label = snap.enriched ? "" : " (states only)";
                 statusText.setText("\u23F1 " + sdf.format(new Date(timestamp)) + label
                         + " \u2022 " + procs.size() + " procs");
+                // Show global memory from snapshot
+                if (snap.memTotalKb > 0) {
+                    long used = snap.memUsedKb();
+                    int pct = snap.memTotalKb > 0 ? (int) ((used * 100) / snap.memTotalKb) : 0;
+                    StringBuilder mem = new StringBuilder();
+                    mem.append("RAM: ").append(ShellHelper.formatKb(used))
+                       .append(" / ").append(ShellHelper.formatKb(snap.memTotalKb))
+                       .append(" (").append(pct).append("%)");
+                    mem.append("  Avail: ").append(ShellHelper.formatKb(snap.memAvailableKb));
+                    if (snap.swapTotalKb > 0) {
+                        mem.append("  Swap: ").append(ShellHelper.formatKb(snap.swapTotalKb - snap.swapFreeKb))
+                           .append(" / ").append(ShellHelper.formatKb(snap.swapTotalKb));
+                    }
+                    memInfoBar.setText(mem.toString());
+                    memInfoBar.setVisibility(View.VISIBLE);
+                }
+
                 // Keep swipeRefresh enabled — pull down exits snapshot and fetches live
                 btnEnrichAll.setVisibility(View.GONE);
                 findViewById(R.id.btnScheduleEnrich).setVisibility(View.GONE);
@@ -447,14 +464,18 @@ public class MainActivity extends AppCompatActivity {
     /** Compare current process list against previous, set lastChangedMs on each. */
     private void computeStateChanges(List<ProcessInfo> list) {
         long now = System.currentTimeMillis();
+        boolean firstFetch = prevStates.isEmpty();
         java.util.HashMap<String, PrevState> newStates = new java.util.HashMap<>();
 
         for (ProcessInfo p : list) {
             String key = p.pid + ":" + p.name;
             PrevState prev = prevStates.get(key);
 
-            if (prev == null) {
-                // New process — first time seen
+            if (firstFetch) {
+                // First fetch — no previous data to compare, leave at 0
+                p.lastChangedMs = 0;
+            } else if (prev == null) {
+                // New process appeared after first fetch
                 p.lastChangedMs = now;
             } else if (!prev.oomLabel.equals(p.oomLabel)) {
                 // OOM label changed

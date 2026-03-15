@@ -191,12 +191,8 @@ public class ProcessAdapter extends RecyclerView.Adapter<ProcessAdapter.ViewHold
 
         // Show state-change timestamp (when OOM label last changed)
         if (p.lastChangedMs > 0) {
-            SimpleDateFormat sdf = new SimpleDateFormat(" \u2022 HH:mm:ss", Locale.US);
-            holder.timestamp.setText(sdf.format(new Date(p.lastChangedMs)));
-            holder.timestamp.setVisibility(View.VISIBLE);
-        } else if (p.lastSeenMs > 0) {
-            SimpleDateFormat sdf = new SimpleDateFormat(" \u2022 HH:mm:ss", Locale.US);
-            holder.timestamp.setText(sdf.format(new Date(p.lastSeenMs)));
+            SimpleDateFormat sdf = new SimpleDateFormat("HH:mm:ss", Locale.US);
+            holder.timestamp.setText(" \u2022 \u0394 " + sdf.format(new Date(p.lastChangedMs)));
             holder.timestamp.setVisibility(View.VISIBLE);
         } else {
             holder.timestamp.setVisibility(View.GONE);

@@ -85,15 +85,21 @@ public class SnapshotAdapter extends RecyclerView.Adapter<SnapshotAdapter.ViewHo
         SimpleDateFormat sdf = new SimpleDateFormat("MMM d, HH:mm", Locale.US);
         holder.timestamp.setText(sdf.format(new Date(s.timestamp)));
 
+        StringBuilder detail = new StringBuilder();
+        detail.append(s.processes.size()).append(" procs");
         if (s.enriched) {
             long totalPss = 0;
             for (Snapshot.ProcessSnapshot p : s.processes) totalPss += p.pssKb;
-            String detail = s.processes.size() + " processes \u2022 PSS: "
-                    + ShellHelper.formatKb(totalPss) + " total";
-            holder.detail.setText(detail);
+            detail.append(" \u2022 PSS: ").append(ShellHelper.formatKb(totalPss));
         } else {
-            holder.detail.setText(s.processes.size() + " processes (states only)");
+            detail.append(" (states only)");
         }
+        if (s.memTotalKb > 0) {
+            long used = s.memUsedKb();
+            int pct = (int) ((used * 100) / s.memTotalKb);
+            detail.append(" \u2022 RAM ").append(pct).append("%");
+        }
+        holder.detail.setText(detail.toString());
 
         // Selection indicator: blue left bar
         holder.selectionBar.setBackgroundColor(selected ? 0xFF3b82f6 : 0x00000000);
