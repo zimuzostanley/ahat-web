@@ -736,7 +736,17 @@ public class MainActivity extends AppCompatActivity {
         btnEnrichAll.setEnabled(true);
 
         if (delaySeconds == 0) {
-            EnrichService.pendingProcesses = new ArrayList<>(currentProcesses);
+            // Respect active state filter — only enrich filtered processes
+            String sf = processAdapter.getStateFilter();
+            if (sf != null) {
+                ArrayList<ProcessInfo> filtered = new ArrayList<>();
+                for (ProcessInfo p : currentProcesses) {
+                    if (sf.equals(p.oomLabel)) filtered.add(p);
+                }
+                EnrichService.pendingProcesses = filtered;
+            } else {
+                EnrichService.pendingProcesses = new ArrayList<>(currentProcesses);
+            }
         } else {
             EnrichService.pendingProcesses = null;
         }
@@ -748,7 +758,12 @@ public class MainActivity extends AppCompatActivity {
             if (delaySeconds > 0) {
                 appendLog("Enrichment scheduled in " + delaySeconds + "s");
             } else {
-                appendLog("Started enrichment for " + currentProcesses.size() + " processes");
+                int count = EnrichService.pendingProcesses != null
+                        ? EnrichService.pendingProcesses.size() : 0;
+                String filter = processAdapter.getStateFilter();
+                String msg = "Started enrichment for " + count + " processes";
+                if (filter != null) msg += " [" + filter + "]";
+                appendLog(msg);
             }
         } catch (Exception e) {
             appendLog("ERROR starting service: " + e.getMessage());

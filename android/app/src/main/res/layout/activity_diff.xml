@@ -88,6 +88,25 @@
         android:paddingEnd="16dp"
         android:paddingBottom="6dp" />
 
+    <!-- State filter chips -->
+    <HorizontalScrollView
+        android:id="@+id/diffStateFilterScroll"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:visibility="gone"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="6dp">
+
+        <LinearLayout
+            android:id="@+id/diffStateFilterBar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal" />
+
+    </HorizontalScrollView>
+
     <!-- Column selector -->
     <LinearLayout
         android:layout_width="match_parent"

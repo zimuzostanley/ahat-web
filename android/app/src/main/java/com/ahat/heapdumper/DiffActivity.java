@@ -1,6 +1,11 @@
 package com.ahat.heapdumper;
 
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.view.View;
+import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AlertDialog;
@@ -17,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeSet;
 
 /**
  * Compares two snapshots side-by-side, showing per-process memory deltas.
@@ -39,6 +45,10 @@ public class DiffActivity extends AppCompatActivity {
 
     private TextView colPss, colJava, colNative, colCode, colGraphics, colRss;
     private TextView sortDelta, sortAbs, sortName;
+    private HorizontalScrollView stateFilterScroll;
+    private LinearLayout stateFilterBar;
+    private String stateFilter; // null = show all
+    private List<DiffAdapter.DiffRow> allRows; // unfiltered
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -82,6 +92,9 @@ public class DiffActivity extends AppCompatActivity {
         sortAbs.setOnClickListener(v -> setSort(SortMode.ABSOLUTE));
         sortName.setOnClickListener(v -> setSort(SortMode.NAME));
 
+        stateFilterScroll = findViewById(R.id.diffStateFilterScroll);
+        stateFilterBar = findViewById(R.id.diffStateFilterBar);
+
         RecyclerView recycler = findViewById(R.id.recyclerView);
         recycler.setLayoutManager(new LinearLayoutManager(this));
         adapter = new DiffAdapter();
@@ -91,6 +104,7 @@ public class DiffActivity extends AppCompatActivity {
         showGlobalMemDiff();
         showStateSummaryDiff();
         computeDiff();
+        buildStateFilterBar();
         updateColumnButtons();
         updateSortButtons();
     }
@@ -265,8 +279,23 @@ public class DiffActivity extends AppCompatActivity {
     }
 
     private void computeDiff() {
-        List<DiffAdapter.DiffRow> rows = computeDiffRows(snapshotA, snapshotB, memColumn, sortMode);
-        adapter.setRows(rows);
+        allRows = computeDiffRows(snapshotA, snapshotB, memColumn, sortMode);
+        applyStateFilter();
+    }
+
+    private void applyStateFilter() {
+        if (stateFilter == null) {
+            adapter.setRows(allRows);
+        } else {
+            List<DiffAdapter.DiffRow> filtered = new ArrayList<>();
+            for (DiffAdapter.DiffRow r : allRows) {
+                // Show if either old or new state matches the filter
+                if (stateFilter.equals(r.oldState) || stateFilter.equals(r.newState)) {
+                    filtered.add(r);
+                }
+            }
+            adapter.setRows(filtered);
+        }
     }
 
     /** Extract memory value from a ProcessSnapshot for a given column. */
@@ -329,6 +358,73 @@ public class DiffActivity extends AppCompatActivity {
         }
         Collections.sort(rows, cmp);
         return rows;
+    }
+
+    private void buildStateFilterBar() {
+        // Collect all states from both snapshots
+        TreeSet<String> states = new TreeSet<>();
+        for (Snapshot.ProcessSnapshot p : snapshotA.processes) states.add(p.oomLabel);
+        for (Snapshot.ProcessSnapshot p : snapshotB.processes) states.add(p.oomLabel);
+
+        if (states.isEmpty()) {
+            stateFilterScroll.setVisibility(View.GONE);
+            return;
+        }
+
+        stateFilterBar.removeAllViews();
+        float dp = getResources().getDisplayMetrics().density;
+        int pad = (int) (6 * dp);
+
+        // "All" chip
+        addFilterChip("All", null, pad);
+        for (String state : states) {
+            addFilterChip(state, state, pad);
+        }
+        stateFilterScroll.setVisibility(View.VISIBLE);
+    }
+
+    private void addFilterChip(String text, String state, int pad) {
+        TextView chip = new TextView(this);
+        chip.setText(text);
+        chip.setTextSize(11);
+        chip.setTypeface(Typeface.MONOSPACE);
+        chip.setPadding(pad * 2, pad, pad * 2, pad);
+
+        boolean active = (state == null && stateFilter == null)
+                || (state != null && state.equals(stateFilter));
+
+        if (active && state != null) {
+            int badgeColor = ProcessAdapter.getBadgeColor(state);
+            GradientDrawable bg = new GradientDrawable();
+            bg.setShape(GradientDrawable.RECTANGLE);
+            bg.setCornerRadius(12f);
+            bg.setColor(badgeColor);
+            chip.setBackground(bg);
+            chip.setTextColor(0xFFFFFFFF);
+        } else if (active) {
+            chip.setTextColor(0xFF3b82f6);
+            chip.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        } else {
+            chip.setTextColor(getThemeColor(R.attr.textSecondaryColor));
+        }
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT);
+        lp.setMarginEnd((int) (4 * getResources().getDisplayMetrics().density));
+        chip.setLayoutParams(lp);
+
+        chip.setOnClickListener(v -> {
+            if (state == null || state.equals(stateFilter)) {
+                stateFilter = null;
+            } else {
+                stateFilter = state;
+            }
+            applyStateFilter();
+            buildStateFilterBar();
+        });
+
+        stateFilterBar.addView(chip);
     }
 
     private void updateColumnButtons() {
