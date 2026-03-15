@@ -13,22 +13,43 @@
             android:exported="true"
             android:launchMode="singleTop"
             android:windowSoftInputMode="adjustResize">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- Open perfetto trace files -->
+            <!-- Open from file manager: file:// URIs with known extensions -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="file" />
                 <data android:mimeType="*/*" />
                 <data android:pathPattern=".*\\.perfetto-trace" />
+                <data android:pathPattern=".*\\.perfetto_trace" />
                 <data android:pathPattern=".*\\.pb" />
                 <data android:pathPattern=".*\\.pbtxt" />
                 <data android:pathPattern=".*\\.ctrace" />
                 <data android:pathPattern=".*\\.systrace" />
+            </intent-filter>
+
+            <!-- Open from file manager: content:// URIs (octet-stream) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+
+            <!-- Open from file manager: content:// URIs (protobuf) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/vnd.google.protobuf" />
             </intent-filter>
 
             <!-- Accept shared files -->
@@ -36,7 +57,9 @@
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="*/*" />
             </intent-filter>
+
         </activity>
     </application>
 </manifest>

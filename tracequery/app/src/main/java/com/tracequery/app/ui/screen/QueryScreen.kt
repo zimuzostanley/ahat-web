@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.History
@@ -65,6 +66,7 @@ fun QueryScreen(
     onSwitchTab: (Int) -> Unit,
     onCloseTab: (Int) -> Unit,
     onLoadHistory: (HistoryEntry) -> Unit,
+    onOpenTrace: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val tab = uiState.activeTab ?: return
@@ -74,8 +76,8 @@ fun QueryScreen(
     var showHistory by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize()) {
-        // ── Tab bar ──────────────────────────────────────────────────────
-        if (uiState.tabs.size > 1) {
+        // ── Tab bar (always show if we have tabs — for "+" button) ─────
+        if (uiState.tabs.isNotEmpty()) {
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -109,6 +111,24 @@ fun QueryScreen(
                                 .size(14.dp)
                                 .clickable { onCloseTab(t.id) },
                         )
+                    }
+                }
+                // "+" button to open another trace
+                if (onOpenTrace != null) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .clickable { onOpenTrace() }
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "Open trace",
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
                     }
                 }
             }
