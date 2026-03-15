@@ -1,0 +1,37 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Database/query icon — clean geometric design -->
+    <!-- Outer cylinder (trace/database) -->
+    <path
+        android:fillColor="#8B9CF7"
+        android:pathData="M54,28 C68,28 80,32 80,37 L80,71 C80,76 68,80 54,80 C40,80 28,76 28,71 L28,37 C28,32 40,28 54,28Z" />
+    <!-- Top ellipse -->
+    <path
+        android:fillColor="#A5B4FC"
+        android:pathData="M54,28 C68,28 80,32 80,37 C80,42 68,46 54,46 C40,46 28,42 28,37 C28,32 40,28 54,28Z" />
+    <!-- SQL query cursor line -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,55 L52,55"
+        android:strokeWidth="2.5"
+        android:strokeColor="#FFFFFF" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,62 L62,62"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.7" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,69 L56,69"
+        android:strokeWidth="2"
+        android:strokeColor="#FFFFFF"
+        android:strokeAlpha="0.5" />
+    <!-- Play/run triangle -->
+    <path
+        android:fillColor="#5EEAD4"
+        android:pathData="M62,50 L72,56 L62,62Z" />
+</vector>

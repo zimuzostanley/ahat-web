@@ -1,6 +1,7 @@
 package com.tracequery.app.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -155,9 +156,12 @@ fun SqlEditor(
         color = SqlColors.Plain,
     )
 
+    val outlineColor = MaterialTheme.colorScheme.outline
+
     Row(
         modifier = modifier
-            .background(SqlColors.Background)
+            .background(SqlColors.Background, shape = MaterialTheme.shapes.small)
+            .border(1.dp, outlineColor.copy(alpha = 0.5f), MaterialTheme.shapes.small)
             .verticalScroll(vScroll),
     ) {
         // Line number gutter

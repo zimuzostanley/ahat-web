@@ -12,6 +12,7 @@ import com.tracequery.app.data.model.QueryResult
 import com.tracequery.app.data.model.StdlibDocs
 import com.tracequery.app.data.model.StdlibTable
 import com.tracequery.app.ui.theme.ThemeMode
+import com.tracequery.app.ui.theme.ThemePrefs
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,13 +64,10 @@ class MainViewModel(
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
     private val queryHistory = QueryHistory(appContext)
-    private val themePrefs = appContext.getSharedPreferences("theme", Context.MODE_PRIVATE)
     private var nextTabId = 0
 
     init {
-        // Load saved theme
-        val savedTheme = themePrefs.getString("mode", "SYSTEM") ?: "SYSTEM"
-        _state.update { it.copy(themeMode = ThemeMode.valueOf(savedTheme)) }
+        _state.update { it.copy(themeMode = ThemePrefs.load(appContext)) }
         // Load stdlib docs in background
         viewModelScope.launch {
             try {
@@ -227,7 +225,7 @@ class MainViewModel(
     // ── Theme & navigation ─────────────────────────────────────────
 
     fun setThemeMode(mode: ThemeMode) {
-        themePrefs.edit().putString("mode", mode.name).apply()
+        ThemePrefs.save(appContext, mode)
         _state.update { it.copy(themeMode = mode) }
     }
 

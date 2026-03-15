@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -39,18 +40,22 @@ class MainActivity : ComponentActivity() {
                 val filePicker = rememberLauncherForActivityResult(
                     ActivityResultContracts.OpenDocument()
                 ) { uri: Uri? ->
-                    if (uri != null) {
-                        vm.navigateTo(Screen.QUERY)
-                        vm.openTrace(uri, resolveFileName(uri))
-                    }
+                    if (uri != null) vm.openTrace(uri, resolveFileName(uri))
                 }
 
                 var showSettings by remember { mutableStateOf(false) }
 
+                // Back from settings goes to previous screen
+                BackHandler(enabled = showSettings) {
+                    showSettings = false
+                }
+
                 Crossfade(
-                    targetState = if (showSettings) "settings"
-                                  else if (!state.hasTraces) "load"
-                                  else "query",
+                    targetState = when {
+                        showSettings -> "settings"
+                        !state.hasTraces -> "load"
+                        else -> "query"
+                    },
                     label = "screen",
                 ) { screen ->
                     when (screen) {
@@ -58,6 +63,7 @@ class MainActivity : ComponentActivity() {
                             themeMode = state.themeMode,
                             onThemeChange = vm::setThemeMode,
                             onClearHistory = vm::clearHistory,
+                            onBack = { showSettings = false },
                             modifier = Modifier.fillMaxSize(),
                         )
                         "load" -> TraceLoadScreen(

@@ -345,22 +345,44 @@ private fun handleGridAction(
 ) {
     val baseSql = currentSql.trimEnd().removeSuffix(";").trim()
 
+    fun q(v: String) = v.replace("'", "''") // SQL escape
+    val isNum = action is GridAction.FilterGreaterThan || action is GridAction.FilterLessThan
+            || action is GridAction.FilterGreaterOrEqual || action is GridAction.FilterLessOrEqual
+
     val newSql = when (action) {
-        is GridAction.CopyCellValue -> return // handled in DataGrid
-        is GridAction.FilterEquals ->
-            "SELECT * FROM ($baseSql) WHERE ${action.column} = '${action.value}';"
-        is GridAction.FilterNotEquals ->
-            "SELECT * FROM ($baseSql) WHERE ${action.column} != '${action.value}';"
+        is GridAction.CopyCellValue -> return
+        is GridAction.FilterEquals -> {
+            val v = action.value.toLongOrNull()?.toString() ?: "'${q(action.value)}'"
+            "SELECT * FROM ($baseSql) WHERE ${action.column} = $v;"
+        }
+        is GridAction.FilterNotEquals -> {
+            val v = action.value.toLongOrNull()?.toString() ?: "'${q(action.value)}'"
+            "SELECT * FROM ($baseSql) WHERE ${action.column} != $v;"
+        }
         is GridAction.FilterGreaterThan ->
             "SELECT * FROM ($baseSql) WHERE ${action.column} > ${action.value};"
+        is GridAction.FilterGreaterOrEqual ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} >= ${action.value};"
         is GridAction.FilterLessThan ->
             "SELECT * FROM ($baseSql) WHERE ${action.column} < ${action.value};"
+        is GridAction.FilterLessOrEqual ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} <= ${action.value};"
         is GridAction.FilterIsNull ->
             "SELECT * FROM ($baseSql) WHERE ${action.column} IS NULL;"
         is GridAction.FilterIsNotNull ->
             "SELECT * FROM ($baseSql) WHERE ${action.column} IS NOT NULL;"
+        is GridAction.FilterContains ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} LIKE '%${q(action.value)}%';"
+        is GridAction.FilterNotContains ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} NOT LIKE '%${q(action.value)}%';"
+        is GridAction.FilterGlob ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} GLOB '${q(action.value)}';"
+        is GridAction.FilterNotGlob ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} NOT GLOB '${q(action.value)}';"
         is GridAction.Aggregate ->
-            "SELECT ${action.column}, ${action.function}(*) as ${action.function.lowercase()}_all FROM ($baseSql) GROUP BY ${action.column} ORDER BY ${action.function.lowercase()}_all DESC;"
+            "SELECT ${action.column}, ${action.function}(*) as ${action.function.lowercase()} FROM ($baseSql) GROUP BY ${action.column} ORDER BY ${action.function.lowercase()} DESC;"
+        is GridAction.CountDistinct ->
+            "SELECT ${action.column}, COUNT(*) as count FROM ($baseSql) GROUP BY ${action.column} ORDER BY count DESC;"
     }
 
     onSqlChange(newSql)

@@ -4,6 +4,7 @@
     <application
         android:name=".TraceQueryApp"
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="TraceQuery"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
