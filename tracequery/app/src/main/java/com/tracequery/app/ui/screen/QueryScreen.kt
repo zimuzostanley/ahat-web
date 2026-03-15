@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,13 +17,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -38,8 +44,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -54,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tracequery.app.data.model.HistoryEntry
+import com.tracequery.app.ui.ActiveFilter
 import com.tracequery.app.ui.MainUiState
 import com.tracequery.app.ui.QueryMode
 import com.tracequery.app.ui.component.DataGrid
@@ -63,7 +70,7 @@ import com.tracequery.app.ui.component.TableBrowser
 import com.tracequery.app.ui.theme.CodeFontFamily
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun QueryScreen(
     uiState: MainUiState,
@@ -74,6 +81,10 @@ fun QueryScreen(
     onSwitchTab: (Int) -> Unit,
     onCloseTab: (Int) -> Unit,
     onLoadHistory: (HistoryEntry) -> Unit,
+    onAddFilter: (ActiveFilter) -> Unit,
+    onRemoveFilter: (Int) -> Unit,
+    onClearFilters: () -> Unit,
+    onAggregate: (String, String) -> Unit,
     onOpenTrace: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -87,90 +98,56 @@ fun QueryScreen(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
-                // Drawer header
-                Text(
-                    "TraceQuery",
-                    modifier = Modifier.padding(24.dp),
+                Text("TraceQuery", Modifier.padding(24.dp),
                     style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
-                )
+                    fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
-                // Open trace
                 if (onOpenTrace != null) {
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Add, null) },
                         label = { Text("Open Trace") },
                         selected = false,
-                        onClick = {
-                            scope.launch { drawerState.close() }
-                            onOpenTrace()
-                        },
+                        onClick = { scope.launch { drawerState.close() }; onOpenTrace() },
                     )
                 }
 
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-
-                // Loaded traces
-                Text(
-                    "Loaded Traces",
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                Text("Loaded Traces", Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                 uiState.tabs.forEach { t ->
                     NavigationDrawerItem(
-                        label = {
-                            Text(t.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
+                        label = { Text(t.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         selected = t.id == uiState.activeTabId,
-                        onClick = {
-                            onSwitchTab(t.id)
-                            scope.launch { drawerState.close() }
-                        },
-                        badge = {
-                            Icon(
-                                Icons.Default.Close, "Close",
-                                modifier = Modifier.size(18.dp).clickable { onCloseTab(t.id) },
-                            )
-                        },
+                        onClick = { onSwitchTab(t.id); scope.launch { drawerState.close() } },
+                        badge = { Icon(Icons.Default.Close, "Close",
+                            Modifier.size(18.dp).clickable { onCloseTab(t.id) }) },
                         modifier = Modifier.padding(horizontal = 12.dp),
                     )
                 }
 
                 Spacer(Modifier.weight(1f))
-
                 HorizontalDivider()
 
-                // Settings
                 if (onOpenSettings != null) {
                     NavigationDrawerItem(
                         icon = { Icon(Icons.Default.Settings, null) },
                         label = { Text("Settings") },
                         selected = false,
-                        onClick = {
-                            scope.launch { drawerState.close() }
-                            onOpenSettings()
-                        },
+                        onClick = { scope.launch { drawerState.close() }; onOpenSettings() },
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     )
                 }
-
                 Spacer(Modifier.height(16.dp))
             }
         },
         modifier = modifier,
     ) {
         Column(Modifier.fillMaxSize()) {
-            // ── Top bar ──────────────────────────────────────────────────
             TopAppBar(
-                title = {
-                    Text(
-                        tab.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                },
+                title = { Text(tab.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.titleMedium) },
                 navigationIcon = {
                     IconButton(onClick = { scope.launch { drawerState.open() } }) {
                         Icon(Icons.Default.Menu, "Menu")
@@ -181,10 +158,8 @@ fun QueryScreen(
                         Icon(Icons.Default.History, "History")
                     }
                 },
-                // Use default M3 TopAppBar colors
             )
 
-            // ── Loading ──────────────────────────────────────────────────
             if (tab.isLoading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -197,89 +172,112 @@ fun QueryScreen(
                 return@Column
             }
 
-            // ── SQL / Explore tabs ───────────────────────────────────────
+            // Tabs
             val tabIndex = if (tab.mode == QueryMode.SQL) 0 else 1
             TabRow(selectedTabIndex = tabIndex) {
                 Tab(selected = tabIndex == 0, onClick = { onModeChange(QueryMode.SQL) },
                     text = { Text("SQL") })
                 Tab(selected = tabIndex == 1, onClick = { onModeChange(QueryMode.EXPLORE) },
-                    text = { Text("Explore Tables") })
+                    text = { Text("Explore") })
             }
 
             when (tab.mode) {
-                QueryMode.EXPLORE -> {
-                    TableBrowser(
-                        tables = uiState.stdlibDocs?.tables ?: emptyList(),
-                        onTableSelect = onTableSelect,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                }
+                QueryMode.EXPLORE -> TableBrowser(
+                    tables = uiState.stdlibDocs?.tables ?: emptyList(),
+                    onTableSelect = onTableSelect,
+                    modifier = Modifier.fillMaxSize(),
+                )
                 QueryMode.SQL -> {
-                    // ── Editor ────────────────────────────────────────────
                     SqlEditor(
                         code = tab.currentSql,
                         onCodeChange = onSqlChange,
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 220.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 200.dp),
                     )
 
-                    // ── Action bar ────────────────────────────────────────
-                    Surface(tonalElevation = 1.dp) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    // Action bar
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OutlinedButton(
+                            onClick = { onExecuteQuery(tab.currentSql) },
+                            enabled = !tab.isQuerying && tab.currentSql.isNotBlank(),
                         ) {
-                            OutlinedButton(
-                                onClick = { onExecuteQuery(tab.currentSql) },
-                                enabled = !tab.isQuerying && tab.currentSql.isNotBlank(),
-                            ) {
-                                if (tab.isQuerying) {
-                                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
-                                }
-                                Spacer(Modifier.width(6.dp))
-                                Text("Run")
+                            if (tab.isQuerying) {
+                                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.PlayArrow, null, Modifier.size(16.dp))
                             }
+                            Spacer(Modifier.width(4.dp))
+                            Text("Run")
+                        }
 
-                            val r = tab.result
-                            if (r != null && !r.isError) {
-                                Text(
-                                    r.statusText,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        val r = tab.result
+                        if (r != null && !r.isError) {
+                            Text(r.statusText, style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
+                    // ── Filter chips ─────────────────────────────────────
+                    if (tab.filters.isNotEmpty()) {
+                        FlowRow(
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            tab.filters.forEachIndexed { idx, filter ->
+                                AssistChip(
+                                    onClick = { onRemoveFilter(idx) },
+                                    label = {
+                                        Text(filter.displayText,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    },
+                                    trailingIcon = {
+                                        Icon(Icons.Default.Close, "Remove",
+                                            Modifier.size(14.dp))
+                                    },
+                                    shape = RoundedCornerShape(6.dp),
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    ),
                                 )
                             }
+                            TextButton(onClick = onClearFilters, Modifier.height(32.dp)) {
+                                Icon(Icons.Default.Clear, null, Modifier.size(14.dp))
+                                Spacer(Modifier.width(2.dp))
+                                Text("Clear", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
 
-                    // ── Error ─────────────────────────────────────────────
+                    // Error
                     if (tab.error != null) {
                         Surface(color = MaterialTheme.colorScheme.errorContainer) {
-                            Text(
-                                tab.error!!,
-                                Modifier.fillMaxWidth().padding(12.dp),
+                            Text(tab.error!!, Modifier.fillMaxWidth().padding(12.dp),
                                 color = MaterialTheme.colorScheme.onErrorContainer,
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily),
-                            )
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily))
                         }
                     }
 
-                    // ── Grid ──────────────────────────────────────────────
+                    // Grid
                     val queryResult = tab.result
                     if (queryResult != null && !queryResult.isError) {
                         DataGrid(
                             result = queryResult,
-                            onAction = { action -> handleGridAction(action, tab.currentSql, onSqlChange, onExecuteQuery) },
+                            onAction = { action ->
+                                handleGridAction(action, onAddFilter, onAggregate)
+                            },
                             modifier = Modifier.fillMaxWidth().weight(1f),
                         )
                     } else if (!tab.isQuerying && tab.result == null) {
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
-                            Text(
-                                "Write a query and tap Run",
+                            Text("Execute a query to see results",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -287,16 +285,14 @@ fun QueryScreen(
         }
     }
 
-    // ── History ──────────────────────────────────────────────────────────
+    // History sheet
     if (showHistory) {
         ModalBottomSheet(
             onDismissRequest = { showHistory = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
-            Text(
-                "Query History", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
-            )
+            Text("Query History", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             if (tab.history.isEmpty()) {
                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     Text("No queries yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -309,19 +305,15 @@ fun QueryScreen(
                             .clickable { onLoadHistory(entry); showHistory = false }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                     ) {
-                        Text(
-                            entry.sql.take(120),
+                        Text(entry.sql.take(120),
                             style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily),
-                            maxLines = 2, overflow = TextOverflow.Ellipsis,
-                        )
+                            maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(2.dp))
-                        Text(
-                            "${entry.rowCount} rows • ${entry.executionTimeMs}ms" +
-                                if (entry.error != null) " • ERROR" else "",
+                        Text("${entry.rowCount} rows \u2022 ${entry.executionTimeMs}ms" +
+                            if (entry.error != null) " \u2022 ERROR" else "",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (entry.error != null) MaterialTheme.colorScheme.error
-                                   else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                                   else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                 }
@@ -331,60 +323,43 @@ fun QueryScreen(
     }
 }
 
-/**
- * Handles grid actions by generating modified SQL from the current query.
- * Filter actions append WHERE clauses. Aggregate generates GROUP BY.
- */
 private fun handleGridAction(
     action: GridAction,
-    currentSql: String,
-    onSqlChange: (String) -> Unit,
-    onExecuteQuery: (String) -> Unit,
+    onAddFilter: (ActiveFilter) -> Unit,
+    onAggregate: (String, String) -> Unit,
 ) {
-    val baseSql = currentSql.trimEnd().removeSuffix(";").trim()
-
     fun esc(v: String) = v.replace("'", "''")
-    fun col(name: String) = "\"${name.replace("\"", "\"\"")}\""  // Quote column identifiers
+    fun sqlVal(v: String) = v.toLongOrNull()?.toString()
+        ?: v.toDoubleOrNull()?.toString()
+        ?: "'${esc(v)}'"
 
-    val c = { name: String -> col(name) }
-    val v = { value: String ->
-        value.toLongOrNull()?.toString()
-            ?: value.toDoubleOrNull()?.toString()
-            ?: "'${esc(value)}'"
-    }
-
-    val newSql = when (action) {
-        is GridAction.CopyCellValue -> return
+    when (action) {
+        is GridAction.CopyCellValue -> {} // handled in DataGrid
         is GridAction.FilterEquals ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} = ${v(action.value)};"
+            onAddFilter(ActiveFilter(action.column, "=", sqlVal(action.value)))
         is GridAction.FilterNotEquals ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} != ${v(action.value)};"
+            onAddFilter(ActiveFilter(action.column, "!=", sqlVal(action.value)))
         is GridAction.FilterGreaterThan ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} > ${action.value};"
+            onAddFilter(ActiveFilter(action.column, ">", action.value))
         is GridAction.FilterGreaterOrEqual ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} >= ${action.value};"
+            onAddFilter(ActiveFilter(action.column, ">=", action.value))
         is GridAction.FilterLessThan ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} < ${action.value};"
+            onAddFilter(ActiveFilter(action.column, "<", action.value))
         is GridAction.FilterLessOrEqual ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} <= ${action.value};"
+            onAddFilter(ActiveFilter(action.column, "<=", action.value))
         is GridAction.FilterIsNull ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} IS NULL;"
+            onAddFilter(ActiveFilter(action.column, "IS NULL", null))
         is GridAction.FilterIsNotNull ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} IS NOT NULL;"
+            onAddFilter(ActiveFilter(action.column, "IS NOT NULL", null))
         is GridAction.FilterContains ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} LIKE '%${esc(action.value)}%';"
+            onAddFilter(ActiveFilter(action.column, "LIKE", "'%${esc(action.value)}%'"))
         is GridAction.FilterNotContains ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} NOT LIKE '%${esc(action.value)}%';"
+            onAddFilter(ActiveFilter(action.column, "NOT LIKE", "'%${esc(action.value)}%'"))
         is GridAction.FilterGlob ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} GLOB '${esc(action.value)}';"
+            onAddFilter(ActiveFilter(action.column, "GLOB", "'${esc(action.value)}'"))
         is GridAction.FilterNotGlob ->
-            "SELECT * FROM ($baseSql) WHERE ${c(action.column)} NOT GLOB '${esc(action.value)}';"
-        is GridAction.Aggregate ->
-            "SELECT ${c(action.column)}, ${action.function}(*) as ${action.function.lowercase()} FROM ($baseSql) GROUP BY ${c(action.column)} ORDER BY ${action.function.lowercase()} DESC;"
-        is GridAction.CountDistinct ->
-            "SELECT ${c(action.column)}, COUNT(*) as count FROM ($baseSql) GROUP BY ${c(action.column)} ORDER BY count DESC;"
+            onAddFilter(ActiveFilter(action.column, "NOT GLOB", "'${esc(action.value)}'"))
+        is GridAction.Aggregate -> onAggregate(action.function, action.column)
+        is GridAction.CountDistinct -> onAggregate("COUNT_DISTINCT", action.column)
     }
-
-    onSqlChange(newSql)
-    onExecuteQuery(newSql)
 }

@@ -22,11 +22,37 @@ import java.io.File
 
 // ── Tab state ────────────────────────────────────────────────────────────────
 
+/** A filter applied via the DataGrid cell/column context menu. */
+data class ActiveFilter(
+    val column: String,
+    val op: String,       // =, !=, >, >=, <, <=, LIKE, NOT LIKE, GLOB, NOT GLOB, IS NULL, IS NOT NULL
+    val value: String?,   // null for IS NULL / IS NOT NULL
+) {
+    val displayText: String get() = when (op) {
+        "IS NULL" -> "$column IS NULL"
+        "IS NOT NULL" -> "$column IS NOT NULL"
+        "LIKE" -> "$column contains ${value?.removeSurrounding("%")}"
+        "NOT LIKE" -> "$column !contains ${value?.removeSurrounding("%")}"
+        else -> "$column $op ${value ?: ""}"
+    }
+
+    fun toSqlClause(): String {
+        val qCol = "\"${column.replace("\"", "\"\"")}\""
+        return when (op) {
+            "IS NULL" -> "$qCol IS NULL"
+            "IS NOT NULL" -> "$qCol IS NOT NULL"
+            else -> "$qCol $op $value"
+        }
+    }
+}
+
 data class TabState(
     val id: Int,
     val fileName: String,
     val session: TraceProcessorSession? = null,
     val currentSql: String = "SELECT * FROM slice LIMIT 100;",
+    val baseSql: String = "",  // SQL before filters (for filter composition)
+    val filters: List<ActiveFilter> = emptyList(),
     val result: QueryResult? = null,
     val isQuerying: Boolean = false,
     val isLoading: Boolean = false,
@@ -34,7 +60,15 @@ data class TabState(
     val history: List<HistoryEntry> = emptyList(),
     val mode: QueryMode = QueryMode.SQL,
     val error: String? = null,
-)
+) {
+    /** Compose the full SQL from base + filters. */
+    fun composedSql(): String {
+        if (filters.isEmpty()) return currentSql
+        val base = baseSql.ifBlank { currentSql }.trimEnd().removeSuffix(";").trim()
+        val whereClauses = filters.joinToString(" AND ") { it.toSqlClause() }
+        return "SELECT * FROM ($base) WHERE $whereClauses;"
+    }
+}
 
 enum class QueryMode { SQL, EXPLORE }
 
@@ -187,6 +221,54 @@ class MainViewModel(
 
     fun setMode(mode: QueryMode) {
         updateActiveTab { it.copy(mode = mode) }
+    }
+
+    // ── Filters ──────────────────────────────────────────────────────
+
+    fun addFilter(filter: ActiveFilter) {
+        val tab = _state.value.activeTab ?: return
+        // Save current SQL as base if first filter
+        val base = if (tab.filters.isEmpty()) tab.currentSql else tab.baseSql
+        val newFilters = tab.filters + filter
+        updateActiveTab { it.copy(filters = newFilters, baseSql = base) }
+        // Execute with filters
+        val composed = tab.copy(filters = newFilters, baseSql = base).composedSql()
+        executeQuery(composed)
+    }
+
+    fun removeFilter(index: Int) {
+        val tab = _state.value.activeTab ?: return
+        val newFilters = tab.filters.toMutableList().apply { removeAt(index) }
+        updateActiveTab { it.copy(filters = newFilters) }
+        if (newFilters.isEmpty()) {
+            // Restore base SQL
+            val base = tab.baseSql.ifBlank { tab.currentSql }
+            updateActiveTab { it.copy(currentSql = base, baseSql = "") }
+            executeQuery(base)
+        } else {
+            val composed = tab.copy(filters = newFilters).composedSql()
+            executeQuery(composed)
+        }
+    }
+
+    fun clearFilters() {
+        val tab = _state.value.activeTab ?: return
+        val base = tab.baseSql.ifBlank { tab.currentSql }
+        updateActiveTab { it.copy(filters = emptyList(), currentSql = base, baseSql = "") }
+        executeQuery(base)
+    }
+
+    fun addAggregate(function: String, column: String) {
+        val tab = _state.value.activeTab ?: return
+        val base = tab.currentSql.trimEnd().removeSuffix(";").trim()
+        val qCol = "\"${column.replace("\"", "\"\"")}\""
+        val sql = if (function == "COUNT_DISTINCT") {
+            "SELECT $qCol, COUNT(*) as count FROM ($base) GROUP BY $qCol ORDER BY count DESC;"
+        } else {
+            "SELECT $qCol, $function(*) as ${function.lowercase()} FROM ($base) GROUP BY $qCol ORDER BY ${function.lowercase()} DESC;"
+        }
+        updateActiveTab { it.copy(currentSql = sql, filters = emptyList(), baseSql = "") }
+        executeQuery(sql)
     }
 
     // ── Tab management ───────────────────────────────────────────────────
