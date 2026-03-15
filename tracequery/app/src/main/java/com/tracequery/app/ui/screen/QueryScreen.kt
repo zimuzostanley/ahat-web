@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,7 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import com.tracequery.app.data.model.HistoryEntry
 import com.tracequery.app.ui.MainUiState
@@ -67,12 +67,10 @@ fun QueryScreen(
     onCloseTab: (Int) -> Unit,
     onLoadHistory: (HistoryEntry) -> Unit,
     onOpenTrace: (() -> Unit)? = null,
+    onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val tab = uiState.activeTab ?: return
-    var sqlFieldValue by remember(tab.id, tab.currentSql) {
-        mutableStateOf(TextFieldValue(tab.currentSql))
-    }
     var showHistory by remember { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -176,12 +174,20 @@ fun QueryScreen(
                 Text("Explore", style = MaterialTheme.typography.labelSmall)
             }
 
+            Spacer(Modifier.weight(1f))
+
             Text(
-                text = tab.fileName,
+                text = tab.fileName.take(25),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(2f),
             )
+
+            if (onOpenSettings != null) {
+                IconButton(onClick = onOpenSettings, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings",
+                        modifier = Modifier.size(18.dp))
+                }
+            }
         }
 
         when (tab.mode) {
@@ -199,11 +205,8 @@ fun QueryScreen(
 
                 // Editor
                 SqlEditor(
-                    value = sqlFieldValue,
-                    onValueChange = {
-                        sqlFieldValue = it
-                        onSqlChange(it.text)
-                    },
+                    code = tab.currentSql,
+                    onCodeChange = onSqlChange,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 80.dp, max = 200.dp),
@@ -213,13 +216,13 @@ fun QueryScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                        .padding(horizontal = 12.dp, vertical = 6.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Button(
-                        onClick = { onExecuteQuery(sqlFieldValue.text) },
-                        enabled = !tab.isQuerying && sqlFieldValue.text.isNotBlank(),
+                        onClick = { onExecuteQuery(tab.currentSql) },
+                        enabled = !tab.isQuerying && tab.currentSql.isNotBlank(),
                     ) {
                         if (tab.isQuerying) {
                             CircularProgressIndicator(

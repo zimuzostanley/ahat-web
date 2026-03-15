@@ -36,21 +36,20 @@ data class StdlibTable(
                 type == "table_function"
 
     /** Generate a SELECT * query for this table. */
-    fun selectQuery(limit: Int = 100): String {
+    fun selectQuery(): String {
         val include = if (includeStatement.isNotBlank()) "$includeStatement\n" else ""
-        return "${include}SELECT * FROM $name LIMIT $limit;"
+        return "${include}SELECT * FROM $name;"
     }
 
     /** Generate a query for table functions with placeholder args. */
-    fun selectQueryWithArgs(args: Map<String, String> = emptyMap(), limit: Int = 100): String {
+    fun selectQueryWithArgs(args: Map<String, String> = emptyMap()): String {
         val include = if (includeStatement.isNotBlank()) "$includeStatement\n" else ""
         if (!isTableFunction || columns.isEmpty()) {
-            return "${include}SELECT * FROM $name LIMIT $limit;"
+            return "${include}SELECT * FROM $name;"
         }
-        // For _interval_intersect, generate a template with argument placeholders
         val argStr = args.entries.joinToString(", ") { "${it.key} => ${it.value}" }
             .ifBlank { "/* add arguments */" }
-        return "${include}SELECT * FROM $name($argStr) LIMIT $limit;"
+        return "${include}SELECT * FROM $name($argStr);"
     }
 }
 

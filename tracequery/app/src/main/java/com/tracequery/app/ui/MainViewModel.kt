@@ -11,6 +11,7 @@ import com.tracequery.app.data.model.HistoryEntry
 import com.tracequery.app.data.model.QueryResult
 import com.tracequery.app.data.model.StdlibDocs
 import com.tracequery.app.data.model.StdlibTable
+import com.tracequery.app.ui.theme.ThemeMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,11 +39,15 @@ enum class QueryMode { SQL, EXPLORE }
 
 // ── Main UI state ────────────────────────────────────────────────────────────
 
+enum class Screen { QUERY, SETTINGS }
+
 data class MainUiState(
     val tabs: List<TabState> = emptyList(),
     val activeTabId: Int = -1,
     val stdlibDocs: StdlibDocs? = null,
     val isLoadingStdlib: Boolean = true,
+    val themeMode: ThemeMode = ThemeMode.SYSTEM,
+    val screen: Screen = Screen.QUERY,
 ) {
     val activeTab: TabState? get() = tabs.find { it.id == activeTabId }
     val hasTraces: Boolean get() = tabs.isNotEmpty()
@@ -58,9 +63,13 @@ class MainViewModel(
     val state: StateFlow<MainUiState> = _state.asStateFlow()
 
     private val queryHistory = QueryHistory(appContext)
+    private val themePrefs = appContext.getSharedPreferences("theme", Context.MODE_PRIVATE)
     private var nextTabId = 0
 
     init {
+        // Load saved theme
+        val savedTheme = themePrefs.getString("mode", "SYSTEM") ?: "SYSTEM"
+        _state.update { it.copy(themeMode = ThemeMode.valueOf(savedTheme)) }
         // Load stdlib docs in background
         viewModelScope.launch {
             try {
@@ -213,6 +222,22 @@ class MainViewModel(
     fun loadFromHistory(entry: HistoryEntry) {
         updateActiveTab { it.copy(currentSql = entry.sql, mode = QueryMode.SQL) }
         executeQuery(entry.sql)
+    }
+
+    // ── Theme & navigation ─────────────────────────────────────────
+
+    fun setThemeMode(mode: ThemeMode) {
+        themePrefs.edit().putString("mode", mode.name).apply()
+        _state.update { it.copy(themeMode = mode) }
+    }
+
+    fun navigateTo(screen: Screen) {
+        _state.update { it.copy(screen = screen) }
+    }
+
+    fun clearHistory() {
+        queryHistory.clear()
+        updateActiveTab { it.copy(history = emptyList()) }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

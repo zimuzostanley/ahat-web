@@ -39,7 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tracequery.app.data.model.StdlibTable
 import com.tracequery.app.ui.theme.CodeFontFamily
-import com.tracequery.app.ui.theme.PerfettoTeal
+// Uses MaterialTheme.colorScheme.secondary for table name color
 
 /**
  * Searchable table browser for Perfetto SQL stdlib tables.
@@ -135,7 +135,7 @@ private fun TableListItem(
                              else Icons.Default.TableChart,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
-                tint = PerfettoTeal,
+                tint = MaterialTheme.colorScheme.secondary,
             )
             Text(
                 text = table.name,
@@ -143,7 +143,7 @@ private fun TableListItem(
                     fontFamily = CodeFontFamily,
                     fontWeight = FontWeight.SemiBold,
                 ),
-                color = PerfettoTeal,
+                color = MaterialTheme.colorScheme.secondary,
             )
 
             if (table.importance != null) {
