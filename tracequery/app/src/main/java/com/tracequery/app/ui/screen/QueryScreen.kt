@@ -1,6 +1,5 @@
 package com.tracequery.app.ui.screen
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,37 +15,41 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -54,9 +57,11 @@ import com.tracequery.app.data.model.HistoryEntry
 import com.tracequery.app.ui.MainUiState
 import com.tracequery.app.ui.QueryMode
 import com.tracequery.app.ui.component.DataGrid
+import com.tracequery.app.ui.component.GridAction
 import com.tracequery.app.ui.component.SqlEditor
 import com.tracequery.app.ui.component.TableBrowser
 import com.tracequery.app.ui.theme.CodeFontFamily
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -74,224 +79,208 @@ fun QueryScreen(
     modifier: Modifier = Modifier,
 ) {
     val tab = uiState.activeTab ?: return
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
     var showHistory by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        // ── Top App Bar ──────────────────────────────────────────────────
-        TopAppBar(
-            title = {
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                // Drawer header
                 Text(
-                    text = tab.fileName,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    style = MaterialTheme.typography.titleMedium,
+                    "TraceQuery",
+                    modifier = Modifier.padding(24.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
                 )
-            },
-            actions = {
-                IconButton(onClick = { showHistory = true }) {
-                    Icon(Icons.Default.History, contentDescription = "History")
-                }
+
+                // Open trace
                 if (onOpenTrace != null) {
-                    IconButton(onClick = onOpenTrace) {
-                        Icon(Icons.Default.Add, contentDescription = "Open trace")
-                    }
-                }
-                if (onOpenSettings != null) {
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                }
-            },
-            colors = TopAppBarDefaults.topAppBarColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
-        )
-
-        // ── Tab bar (only when multiple tabs) ────────────────────────────
-        if (uiState.tabs.size > 1) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                uiState.tabs.forEach { t ->
-                    val isActive = t.id == uiState.activeTabId
-                    Surface(
-                        modifier = Modifier.clickable { onSwitchTab(t.id) },
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (isActive) MaterialTheme.colorScheme.surface
-                               else MaterialTheme.colorScheme.surfaceVariant,
-                        tonalElevation = if (isActive) 2.dp else 0.dp,
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(
-                                text = t.fileName.take(18),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
-                            )
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Close",
-                                modifier = Modifier
-                                    .size(14.dp)
-                                    .clickable { onCloseTab(t.id) },
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Loading ──────────────────────────────────────────────────────
-        if (tab.isLoading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        tab.loadProgress.ifBlank { "Loading trace..." },
-                        style = MaterialTheme.typography.bodyMedium,
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Add, null) },
+                        label = { Text("Open Trace") },
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            onOpenTrace()
+                        },
                     )
                 }
-            }
-            return
-        }
 
-        // ── Mode toggle chips ────────────────────────────────────────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            FilterChip(
-                selected = tab.mode == QueryMode.SQL,
-                onClick = { onModeChange(QueryMode.SQL) },
-                label = { Text("SQL") },
-            )
-            FilterChip(
-                selected = tab.mode == QueryMode.EXPLORE,
-                onClick = { onModeChange(QueryMode.EXPLORE) },
-                label = { Text("Explore Tables") },
-            )
-        }
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
 
-        when (tab.mode) {
-            QueryMode.EXPLORE -> {
-                TableBrowser(
-                    tables = uiState.stdlibDocs?.tables ?: emptyList(),
-                    onTableSelect = onTableSelect,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-
-            QueryMode.SQL -> {
-                // ── SQL editor ───────────────────────────────────────────
-                SqlEditor(
-                    code = tab.currentSql,
-                    onCodeChange = onSqlChange,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 100.dp, max = 220.dp),
+                // Loaded traces
+                Text(
+                    "Loaded Traces",
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                // ── Action bar ───────────────────────────────────────────
-                Surface(
-                    tonalElevation = 1.dp,
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        // Run button
-                        SmallFloatingActionButton(
-                            onClick = { onExecuteQuery(tab.currentSql) },
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary,
+                uiState.tabs.forEach { t ->
+                    NavigationDrawerItem(
+                        label = {
+                            Text(t.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        },
+                        selected = t.id == uiState.activeTabId,
+                        onClick = {
+                            onSwitchTab(t.id)
+                            scope.launch { drawerState.close() }
+                        },
+                        badge = {
+                            Icon(
+                                Icons.Default.Close, "Close",
+                                modifier = Modifier.size(18.dp).clickable { onCloseTab(t.id) },
+                            )
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                    )
+                }
+
+                Spacer(Modifier.weight(1f))
+
+                HorizontalDivider()
+
+                // Settings
+                if (onOpenSettings != null) {
+                    NavigationDrawerItem(
+                        icon = { Icon(Icons.Default.Settings, null) },
+                        label = { Text("Settings") },
+                        selected = false,
+                        onClick = {
+                            scope.launch { drawerState.close() }
+                            onOpenSettings()
+                        },
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+            }
+        },
+        modifier = modifier,
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            // ── Top bar ──────────────────────────────────────────────────
+            TopAppBar(
+                title = {
+                    Text(
+                        tab.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                        Icon(Icons.Default.Menu, "Menu")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { showHistory = true }) {
+                        Icon(Icons.Default.History, "History")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                ),
+            )
+
+            // ── Loading ──────────────────────────────────────────────────
+            if (tab.isLoading) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.height(16.dp))
+                        Text(tab.loadProgress.ifBlank { "Loading trace..." },
+                            style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                return@Column
+            }
+
+            // ── SQL / Explore tabs ───────────────────────────────────────
+            val tabIndex = if (tab.mode == QueryMode.SQL) 0 else 1
+            TabRow(selectedTabIndex = tabIndex) {
+                Tab(selected = tabIndex == 0, onClick = { onModeChange(QueryMode.SQL) },
+                    text = { Text("SQL") })
+                Tab(selected = tabIndex == 1, onClick = { onModeChange(QueryMode.EXPLORE) },
+                    text = { Text("Explore Tables") })
+            }
+
+            when (tab.mode) {
+                QueryMode.EXPLORE -> {
+                    TableBrowser(
+                        tables = uiState.stdlibDocs?.tables ?: emptyList(),
+                        onTableSelect = onTableSelect,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                QueryMode.SQL -> {
+                    // ── Editor ────────────────────────────────────────────
+                    SqlEditor(
+                        code = tab.currentSql,
+                        onCodeChange = onSqlChange,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp, max = 220.dp),
+                    )
+
+                    // ── Action bar ────────────────────────────────────────
+                    Surface(tonalElevation = 1.dp) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            if (tab.isQuerying) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(18.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.onPrimary,
+                            OutlinedButton(
+                                onClick = { onExecuteQuery(tab.currentSql) },
+                                enabled = !tab.isQuerying && tab.currentSql.isNotBlank(),
+                            ) {
+                                if (tab.isQuerying) {
+                                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
+                                }
+                                Spacer(Modifier.width(6.dp))
+                                Text("Run")
+                            }
+
+                            val r = tab.result
+                            if (r != null && !r.isError) {
+                                Text(
+                                    r.statusText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
-                            } else {
-                                Icon(Icons.Default.PlayArrow, contentDescription = "Run")
                             }
                         }
+                    }
 
-                        // Status text
-                        val result = tab.result
-                        if (result != null && !result.isError) {
+                    // ── Error ─────────────────────────────────────────────
+                    if (tab.error != null) {
+                        Surface(color = MaterialTheme.colorScheme.errorContainer) {
                             Text(
-                                text = result.statusText,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = if (result.truncated) MaterialTheme.colorScheme.error
-                                       else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.weight(1f),
+                                tab.error!!,
+                                Modifier.fillMaxWidth().padding(12.dp),
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily),
                             )
-                        } else {
-                            Spacer(Modifier.weight(1f))
                         }
                     }
-                }
 
-                // ── Error ────────────────────────────────────────────────
-                if (tab.error != null) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.errorContainer,
-                    ) {
-                        Text(
-                            text = tab.error!!,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = CodeFontFamily
-                            ),
+                    // ── Grid ──────────────────────────────────────────────
+                    val queryResult = tab.result
+                    if (queryResult != null && !queryResult.isError) {
+                        DataGrid(
+                            result = queryResult,
+                            onAction = { action -> handleGridAction(action, tab.currentSql, onSqlChange, onExecuteQuery) },
+                            modifier = Modifier.fillMaxWidth().weight(1f),
                         )
-                    }
-                }
-
-                // ── Data grid ────────────────────────────────────────────
-                val queryResult = tab.result
-                if (queryResult != null && !queryResult.isError) {
-                    DataGrid(
-                        result = queryResult,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                    )
-                } else if (!tab.isQuerying && tab.result == null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    } else if (!tab.isQuerying && tab.result == null) {
+                        Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Text(
-                                "Write a query and tap",
+                                "Write a query and tap Run",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Icon(
-                                Icons.Default.PlayArrow,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(32.dp),
                             )
                         }
                     }
@@ -300,69 +289,80 @@ fun QueryScreen(
         }
     }
 
-    // ── History bottom sheet ──────────────────────────────────────────────
+    // ── History ──────────────────────────────────────────────────────────
     if (showHistory) {
         ModalBottomSheet(
             onDismissRequest = { showHistory = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             Text(
-                "Query History",
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                "Query History", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
             )
-
             if (tab.history.isEmpty()) {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(32.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        "No queries yet",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Text("No queries yet", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-
             LazyColumn {
                 items(tab.history) { entry ->
                     Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable {
-                                onLoadHistory(entry)
-                                showHistory = false
-                            }
+                        Modifier.fillMaxWidth()
+                            .clickable { onLoadHistory(entry); showHistory = false }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                     ) {
                         Text(
-                            text = entry.sql.take(120),
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontFamily = CodeFontFamily
-                            ),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
+                            entry.sql.take(120),
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily),
+                            maxLines = 2, overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
-                            text = buildString {
-                                append("${entry.rowCount} rows \u2022 ${entry.executionTimeMs}ms")
-                                if (entry.error != null) append(" \u2022 ERROR")
-                            },
+                            "${entry.rowCount} rows • ${entry.executionTimeMs}ms" +
+                                if (entry.error != null) " • ERROR" else "",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (entry.error != null) MaterialTheme.colorScheme.error
                                    else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
                 }
             }
-
             Spacer(Modifier.height(32.dp))
         }
     }
 }
 
+/**
+ * Handles grid actions by generating modified SQL from the current query.
+ * Filter actions append WHERE clauses. Aggregate generates GROUP BY.
+ */
+private fun handleGridAction(
+    action: GridAction,
+    currentSql: String,
+    onSqlChange: (String) -> Unit,
+    onExecuteQuery: (String) -> Unit,
+) {
+    val baseSql = currentSql.trimEnd().removeSuffix(";").trim()
+
+    val newSql = when (action) {
+        is GridAction.CopyCellValue -> return // handled in DataGrid
+        is GridAction.FilterEquals ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} = '${action.value}';"
+        is GridAction.FilterNotEquals ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} != '${action.value}';"
+        is GridAction.FilterGreaterThan ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} > ${action.value};"
+        is GridAction.FilterLessThan ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} < ${action.value};"
+        is GridAction.FilterIsNull ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} IS NULL;"
+        is GridAction.FilterIsNotNull ->
+            "SELECT * FROM ($baseSql) WHERE ${action.column} IS NOT NULL;"
+        is GridAction.Aggregate ->
+            "SELECT ${action.column}, ${action.function}(*) as ${action.function.lowercase()}_all FROM ($baseSql) GROUP BY ${action.column} ORDER BY ${action.function.lowercase()}_all DESC;"
+    }
+
+    onSqlChange(newSql)
+    onExecuteQuery(newSql)
+}

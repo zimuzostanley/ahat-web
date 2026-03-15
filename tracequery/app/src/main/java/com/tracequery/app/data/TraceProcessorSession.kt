@@ -21,8 +21,8 @@ class TraceProcessorSession private constructor(
     private var destroyed = false
 
     companion object {
-        /** Maximum rows to materialize per query. Prevents OOM on huge results. */
-        const val DEFAULT_MAX_ROWS = 100_000
+        /** No artificial limit — user controls via SQL LIMIT. */
+        const val DEFAULT_MAX_ROWS = Int.MAX_VALUE
 
         suspend fun open(tracePath: String, fileName: String): TraceProcessorSession =
             withContext(Dispatchers.IO) {
