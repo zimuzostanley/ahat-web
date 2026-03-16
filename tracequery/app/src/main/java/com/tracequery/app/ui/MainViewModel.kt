@@ -17,7 +17,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 // ── Tab state ────────────────────────────────────────────────────────────────
@@ -263,10 +265,15 @@ class MainViewModel(
         val session = tab.session ?: return
         if (tab.isQuerying) return
 
-        updateActiveTab { it.copy(currentSql = sql, isQuerying = true, error = null) }
+        updateActiveTab { it.copy(currentSql = sql, isQuerying = true, error = null, result = null) }
 
         viewModelScope.launch {
-            val result = session.query(sql)
+            val result = session.query(sql) { progressResult ->
+                // Streaming callback — update UI with rows so far
+                withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    updateActiveTab { it.copy(result = progressResult) }
+                }
+            }
 
             val entry = HistoryEntry(
                 sql = sql,
