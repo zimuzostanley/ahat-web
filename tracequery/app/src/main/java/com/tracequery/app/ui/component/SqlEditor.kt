@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -120,7 +120,10 @@ fun SqlEditor(
     modifier: Modifier = Modifier,
     placeholder: String = "Enter SQL query...",
 ) {
-    val isDark = isSystemInDarkTheme()
+    // Detect dark/light from the actual MaterialTheme, not system setting
+    // (our ThemeMode can override system)
+    val bgLuminance = MaterialTheme.colorScheme.background.luminance()
+    val isDark = bgLuminance < 0.5f
     val colors = if (isDark) DarkSet else LightSet
     val rules = remember(isDark) { buildRules(colors) }
     val transformation = remember(isDark) { SqlHighlight(rules) }
