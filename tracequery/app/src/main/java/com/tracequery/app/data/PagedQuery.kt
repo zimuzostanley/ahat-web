@@ -28,9 +28,9 @@ class PagedQuery private constructor(
         /** Rows to read ahead of the visible scroll position. */
         const val READ_AHEAD = 2000
 
-        /** Extract INCLUDE statements to top level. */
+        /** Extract INCLUDE statements to top level, strip all trailing semicolons. */
         private fun splitIncludes(sql: String): Pair<String, String> {
-            val clean = sql.trimEnd().removeSuffix(";").trim()
+            val clean = sql.trimEnd().trimEnd(';').trim()
             val includes = mutableListOf<String>()
             val queryLines = mutableListOf<String>()
             for (line in clean.lines()) {
@@ -42,7 +42,7 @@ class PagedQuery private constructor(
                 }
             }
             val prefix = if (includes.isNotEmpty()) includes.joinToString(";\n") + ";\n" else ""
-            return prefix to queryLines.joinToString("\n").trim()
+            return prefix to queryLines.joinToString("\n").trim().trimEnd(';').trim()
         }
 
         suspend fun create(session: TraceProcessorSession, sql: String): PagedQuery {
@@ -54,11 +54,17 @@ class PagedQuery private constructor(
                 var knownTotal = -1L
                 try {
                     val countSql = "${includePrefix}SELECT COUNT(*) FROM ($selectSql);"
+                    android.util.Log.d("PagedQuery", "COUNT SQL: $countSql")
                     val countResult = session.query(countSql)
                     if (!countResult.isError && countResult.rows.isNotEmpty()) {
                         knownTotal = countResult.rows[0].firstOrNull()?.toLongOrNull() ?: -1L
+                        android.util.Log.d("PagedQuery", "COUNT result: $knownTotal")
+                    } else {
+                        android.util.Log.w("PagedQuery", "COUNT failed: ${countResult.error}")
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    android.util.Log.w("PagedQuery", "COUNT exception: ${e.message}")
+                }
 
                 // Open the cursor for iteration
                 val cursor = TraceProcessorNative.nativeQueryStart(session.handle, sql)
