@@ -2,7 +2,7 @@ package com.tracequery.app.ui.theme
 
 import android.app.Activity
 import android.content.Context
-import android.content.SharedPreferences
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +64,14 @@ fun TraceQueryTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
+            // Sync Android framework night mode so manifest theme matches
+            val nightMode = when (themeMode) {
+                ThemeMode.LIGHT -> AppCompatDelegate.MODE_NIGHT_NO
+                ThemeMode.DARK -> AppCompatDelegate.MODE_NIGHT_YES
+                ThemeMode.SYSTEM -> AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM
+            }
+            AppCompatDelegate.setDefaultNightMode(nightMode)
+
             val window = (view.context as Activity).window
             window.statusBarColor = colorScheme.background.toArgb()
             window.navigationBarColor = colorScheme.background.toArgb()

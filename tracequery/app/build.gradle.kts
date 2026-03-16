@@ -71,6 +71,7 @@ dependencies {
     debugImplementation(libs.compose.ui.test.manifest)
 
     implementation(libs.core.ktx)
+    implementation("androidx.appcompat:appcompat:1.6.1")
     implementation(libs.activity.compose)
     implementation(libs.lifecycle.runtime.compose)
     implementation(libs.lifecycle.viewmodel.compose)
