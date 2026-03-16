@@ -385,15 +385,13 @@ class MainViewModel(
 
     fun sortBy(column: String, ascending: Boolean) {
         val tab = _state.value.activeTab ?: return
-        // Replace sort — clicking a column sorts by that column only
         val newSort = listOf(column to ascending)
-        // Save original SQL before sort was applied (so we don't nest ORDER BYs)
-        val base = if (tab.sortColumns.isEmpty()) tab.currentSql else tab.baseSql.ifBlank { tab.currentSql }
-        updateActiveTab { it.copy(sortColumns = newSort, baseSql = base) }
+        // If no baseSql yet, save current (pre-sort) SQL as base
+        val base = tab.baseSql.ifBlank { tab.currentSql }
+        // Compose from base + ops + new sort (composedSql handles all three)
         val newTab = tab.copy(sortColumns = newSort, baseSql = base)
         val composed = SqlFormatter.format(newTab.composedSql())
-        // Execute but restore baseSql so currentSql doesn't accumulate ORDER BYs
-        updateActiveTab { it.copy(currentSql = composed, baseSql = base) }
+        updateActiveTab { it.copy(sortColumns = newSort, baseSql = base, currentSql = composed) }
         executeQuery(composed)
     }
 
