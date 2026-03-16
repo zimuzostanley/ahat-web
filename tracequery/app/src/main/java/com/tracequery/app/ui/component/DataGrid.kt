@@ -90,7 +90,7 @@ sealed class GridAction {
     data class FilterNotContains(val column: String, val value: String) : GridAction()
     data class FilterGlob(val column: String, val value: String) : GridAction()
     data class FilterNotGlob(val column: String, val value: String) : GridAction()
-    data class Aggregate(val function: String, val metricColumn: String, val groupByColumns: List<String>) : GridAction()
+    data class Aggregate(val function: String, val metricColumns: List<String>, val groupByColumns: List<String>) : GridAction()
     data class FilterValues(val column: String) : GridAction()
 }
 
@@ -176,6 +176,7 @@ fun DataGrid(
     var cellMenuColName by remember { mutableStateOf("") }
     var aggDialogCol by remember { mutableStateOf<String?>(null) }
     var aggFunction by remember { mutableStateOf("COUNT") }
+    var aggMetricCols by remember { mutableStateOf(setOf<String>()) }
     var aggGroupBy by remember { mutableStateOf(setOf<String>()) }
 
     val headerBg = MaterialTheme.colorScheme.surfaceVariant
@@ -293,7 +294,7 @@ fun DataGrid(
                                     onClick = { onAction?.invoke(GridAction.FilterValues(col.name)); colMenuIdx = -1 })
                             DropdownMenuItem(text = { Text("Aggregate...") },
                                     leadingIcon = { Icon(Icons.Default.Functions, null) },
-                                    onClick = { aggDialogCol = col.name; aggFunction = "COUNT"; aggGroupBy = emptySet(); colMenuIdx = -1 })
+                                    onClick = { aggDialogCol = col.name; aggFunction = "COUNT"; aggMetricCols = setOf(col.name); aggGroupBy = emptySet(); colMenuIdx = -1 })
                             }
                         }
                         Box(Modifier.width(4.dp).background(borderColor)
@@ -454,33 +455,60 @@ fun DataGrid(
 
     // ── Aggregate dialog ─────────────────────────────────────────────────
     if (aggDialogCol != null) {
-        val metricCol = aggDialogCol!!
         val allCols = pagedQuery.columns.map { it.name }
         val functions = listOf("COUNT", "COUNT_DISTINCT", "SUM", "AVG", "MIN", "MAX")
         AlertDialog(
             onDismissRequest = { aggDialogCol = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             title = { Text("Aggregate") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     Text("Function", style = MaterialTheme.typography.labelMedium, color = primary)
                     functions.forEach { fn ->
-                        val label = when (fn) { "COUNT" -> "COUNT($metricCol)"; "COUNT_DISTINCT" -> "COUNT(DISTINCT $metricCol)"; else -> "$fn($metricCol)" }
-                        Row(Modifier.fillMaxWidth().clickable { aggFunction = fn }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Row(Modifier.fillMaxWidth().clickable { aggFunction = fn }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
                             androidx.compose.material3.RadioButton(selected = aggFunction == fn, onClick = { aggFunction = fn })
-                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                            Text(fn, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                    Spacer(Modifier.padding(6.dp))
+                    Text("Metric columns", style = MaterialTheme.typography.labelMedium, color = primary)
+                    allCols.forEach { col ->
+                        Row(Modifier.fillMaxWidth().clickable {
+                            aggMetricCols = if (col in aggMetricCols) aggMetricCols - col else aggMetricCols + col
+                        }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = col in aggMetricCols, onCheckedChange = { c ->
+                                aggMetricCols = if (c) aggMetricCols + col else aggMetricCols - col
+                            })
+                            Text(col, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = CodeFontFamily))
                         }
                     }
                     Spacer(Modifier.padding(6.dp))
                     Text("Group by", style = MaterialTheme.typography.labelMedium, color = primary)
                     allCols.forEach { col ->
-                        Row(Modifier.fillMaxWidth().clickable { aggGroupBy = if (col in aggGroupBy) aggGroupBy - col else aggGroupBy + col }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = col in aggGroupBy, onCheckedChange = { c -> aggGroupBy = if (c) aggGroupBy + col else aggGroupBy - col })
-                            Text(col, style = MaterialTheme.typography.bodyMedium)
+                        Row(Modifier.fillMaxWidth().clickable {
+                            aggGroupBy = if (col in aggGroupBy) aggGroupBy - col else aggGroupBy + col
+                        }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = col in aggGroupBy, onCheckedChange = { c ->
+                                aggGroupBy = if (c) aggGroupBy + col else aggGroupBy - col
+                            })
+                            Text(col, style = MaterialTheme.typography.bodyMedium.copy(fontFamily = CodeFontFamily))
                         }
                     }
                 }
             },
-            confirmButton = { TextButton(onClick = { if (aggGroupBy.isNotEmpty()) onAction?.invoke(GridAction.Aggregate(aggFunction, metricCol, aggGroupBy.toList())); aggDialogCol = null }, enabled = aggGroupBy.isNotEmpty()) { Text("Apply") } },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (aggGroupBy.isNotEmpty() && aggMetricCols.isNotEmpty()) {
+                            onAction?.invoke(GridAction.Aggregate(aggFunction, aggMetricCols.toList(), aggGroupBy.toList()))
+                        }
+                        aggDialogCol = null
+                    },
+                    enabled = aggGroupBy.isNotEmpty() && aggMetricCols.isNotEmpty(),
+                ) { Text("Apply") }
+            },
             dismissButton = { TextButton(onClick = { aggDialogCol = null }) { Text("Cancel") } },
         )
     }

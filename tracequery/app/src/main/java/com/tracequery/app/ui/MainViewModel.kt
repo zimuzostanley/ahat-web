@@ -61,33 +61,37 @@ sealed class QueryOp {
 
     data class Aggregate(
         val function: String,
-        val metricColumn: String,
+        val metricColumns: List<String>,
         val groupByColumns: List<String>,
     ) : QueryOp() {
         override val chipLabel: String get() {
-            val fn = when (function) {
-                "COUNT" -> "COUNT(*)"
-                "COUNT_DISTINCT" -> "COUNT(DISTINCT $metricColumn)"
-                else -> "$function($metricColumn)"
+            val metrics = metricColumns.joinToString(", ") { col ->
+                when (function) {
+                    "COUNT" -> "COUNT(*)"
+                    "COUNT_DISTINCT" -> "COUNT(DISTINCT $col)"
+                    else -> "$function($col)"
+                }
             }
             val by = groupByColumns.joinToString(", ")
-            return "$fn by $by"
+            return "$metrics by $by"
         }
 
         fun wrapSql(innerSql: String): String {
-            fun q(c: String) = c
-            val groupCols = groupByColumns.joinToString(", ") { q(it) }
+            val groupCols = groupByColumns.joinToString(", ")
             val fn = function.uppercase()
-            val metricExpr = when (fn) {
-                "COUNT" -> "COUNT(*) as count"
-                "COUNT_DISTINCT" -> "COUNT(DISTINCT ${q(metricColumn)}) as count"
-                else -> "$fn(${q(metricColumn)}) as ${fn.lowercase()}"
-            }
+            val metricExprs = metricColumns.map { col ->
+                when (fn) {
+                    "COUNT" -> "COUNT(*) as count"
+                    "COUNT_DISTINCT" -> "COUNT(DISTINCT $col) as count_distinct_$col"
+                    else -> "$fn($col) as ${fn.lowercase()}_$col"
+                }
+            }.joinToString(", ")
             val orderCol = when (fn) {
-                "COUNT", "COUNT_DISTINCT" -> "count"
-                else -> fn.lowercase()
+                "COUNT" -> "count"
+                "COUNT_DISTINCT" -> "count_distinct_${metricColumns.first()}"
+                else -> "${fn.lowercase()}_${metricColumns.first()}"
             }
-            return "SELECT $groupCols, $metricExpr\nFROM ($innerSql)\nGROUP BY $groupCols\nORDER BY $orderCol DESC"
+            return "SELECT $groupCols, $metricExprs\nFROM ($innerSql)\nGROUP BY $groupCols\nORDER BY $orderCol DESC"
         }
     }
 }
@@ -413,8 +417,8 @@ class MainViewModel(
         pushOp(filter)
     }
 
-    fun addAggregate(function: String, metricColumn: String, groupByColumns: List<String>) {
-        pushOp(QueryOp.Aggregate(function, metricColumn, groupByColumns))
+    fun addAggregate(function: String, metricColumns: List<String>, groupByColumns: List<String>) {
+        pushOp(QueryOp.Aggregate(function, metricColumns, groupByColumns))
     }
 
     /** Remove the op at [index] and everything after it, then re-execute. */
@@ -423,12 +427,13 @@ class MainViewModel(
         val newOps = tab.ops.take(index)
         if (newOps.isEmpty()) {
             val base = tab.baseSql.ifBlank { tab.currentSql }
-            updateActiveTab { it.copy(ops = emptyList(), currentSql = base, baseSql = "") }
+            // Clear sort too — columns may have changed after removing aggregation
+            updateActiveTab { it.copy(ops = emptyList(), currentSql = base, baseSql = "", sortColumns = emptyList()) }
             executeQuery(base)
         } else {
-            val newTab = tab.copy(ops = newOps)
-            val sql = newTab.composedSql()
-            updateActiveTab { it.copy(ops = newOps, currentSql = sql) }
+            val newTab = tab.copy(ops = newOps, sortColumns = emptyList())
+            val sql = SqlFormatter.format(newTab.composedSql())
+            updateActiveTab { it.copy(ops = newOps, currentSql = sql, sortColumns = emptyList()) }
             executeQuery(sql)
         }
     }
@@ -436,7 +441,7 @@ class MainViewModel(
     fun clearOps() {
         val tab = _state.value.activeTab ?: return
         val base = tab.baseSql.ifBlank { tab.currentSql }
-        updateActiveTab { it.copy(ops = emptyList(), currentSql = base, baseSql = "") }
+        updateActiveTab { it.copy(ops = emptyList(), currentSql = base, baseSql = "", sortColumns = emptyList()) }
         executeQuery(base)
     }
 

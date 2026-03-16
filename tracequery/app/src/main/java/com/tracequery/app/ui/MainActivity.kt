@@ -87,7 +87,7 @@ class MainActivity : AppCompatActivity() {
                             onAddOp = { op ->
                                 when (op) {
                                     is com.tracequery.app.ui.QueryOp.Filter -> vm.addFilter(op)
-                                    is com.tracequery.app.ui.QueryOp.Aggregate -> vm.addAggregate(op.function, op.metricColumn, op.groupByColumns)
+                                    is com.tracequery.app.ui.QueryOp.Aggregate -> vm.addAggregate(op.function, op.metricColumns, op.groupByColumns)
                                 }
                             },
                             onRemoveOp = vm::removeOp,

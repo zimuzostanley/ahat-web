@@ -537,7 +537,7 @@ private fun handleGridAction(
         is GridAction.FilterNotContains -> f(action.column, "NOT LIKE", "'%${esc(action.value)}%'")
         is GridAction.FilterGlob -> f(action.column, "GLOB", "'${esc(action.value)}'")
         is GridAction.FilterNotGlob -> f(action.column, "NOT GLOB", "'${esc(action.value)}'")
-        is GridAction.Aggregate -> onAddOp(QueryOp.Aggregate(action.function, action.metricColumn, action.groupByColumns))
+        is GridAction.Aggregate -> onAddOp(QueryOp.Aggregate(action.function, action.metricColumns, action.groupByColumns))
         is GridAction.FilterValues -> {} // handled in QueryScreen directly
     }
 }
