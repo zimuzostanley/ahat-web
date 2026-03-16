@@ -2,6 +2,7 @@ package com.tracequery.app.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Box
@@ -59,6 +60,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tracequery.app.data.model.HistoryEntry
@@ -148,7 +150,15 @@ fun QueryScreen(
         },
         modifier = modifier,
     ) {
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        val focusManager = LocalFocusManager.current
+        Column(
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { focusManager.clearFocus() }
+        ) {
             TopAppBar(
                 title = { Text(tab.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium) },

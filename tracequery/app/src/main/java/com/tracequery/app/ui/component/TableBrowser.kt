@@ -189,8 +189,7 @@ private fun TableListItem(
         if (table.columns.isNotEmpty()) {
             FlowRow(
                 modifier = Modifier
-                    .padding(top = 6.dp)
-                    .heightIn(max = 48.dp),
+                    .padding(top = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
