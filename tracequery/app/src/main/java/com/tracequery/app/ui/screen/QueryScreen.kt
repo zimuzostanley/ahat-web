@@ -447,10 +447,18 @@ fun QueryScreen(
                         Text("No values found", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
-                        Text("${filtered.size} values (select to include):",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("${filtered.size} values",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f).align(Alignment.CenterVertically))
+                            TextButton(onClick = {
+                                filterValuesSelected = filterValuesSelected + filtered.map { it.first }.toSet()
+                            }) { Text("Select all", style = MaterialTheme.typography.labelSmall) }
+                            TextButton(onClick = {
+                                filterValuesSelected = emptySet()
+                            }) { Text("Clear", style = MaterialTheme.typography.labelSmall) }
+                        }
 
                         LazyColumn(Modifier.heightIn(max = 350.dp)) {
                             items(count = filtered.size, key = { filtered[it].first }) { idx ->
