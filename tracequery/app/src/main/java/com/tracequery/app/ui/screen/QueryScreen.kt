@@ -424,6 +424,8 @@ fun QueryScreen(
 
         AlertDialog(
             onDismissRequest = { filterValuesCol = null },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             title = { Text("Filter: $col") },
             text = {
                 Column {
@@ -450,8 +452,9 @@ fun QueryScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
 
-                        Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 300.dp)) {
-                            filtered.forEach { (value, count) ->
+                        LazyColumn(Modifier.heightIn(max = 350.dp)) {
+                            items(count = filtered.size, key = { filtered[it].first }) { idx ->
+                                val (value, count) = filtered[idx]
                                 Row(
                                     Modifier.fillMaxWidth()
                                         .clickable {
