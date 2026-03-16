@@ -372,7 +372,7 @@ fun DataGrid(
                     }
                     Spacer(Modifier.padding(6.dp))
                     Text("Group by", style = MaterialTheme.typography.labelMedium, color = primary)
-                    allCols.filter { it != metricCol || aggFunction == "COUNT" }.forEach { col ->
+                    allCols.forEach { col ->
                         Row(Modifier.fillMaxWidth().clickable {
                             aggGroupBy = if (col in aggGroupBy) aggGroupBy - col else aggGroupBy + col
                         }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
