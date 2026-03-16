@@ -3,6 +3,7 @@ package com.tracequery.app.ui.component
 import android.os.Environment
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -286,12 +287,42 @@ fun DataGrid(
             HorizontalDivider(color = borderColor)
 
             // ── Rows ─────────────────────────────────────────────────
-            // NO per-row horizontalScroll — the outer Column scrolls everything
+            // Cells are plain Text — NO gesture handlers per cell.
+            // Interaction handled at Row level via single pointerInput.
             LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
                 items(count = totalRows, key = { it }) { ri ->
                     val row = pagedQuery.getRow(ri)
-                    Row(Modifier.background(if (ri % 2 == 0) rowEven else rowOdd)) {
-                        // Row number
+                    // Snapshot column widths to avoid reading mutableStateList per cell
+                    val colWidthSnapshot = remember(widths.toList()) { widths.toList() }
+
+                    Row(
+                        Modifier.background(if (ri % 2 == 0) rowEven else rowOdd)
+                            .pointerInput(ri, row) {
+                                // Single gesture handler for entire row
+                                detectTapGestures(
+                                    onTap = { offset ->
+                                        if (row == null) return@detectTapGestures
+                                        val ci = columnAtX(offset.x, ROW_NUM_W.toFloat() * density.density, colWidthSnapshot, visibleCols, density.density)
+                                        if (ci >= 0) {
+                                            val origIdx = visibleCols.getOrNull(ci) ?: return@detectTapGestures
+                                            val cell = row.getOrElse(origIdx) { "" }
+                                            clipboard.setText(AnnotatedString(cell))
+                                        }
+                                    },
+                                    onLongPress = { offset ->
+                                        if (row == null) return@detectTapGestures
+                                        val ci = columnAtX(offset.x, ROW_NUM_W.toFloat() * density.density, colWidthSnapshot, visibleCols, density.density)
+                                        if (ci >= 0) {
+                                            val origIdx = visibleCols.getOrNull(ci) ?: return@detectTapGestures
+                                            cellMenuValue = row.getOrElse(origIdx) { "" }
+                                            cellMenuColName = displayedColumns.getOrNull(ci)?.name ?: ""
+                                            cellMenuRow = ri
+                                            cellMenuCol = ci
+                                        }
+                                    },
+                                )
+                            },
+                    ) {
                         Text("${ri + 1}", style = cellText, color = onVariant,
                             textAlign = TextAlign.End,
                             modifier = Modifier.width(ROW_NUM_W.dp).padding(horizontal = 4.dp, vertical = 6.dp))
@@ -303,7 +334,6 @@ fun DataGrid(
                             visibleCols.forEachIndexed { ci, origColIdx ->
                                 val cell = row.getOrElse(origColIdx) { "" }
                                 val isNull = cell == "NULL"
-                                // Simple numeric check — avoid expensive parsing
                                 val firstChar = cell.firstOrNull()
                                 val isNum = !isNull && firstChar != null &&
                                     (firstChar.isDigit() || firstChar == '-' || firstChar == '.')
@@ -320,16 +350,7 @@ fun DataGrid(
                                     overflow = TextOverflow.Ellipsis,
                                     textAlign = if (isNum) TextAlign.End else TextAlign.Start,
                                     modifier = Modifier
-                                        .width(widths.getOrElse(origColIdx) { 100f }.dp)
-                                        .combinedClickable(
-                                            onClick = { clipboard.setText(AnnotatedString(cell)) },
-                                            onLongClick = {
-                                                cellMenuValue = cell
-                                                cellMenuColName = displayedColumns.getOrNull(ci)?.name ?: ""
-                                                cellMenuRow = ri
-                                                cellMenuCol = ci
-                                            },
-                                        )
+                                        .width(colWidthSnapshot.getOrElse(origColIdx) { 100f }.dp)
                                         .padding(horizontal = 8.dp, vertical = 6.dp),
                                 )
                             }
@@ -445,6 +466,18 @@ fun DataGrid(
             dismissButton = { TextButton(onClick = { aggDialogCol = null }) { Text("Cancel") } },
         )
     }
+}
+
+/** Given a tap X position in pixels, return which visible column index was tapped. */
+private fun columnAtX(x: Float, rowNumWidthPx: Float, colWidths: List<Float>, visibleCols: List<Int>, density: Float): Int {
+    var accum = rowNumWidthPx
+    for (ci in visibleCols.indices) {
+        val origIdx = visibleCols[ci]
+        val widthPx = (colWidths.getOrElse(origIdx) { 100f }) * density
+        if (x < accum + widthPx) return ci
+        accum += widthPx
+    }
+    return -1
 }
 
 private fun buildTsv(paged: PagedQuery, columns: List<com.tracequery.app.data.model.ColumnInfo>, visibleCols: List<Int>): String = buildString {
