@@ -176,12 +176,22 @@ fun DataGrid(
 
         // ── Header ───────────────────────────────────────────────────
         Row(Modifier.fillMaxWidth().horizontalScroll(hScroll).background(headerBg)) {
+            var showExportMenu by remember { mutableStateOf(false) }
             Box(
                 Modifier.width(ROW_NUM_W.dp)
                     .combinedClickable(
                         onClick = { showColumnPicker = true },
-                        onLongClick = {
-                            // Export visible rows as TSV to clipboard
+                        onLongClick = { showExportMenu = true },
+                    )
+                    .padding(8.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Text("#", style = headerText, color = onVariant)
+                DropdownMenu(expanded = showExportMenu, onDismissRequest = { showExportMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Copy as TSV") },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                        onClick = {
                             val tsv = buildString {
                                 append(displayedColumns.joinToString("\t") { it.name })
                                 append("\n")
@@ -192,11 +202,15 @@ fun DataGrid(
                                 }
                             }
                             clipboard.setText(AnnotatedString(tsv))
+                            showExportMenu = false
                         },
                     )
-                    .padding(8.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) { Text("#", style = headerText, color = onVariant) }
+                    DropdownMenuItem(
+                        text = { Text("Columns...") },
+                        onClick = { showColumnPicker = true; showExportMenu = false },
+                    )
+                }
+            }
             Spacer(Modifier.width(1.dp).background(borderColor))
 
             displayedColumns.forEachIndexed { idx, col ->
