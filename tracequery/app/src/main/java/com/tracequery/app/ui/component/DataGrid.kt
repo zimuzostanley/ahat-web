@@ -108,6 +108,7 @@ private fun estimateWidths(result: QueryResult): List<Float> {
 @Composable
 fun DataGrid(
     result: QueryResult,
+    sortColumns: List<Pair<String, Boolean>> = emptyList(),
     onAction: ((GridAction) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -117,9 +118,7 @@ fun DataGrid(
     val clipboard = LocalClipboardManager.current
     val widths = remember(result) { mutableStateListOf(*estimateWidths(result).toTypedArray()) }
     val hScroll = rememberScrollState()
-    // Sort state — only for visual indicator. Actual sorting is pushed to SQL.
-    var sortCol by remember { mutableStateOf("") }
-    var sortAsc by remember { mutableStateOf(true) }
+    // Sort arrows driven by parent-provided sortColumns (from SQL ORDER BY)
 
     // Column visibility
     val visibleCols = remember(result) { mutableStateListOf(*result.columns.indices.toList().toTypedArray()) }
@@ -199,8 +198,12 @@ fun DataGrid(
             Spacer(Modifier.width(1.dp).background(borderColor))
 
             displayedResult.columns.forEachIndexed { idx, col ->
-                val active = sortCol == col.name
-                val arrow = if (active) (if (sortAsc) " ▲" else " ▼") else ""
+                val sortEntry = sortColumns.find { it.first == col.name }
+                val arrow = when {
+                    sortEntry != null && sortEntry.second -> " ▲"
+                    sortEntry != null -> " ▼"
+                    else -> ""
+                }
 
                 Row(Modifier.width(widths[idx].dp)) {
                     Box(
@@ -208,9 +211,7 @@ fun DataGrid(
                             .weight(1f)
                             .combinedClickable(
                                 onClick = {
-                                    val newAsc = if (sortCol == col.name) !sortAsc else true
-                                    sortCol = col.name
-                                    sortAsc = newAsc
+                                    val newAsc = if (sortEntry != null) !sortEntry.second else true
                                     onAction?.invoke(GridAction.SortColumn(col.name, newAsc))
                                 },
                                 onLongClick = { colMenuIdx = idx },
@@ -219,7 +220,7 @@ fun DataGrid(
                     ) {
                         Text(
                             col.name + arrow, style = headerText,
-                            color = if (active) primary else onSurface,
+                            color = if (sortEntry != null) primary else onSurface,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
 
@@ -231,7 +232,6 @@ fun DataGrid(
                             DropdownMenuItem(
                                 text = { Text("Sort ascending") },
                                 onClick = {
-                                    sortCol = col.name; sortAsc = true
                                     onAction?.invoke(GridAction.SortColumn(col.name, true))
                                     colMenuIdx = -1
                                 },
@@ -239,7 +239,6 @@ fun DataGrid(
                             DropdownMenuItem(
                                 text = { Text("Sort descending") },
                                 onClick = {
-                                    sortCol = col.name; sortAsc = false
                                     onAction?.invoke(GridAction.SortColumn(col.name, false))
                                     colMenuIdx = -1
                                 },

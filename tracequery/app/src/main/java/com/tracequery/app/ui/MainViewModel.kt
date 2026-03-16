@@ -32,20 +32,6 @@ import java.io.File
 sealed class QueryOp {
     abstract val chipLabel: String
 
-    data class Sort(
-        val column: String,
-        val ascending: Boolean,
-    ) : QueryOp() {
-        override val chipLabel: String get() =
-            "ORDER BY $column ${if (ascending) "ASC" else "DESC"}"
-
-        fun wrapSql(innerSql: String): String {
-            val qCol = "\"${column.replace("\"", "\"\"")}\""
-            val dir = if (ascending) "ASC" else "DESC"
-            return "SELECT *\nFROM ($innerSql)\nORDER BY $qCol $dir"
-        }
-    }
-
     data class Filter(
         val column: String,
         val op: String,
@@ -112,6 +98,7 @@ data class TabState(
     val currentSql: String = "SELECT * FROM slice LIMIT 100;",
     val baseSql: String = "",
     val ops: List<QueryOp> = emptyList(),
+    val sortColumns: List<Pair<String, Boolean>> = emptyList(), // column to ascending
     val result: QueryResult? = null,
     val isQuerying: Boolean = false,
     val isLoading: Boolean = false,
@@ -151,10 +138,17 @@ data class TabState(
         var sql = basePart
         for (op in ops) {
             sql = when (op) {
-                is QueryOp.Sort -> op.wrapSql(sql)
                 is QueryOp.Filter -> op.wrapSql(sql)
                 is QueryOp.Aggregate -> op.wrapSql(sql)
             }
+        }
+
+        // Append ORDER BY (sort is not a pipeline op, just appended)
+        if (sortColumns.isNotEmpty()) {
+            val orderBy = sortColumns.joinToString(", ") { (col, asc) ->
+                "\"${col.replace("\"", "\"\"")}\" ${if (asc) "ASC" else "DESC"}"
+            }
+            sql = "SELECT *\nFROM ($sql)\nORDER BY $orderBy"
         }
 
         val prefix = if (includes.isNotEmpty()) includes.joinToString(";\n") + ";\n" else ""
@@ -321,6 +315,27 @@ class MainViewModel(
     }
 
     // ── Pipeline operations (filter + aggregate, sequential) ───────
+
+    // ── Sort (not a pipeline op — separate ORDER BY) ───────────────
+
+    fun sortBy(column: String, ascending: Boolean) {
+        val tab = _state.value.activeTab ?: return
+        val existing = tab.sortColumns.toMutableList()
+        // Remove existing sort on this column, then add at the end
+        existing.removeAll { it.first == column }
+        existing.add(column to ascending)
+        updateActiveTab { it.copy(sortColumns = existing) }
+        // Re-execute with new sort
+        val composed = tab.copy(sortColumns = existing).composedSql()
+        executeQuery(composed)
+    }
+
+    fun clearSort() {
+        updateActiveTab { it.copy(sortColumns = emptyList()) }
+        val tab = _state.value.activeTab ?: return
+        val composed = tab.copy(sortColumns = emptyList()).composedSql()
+        executeQuery(composed)
+    }
 
     /** Add any operation to the pipeline and execute. */
     fun pushOp(op: QueryOp) {

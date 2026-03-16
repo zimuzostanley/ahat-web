@@ -86,13 +86,13 @@ class MainActivity : AppCompatActivity() {
                             onLoadHistory = vm::loadFromHistory,
                             onAddOp = { op ->
                                 when (op) {
-                                    is com.tracequery.app.ui.QueryOp.Sort -> vm.pushOp(op)
                                     is com.tracequery.app.ui.QueryOp.Filter -> vm.addFilter(op)
                                     is com.tracequery.app.ui.QueryOp.Aggregate -> vm.addAggregate(op.function, op.metricColumn, op.groupByColumns)
                                 }
                             },
                             onRemoveOp = vm::removeOp,
                             onClearOps = vm::clearOps,
+                            onSort = vm::sortBy,
                             onOpenTrace = { filePicker.launch(arrayOf("*/*")) },
                             onOpenSettings = { showSettings = true },
                             modifier = Modifier.fillMaxSize(),

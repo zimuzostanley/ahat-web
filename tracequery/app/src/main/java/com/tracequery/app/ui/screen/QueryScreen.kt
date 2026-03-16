@@ -91,6 +91,7 @@ fun QueryScreen(
     onAddOp: (QueryOp) -> Unit,
     onRemoveOp: (Int) -> Unit,
     onClearOps: () -> Unit,
+    onSort: (String, Boolean) -> Unit,
     onOpenTrace: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -293,8 +294,13 @@ fun QueryScreen(
                     if (queryResult != null && !queryResult.isError) {
                         DataGrid(
                             result = queryResult,
+                            sortColumns = tab.sortColumns,
                             onAction = { action ->
-                                handleGridAction(action, onAddOp)
+                                if (action is GridAction.SortColumn) {
+                                    onSort(action.column, action.ascending)
+                                } else {
+                                    handleGridAction(action, onAddOp)
+                                }
                             },
                             modifier = Modifier.fillMaxWidth().weight(1f),
                         )
@@ -360,7 +366,7 @@ private fun handleGridAction(
 
     when (action) {
         is GridAction.CopyCellValue -> {}
-        is GridAction.SortColumn -> onAddOp(QueryOp.Sort(action.column, action.ascending))
+        is GridAction.SortColumn -> {} // handled directly in DataGrid → ViewModel
         is GridAction.FilterEquals -> f(action.column, "=", sqlVal(action.value))
         is GridAction.FilterNotEquals -> f(action.column, "!=", sqlVal(action.value))
         is GridAction.FilterGreaterThan -> f(action.column, ">", action.value)

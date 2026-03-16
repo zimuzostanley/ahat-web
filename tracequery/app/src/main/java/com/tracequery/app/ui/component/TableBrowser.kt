@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.JoinInner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.ViewColumn
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -198,10 +200,13 @@ private fun JoinDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Join: ${sourceTable.name}") },
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+        ),
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
         text = {
             Column(
-                Modifier.verticalScroll(rememberScrollState())
-                    .heightIn(max = 600.dp),
+                Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // Target table search

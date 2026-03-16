@@ -11,10 +11,6 @@ import kotlin.coroutines.coroutineContext
 
 /**
  * A session wrapping a single loaded trace. Thread-safe via mutex.
- *
- * Query results stream in batches — the onProgress callback is invoked
- * every [BATCH_SIZE] rows with the current result (shared ArrayList,
- * no copies). LazyColumn picks up the growing list automatically.
  */
 class TraceProcessorSession private constructor(
     private val handle: Long,
@@ -25,7 +21,6 @@ class TraceProcessorSession private constructor(
     private var destroyed = false
 
     companion object {
-        /** Rows between progress callbacks. */
         const val BATCH_SIZE = 2000
 
         suspend fun open(tracePath: String, fileName: String): TraceProcessorSession =
@@ -40,17 +35,6 @@ class TraceProcessorSession private constructor(
             }
     }
 
-    /**
-     * Execute a query, streaming results via [onProgress] every [BATCH_SIZE] rows.
-     *
-     * The [onProgress] callback receives a QueryResult whose [rows] is a shared
-     * ArrayList that grows in place — no copies between batches. The callback
-     * should update UI state to trigger recomposition.
-     *
-     * The mutex is held for the entire duration. Only one query at a time.
-     *
-     * @return Final QueryResult with all rows.
-     */
     suspend fun query(
         sql: String,
         onProgress: (suspend (QueryResult) -> Unit)? = null,
@@ -77,44 +61,28 @@ class TraceProcessorSession private constructor(
                     )
                 }
 
-                // Single ArrayList grows in place — shared across progress callbacks
                 val allRows = ArrayList<List<String>>(4096)
-
                 while (TraceProcessorNative.nativeQueryNext(cursor)) {
-                    // Check for cancellation (e.g., user runs a new query)
                     coroutineContext.ensureActive()
-
                     val buffer = TraceProcessorNative.nativeQueryGetRowBuffer(cursor)
                     if (buffer != null) {
                         allRows.add(decodeRowBuffer(buffer, colCount).map { it.toString() })
                     }
-
-                    // Emit progress every BATCH_SIZE rows
                     if (onProgress != null && allRows.size % BATCH_SIZE == 0) {
-                        val elapsed = System.currentTimeMillis() - startMs
-                        // Snapshot copy — safe to read on Main thread while we
-                        // continue appending on IO thread
-                        val snapshot = ArrayList(allRows)
+                        val snap = ArrayList(allRows)
                         onProgress(QueryResult(
-                            columns = columns,
-                            rows = snapshot,
-                            executionTimeMs = elapsed,
-                            rowCount = snapshot.size.toLong(),
-                            sql = sql,
+                            columns = columns, rows = snap,
+                            executionTimeMs = System.currentTimeMillis() - startMs,
+                            rowCount = snap.size.toLong(), sql = sql,
                         ))
                     }
                 }
 
                 val error = TraceProcessorNative.nativeQueryError(cursor)
-                val elapsed = System.currentTimeMillis() - startMs
-
                 QueryResult(
-                    columns = columns,
-                    rows = allRows,
-                    executionTimeMs = elapsed,
-                    rowCount = allRows.size.toLong(),
-                    sql = sql,
-                    error = error,
+                    columns = columns, rows = allRows,
+                    executionTimeMs = System.currentTimeMillis() - startMs,
+                    rowCount = allRows.size.toLong(), sql = sql, error = error,
                 )
             } catch (e: Exception) {
                 QueryResult(
@@ -123,9 +91,7 @@ class TraceProcessorSession private constructor(
                     error = e.message ?: "Unknown error", sql = sql,
                 )
             } finally {
-                if (cursor != 0L) {
-                    TraceProcessorNative.nativeQueryClose(cursor)
-                }
+                if (cursor != 0L) TraceProcessorNative.nativeQueryClose(cursor)
             }
         }
     }
@@ -133,9 +99,7 @@ class TraceProcessorSession private constructor(
     suspend fun close() = mutex.withLock {
         if (!destroyed) {
             destroyed = true
-            withContext(Dispatchers.IO) {
-                TraceProcessorNative.nativeDestroy(handle)
-            }
+            withContext(Dispatchers.IO) { TraceProcessorNative.nativeDestroy(handle) }
         }
     }
 
