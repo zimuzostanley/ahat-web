@@ -116,7 +116,9 @@ class PagedQuery(
             val offset = pageNum.toLong() * pageSize
             if (offset >= totalRows) return false
 
-            // Wrap user query in subquery, apply pagination LIMIT/OFFSET outside
+            // Note: without ORDER BY, pages may be inconsistent. The user
+            // should sort (click a column header) for stable pagination.
+            // Our sort feature adds ORDER BY to innerSql via composedSql().
             val sql = "SELECT * FROM ($innerSql) LIMIT $pageSize OFFSET $offset;"
             val result = session.query(sql)
 
