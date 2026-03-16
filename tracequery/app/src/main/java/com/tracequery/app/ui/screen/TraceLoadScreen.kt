@@ -81,7 +81,10 @@ fun TraceLoadScreen(
 
             Spacer(Modifier.height(48.dp))
 
-            Button(onClick = { launcher.launch(arrayOf("*/*")) }) {
+            Button(
+                onClick = { launcher.launch(arrayOf("*/*")) },
+                shape = MaterialTheme.shapes.medium,
+            ) {
                 Icon(Icons.Default.FolderOpen, contentDescription = null, Modifier.size(20.dp))
                 Spacer(Modifier.padding(4.dp))
                 Text("Open Trace File")

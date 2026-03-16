@@ -40,7 +40,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -109,7 +108,7 @@ fun QueryScreen(
                         label = { Text("Open Trace") },
                         selected = false,
                         onClick = { scope.launch { drawerState.close() }; onOpenTrace() },
-                        shape = RectangleShape,
+                        shape = MaterialTheme.shapes.medium,
                     )
                 }
 
@@ -125,7 +124,7 @@ fun QueryScreen(
                         onClick = { onSwitchTab(t.id); scope.launch { drawerState.close() } },
                         badge = { Icon(Icons.Default.Close, "Close",
                             Modifier.size(18.dp).clickable { onCloseTab(t.id) }) },
-                        shape = RectangleShape,
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.padding(horizontal = 12.dp),
                     )
                 }
@@ -139,7 +138,7 @@ fun QueryScreen(
                         label = { Text("Settings") },
                         selected = false,
                         onClick = { scope.launch { drawerState.close() }; onOpenSettings() },
-                        shape = RectangleShape,
+                        shape = MaterialTheme.shapes.medium,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     )
                 }

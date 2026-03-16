@@ -42,11 +42,11 @@ private val DarkScheme = darkColorScheme(
 
 // Less rounded shapes — professional, not bubbly
 private val AppShapes = Shapes(
-    extraSmall = RoundedCornerShape(0.dp),
-    small = RoundedCornerShape(0.dp),
-    medium = RoundedCornerShape(2.dp),
-    large = RoundedCornerShape(2.dp),
-    extraLarge = RoundedCornerShape(4.dp),
+    extraSmall = RoundedCornerShape(2.dp),
+    small = RoundedCornerShape(4.dp),
+    medium = RoundedCornerShape(4.dp),
+    large = RoundedCornerShape(6.dp),
+    extraLarge = RoundedCornerShape(8.dp),
 )
 
 @Composable
