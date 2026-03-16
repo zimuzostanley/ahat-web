@@ -150,19 +150,19 @@ fun DataGrid(
     Column(modifier) {
         // ── Header ───────────────────────────────────────────────────────
         Row(
-            Modifier.fillMaxWidth().horizontalScroll(hScroll).background(headerBg).height(IntrinsicSize.Min)
+            Modifier.fillMaxWidth().horizontalScroll(hScroll).background(headerBg)
         ) {
             // Row # header
             Box(Modifier.width(ROW_NUM_W.dp).padding(8.dp), contentAlignment = Alignment.CenterEnd) {
                 Text("#", style = headerText, color = onVariant)
             }
-            Spacer(Modifier.width(1.dp).fillMaxHeight().background(borderColor))
+            Spacer(Modifier.width(1.dp).background(borderColor))
 
             result.columns.forEachIndexed { idx, col ->
                 val active = sort.col == idx
                 val arrow = if (active) (if (sort.asc) " ▲" else " ▼") else ""
 
-                Row(Modifier.width(widths[idx].dp).height(IntrinsicSize.Min)) {
+                Row(Modifier.width(widths[idx].dp)) {
                     Box(
                         Modifier
                             .weight(1f)
@@ -218,7 +218,7 @@ fun DataGrid(
 
                     // Resize handle
                     Box(
-                        Modifier.width(4.dp).fillMaxHeight().background(borderColor)
+                        Modifier.width(4.dp).background(borderColor)
                             .pointerInput(idx) {
                                 detectHorizontalDragGestures { _, delta ->
                                     val d = with(density) { delta.toDp().value }
@@ -237,14 +237,13 @@ fun DataGrid(
             itemsIndexed(rows, key = { i, _ -> i }) { ri, row ->
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(hScroll)
-                        .background(if (ri % 2 == 0) rowEven else rowOdd)
-                        .height(IntrinsicSize.Min),
+                        .background(if (ri % 2 == 0) rowEven else rowOdd),
                 ) {
                     Box(Modifier.width(ROW_NUM_W.dp).padding(horizontal = 4.dp, vertical = 6.dp),
                         contentAlignment = Alignment.CenterEnd) {
                         Text("${ri + 1}", style = cellText, color = onVariant)
                     }
-                    Spacer(Modifier.width(1.dp).fillMaxHeight().background(borderColor))
+                    Spacer(Modifier.width(1.dp).background(borderColor))
 
                     row.forEachIndexed { ci, cell ->
                         val isNull = cell == "NULL"
@@ -328,7 +327,7 @@ fun DataGrid(
                             }
                         }
                         if (ci < row.size - 1) {
-                            Spacer(Modifier.width(1.dp).fillMaxHeight().background(borderColor))
+                            Spacer(Modifier.width(1.dp).background(borderColor))
                         }
                     }
                 }
