@@ -50,6 +50,10 @@ class MainActivity : ComponentActivity() {
                     showSettings = false
                 }
 
+                androidx.compose.material3.Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = androidx.compose.material3.MaterialTheme.colorScheme.background,
+                ) {
                 Crossfade(
                     targetState = when {
                         showSettings -> "settings"
@@ -94,6 +98,7 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+                } // Surface
             }
         }
 

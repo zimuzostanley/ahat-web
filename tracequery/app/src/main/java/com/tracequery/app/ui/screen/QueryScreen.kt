@@ -1,5 +1,6 @@
 package com.tracequery.app.ui.screen
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -147,7 +148,7 @@ fun QueryScreen(
         },
         modifier = modifier,
     ) {
-        Column(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             TopAppBar(
                 title = { Text(tab.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.titleMedium) },
