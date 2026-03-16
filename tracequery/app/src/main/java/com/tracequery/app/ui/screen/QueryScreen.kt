@@ -62,9 +62,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tracequery.app.data.model.HistoryEntry
-import com.tracequery.app.ui.ActiveFilter
 import com.tracequery.app.ui.MainUiState
 import com.tracequery.app.ui.QueryMode
+import com.tracequery.app.ui.QueryOp
 import com.tracequery.app.ui.component.DataGrid
 import com.tracequery.app.ui.component.GridAction
 import com.tracequery.app.ui.component.SqlEditor
@@ -83,11 +83,9 @@ fun QueryScreen(
     onSwitchTab: (Int) -> Unit,
     onCloseTab: (Int) -> Unit,
     onLoadHistory: (HistoryEntry) -> Unit,
-    onAddFilter: (ActiveFilter) -> Unit,
-    onRemoveFilter: (Int) -> Unit,
-    onClearFilters: () -> Unit,
-    onAggregate: (String, String) -> Unit,
-    onClearAggregation: () -> Unit,
+    onAddOp: (QueryOp) -> Unit,
+    onRemoveOp: (Int) -> Unit,
+    onClearOps: () -> Unit,
     onOpenTrace: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -227,38 +225,19 @@ fun QueryScreen(
                         }
                     }
 
-                    // ── Active chips (aggregation + filters) ─────────────
-                    if (tab.aggregation != null || tab.filters.isNotEmpty()) {
+                    // ── Pipeline chips (sequential: filter → aggregate → filter...) ──
+                    if (tab.ops.isNotEmpty()) {
                         FlowRow(
                             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            // Aggregation chip
-                            if (tab.aggregation != null) {
+                            tab.ops.forEachIndexed { idx, op ->
                                 AssistChip(
-                                    onClick = onClearAggregation,
+                                    // Remove this op and everything after it
+                                    onClick = { onRemoveOp(idx) },
                                     label = {
-                                        Text("GROUP BY: ${tab.aggregation}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    },
-                                    trailingIcon = {
-                                        Icon(Icons.Default.Close, "Remove", Modifier.size(14.dp))
-                                    },
-                                    shape = MaterialTheme.shapes.medium,
-                                    colors = AssistChipDefaults.assistChipColors(
-                                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                        labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                                    ),
-                                )
-                            }
-                            // Filter chips
-                            tab.filters.forEachIndexed { idx, filter ->
-                                AssistChip(
-                                    onClick = { onRemoveFilter(idx) },
-                                    label = {
-                                        Text(filter.displayText,
+                                        Text(op.chipLabel,
                                             style = MaterialTheme.typography.labelSmall,
                                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     },
@@ -272,15 +251,10 @@ fun QueryScreen(
                                     ),
                                 )
                             }
-                            if (tab.filters.isNotEmpty() || tab.aggregation != null) {
-                                TextButton(
-                                    onClick = { onClearFilters(); onClearAggregation() },
-                                    Modifier.height(32.dp),
-                                ) {
-                                    Icon(Icons.Default.Clear, null, Modifier.size(14.dp))
-                                    Spacer(Modifier.width(2.dp))
-                                    Text("Clear all", style = MaterialTheme.typography.labelSmall)
-                                }
+                            TextButton(onClick = onClearOps, Modifier.height(32.dp)) {
+                                Icon(Icons.Default.Clear, null, Modifier.size(14.dp))
+                                Spacer(Modifier.width(2.dp))
+                                Text("Clear", style = MaterialTheme.typography.labelSmall)
                             }
                         }
                     }
@@ -302,7 +276,7 @@ fun QueryScreen(
                         DataGrid(
                             result = queryResult,
                             onAction = { action ->
-                                handleGridAction(action, onAddFilter, onAggregate)
+                                handleGridAction(action, onAddOp)
                             },
                             modifier = Modifier.fillMaxWidth().weight(1f),
                         )
@@ -358,41 +332,29 @@ fun QueryScreen(
 
 private fun handleGridAction(
     action: GridAction,
-    onAddFilter: (ActiveFilter) -> Unit,
-    onAggregate: (String, String) -> Unit,
+    onAddOp: (QueryOp) -> Unit,
 ) {
     fun esc(v: String) = v.replace("'", "''")
     fun sqlVal(v: String) = v.toLongOrNull()?.toString()
         ?: v.toDoubleOrNull()?.toString()
         ?: "'${esc(v)}'"
+    fun f(col: String, op: String, value: String?) = onAddOp(QueryOp.Filter(col, op, value))
 
     when (action) {
-        is GridAction.CopyCellValue -> {} // handled in DataGrid
-        is GridAction.FilterEquals ->
-            onAddFilter(ActiveFilter(action.column, "=", sqlVal(action.value)))
-        is GridAction.FilterNotEquals ->
-            onAddFilter(ActiveFilter(action.column, "!=", sqlVal(action.value)))
-        is GridAction.FilterGreaterThan ->
-            onAddFilter(ActiveFilter(action.column, ">", action.value))
-        is GridAction.FilterGreaterOrEqual ->
-            onAddFilter(ActiveFilter(action.column, ">=", action.value))
-        is GridAction.FilterLessThan ->
-            onAddFilter(ActiveFilter(action.column, "<", action.value))
-        is GridAction.FilterLessOrEqual ->
-            onAddFilter(ActiveFilter(action.column, "<=", action.value))
-        is GridAction.FilterIsNull ->
-            onAddFilter(ActiveFilter(action.column, "IS NULL", null))
-        is GridAction.FilterIsNotNull ->
-            onAddFilter(ActiveFilter(action.column, "IS NOT NULL", null))
-        is GridAction.FilterContains ->
-            onAddFilter(ActiveFilter(action.column, "LIKE", "'%${esc(action.value)}%'"))
-        is GridAction.FilterNotContains ->
-            onAddFilter(ActiveFilter(action.column, "NOT LIKE", "'%${esc(action.value)}%'"))
-        is GridAction.FilterGlob ->
-            onAddFilter(ActiveFilter(action.column, "GLOB", "'${esc(action.value)}'"))
-        is GridAction.FilterNotGlob ->
-            onAddFilter(ActiveFilter(action.column, "NOT GLOB", "'${esc(action.value)}'"))
-        is GridAction.Aggregate -> onAggregate(action.function, action.column)
-        is GridAction.CountDistinct -> onAggregate("COUNT_DISTINCT", action.column)
+        is GridAction.CopyCellValue -> {}
+        is GridAction.FilterEquals -> f(action.column, "=", sqlVal(action.value))
+        is GridAction.FilterNotEquals -> f(action.column, "!=", sqlVal(action.value))
+        is GridAction.FilterGreaterThan -> f(action.column, ">", action.value)
+        is GridAction.FilterGreaterOrEqual -> f(action.column, ">=", action.value)
+        is GridAction.FilterLessThan -> f(action.column, "<", action.value)
+        is GridAction.FilterLessOrEqual -> f(action.column, "<=", action.value)
+        is GridAction.FilterIsNull -> f(action.column, "IS NULL", null)
+        is GridAction.FilterIsNotNull -> f(action.column, "IS NOT NULL", null)
+        is GridAction.FilterContains -> f(action.column, "LIKE", "'%${esc(action.value)}%'")
+        is GridAction.FilterNotContains -> f(action.column, "NOT LIKE", "'%${esc(action.value)}%'")
+        is GridAction.FilterGlob -> f(action.column, "GLOB", "'${esc(action.value)}'")
+        is GridAction.FilterNotGlob -> f(action.column, "NOT GLOB", "'${esc(action.value)}'")
+        is GridAction.Aggregate -> onAddOp(QueryOp.Aggregate(action.function, action.column))
+        is GridAction.CountDistinct -> onAddOp(QueryOp.Aggregate("COUNT_DISTINCT", action.column))
     }
 }

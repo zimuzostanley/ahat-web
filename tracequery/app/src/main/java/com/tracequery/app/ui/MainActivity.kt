@@ -80,11 +80,14 @@ class MainActivity : ComponentActivity() {
                             onSwitchTab = vm::switchTab,
                             onCloseTab = vm::closeTab,
                             onLoadHistory = vm::loadFromHistory,
-                            onAddFilter = vm::addFilter,
-                            onRemoveFilter = vm::removeFilter,
-                            onClearFilters = vm::clearFilters,
-                            onAggregate = vm::addAggregate,
-                            onClearAggregation = vm::clearAggregation,
+                            onAddOp = { op ->
+                                when (op) {
+                                    is com.tracequery.app.ui.QueryOp.Filter -> vm.addFilter(op)
+                                    is com.tracequery.app.ui.QueryOp.Aggregate -> vm.addAggregate(op.function, op.column)
+                                }
+                            },
+                            onRemoveOp = vm::removeOp,
+                            onClearOps = vm::clearOps,
                             onOpenTrace = { filePicker.launch(arrayOf("*/*")) },
                             onOpenSettings = { showSettings = true },
                             modifier = Modifier.fillMaxSize(),

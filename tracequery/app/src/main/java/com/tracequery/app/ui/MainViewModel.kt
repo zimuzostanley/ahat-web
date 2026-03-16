@@ -22,26 +22,56 @@ import java.io.File
 
 // ── Tab state ────────────────────────────────────────────────────────────────
 
-/** A filter applied via the DataGrid cell/column context menu. */
-data class ActiveFilter(
-    val column: String,
-    val op: String,       // =, !=, >, >=, <, <=, LIKE, NOT LIKE, GLOB, NOT GLOB, IS NULL, IS NOT NULL
-    val value: String?,   // null for IS NULL / IS NOT NULL
-) {
-    val displayText: String get() = when (op) {
-        "IS NULL" -> "$column IS NULL"
-        "IS NOT NULL" -> "$column IS NOT NULL"
-        "LIKE" -> "$column contains ${value?.removeSurrounding("%")}"
-        "NOT LIKE" -> "$column !contains ${value?.removeSurrounding("%")}"
-        else -> "$column $op ${value ?: ""}"
+/**
+ * A single operation in the query pipeline.
+ * Operations stack sequentially: base → op1 → op2 → op3...
+ * Each wraps the previous SQL in a subquery.
+ */
+sealed class QueryOp {
+    abstract val chipLabel: String
+
+    data class Filter(
+        val column: String,
+        val op: String,
+        val value: String?,
+    ) : QueryOp() {
+        override val chipLabel: String get() = when (op) {
+            "IS NULL" -> "$column IS NULL"
+            "IS NOT NULL" -> "$column IS NOT NULL"
+            "LIKE" -> "$column contains ${value?.removeSurrounding("'")?.removeSurrounding("%")}"
+            "NOT LIKE" -> "$column !contains ${value?.removeSurrounding("'")?.removeSurrounding("%")}"
+            else -> "$column $op ${value ?: ""}"
+        }
+
+        fun toWhereClause(): String {
+            val qCol = "\"${column.replace("\"", "\"\"")}\""
+            return when (op) {
+                "IS NULL" -> "$qCol IS NULL"
+                "IS NOT NULL" -> "$qCol IS NOT NULL"
+                else -> "$qCol $op $value"
+            }
+        }
+
+        fun wrapSql(innerSql: String): String =
+            "SELECT * FROM ($innerSql) WHERE ${toWhereClause()}"
     }
 
-    fun toSqlClause(): String {
-        val qCol = "\"${column.replace("\"", "\"\"")}\""
-        return when (op) {
-            "IS NULL" -> "$qCol IS NULL"
-            "IS NOT NULL" -> "$qCol IS NOT NULL"
-            else -> "$qCol $op $value"
+    data class Aggregate(
+        val function: String,
+        val column: String,
+    ) : QueryOp() {
+        override val chipLabel: String get() = when (function) {
+            "COUNT_DISTINCT" -> "COUNT(DISTINCT $column)"
+            else -> "$function($column)"
+        }
+
+        fun wrapSql(innerSql: String): String {
+            val qCol = "\"${column.replace("\"", "\"\"")}\""
+            return if (function == "COUNT_DISTINCT") {
+                "SELECT $qCol, COUNT(*) as count FROM ($innerSql) GROUP BY $qCol ORDER BY count DESC"
+            } else {
+                "SELECT $qCol, $function(*) as ${function.lowercase()} FROM ($innerSql) GROUP BY $qCol ORDER BY ${function.lowercase()} DESC"
+            }
         }
     }
 }
@@ -51,9 +81,8 @@ data class TabState(
     val fileName: String,
     val session: TraceProcessorSession? = null,
     val currentSql: String = "SELECT * FROM slice LIMIT 100;",
-    val baseSql: String = "",  // SQL before filters/aggregation
-    val filters: List<ActiveFilter> = emptyList(),
-    val aggregation: String? = null,  // e.g. "COUNT(name)" — displayed as chip
+    val baseSql: String = "",
+    val ops: List<QueryOp> = emptyList(),
     val result: QueryResult? = null,
     val isQuerying: Boolean = false,
     val isLoading: Boolean = false,
@@ -62,30 +91,37 @@ data class TabState(
     val mode: QueryMode = QueryMode.SQL,
     val error: String? = null,
 ) {
-    /** Compose the full SQL from base + filters.
-     *  INCLUDE PERFETTO MODULE statements are extracted to the top —
-     *  they cannot be inside a subquery. */
+    /**
+     * Compose SQL by applying all ops sequentially.
+     * INCLUDE statements are extracted to the top.
+     */
     fun composedSql(): String {
-        if (filters.isEmpty()) return currentSql
+        if (ops.isEmpty()) return currentSql
         val raw = baseSql.ifBlank { currentSql }.trimEnd().removeSuffix(";").trim()
 
-        // Extract INCLUDE statements (must be top-level, not in subquery)
-        val lines = raw.lines()
+        // Extract INCLUDE statements
         val includes = mutableListOf<String>()
-        val queryParts = mutableListOf<String>()
-        for (line in lines) {
-            val trimmed = line.trim()
-            if (trimmed.uppercase().startsWith("INCLUDE PERFETTO MODULE")) {
-                includes.add(trimmed.removeSuffix(";"))
-            } else if (trimmed.isNotEmpty()) {
-                queryParts.add(line)
+        val selectLines = mutableListOf<String>()
+        for (line in raw.lines()) {
+            val t = line.trim()
+            if (t.uppercase().startsWith("INCLUDE PERFETTO MODULE")) {
+                includes.add(t.removeSuffix(";"))
+            } else if (t.isNotEmpty()) {
+                selectLines.add(line)
             }
         }
 
-        val selectSql = queryParts.joinToString("\n").trim().removeSuffix(";")
-        val whereClauses = filters.joinToString(" AND ") { it.toSqlClause() }
+        // Apply ops sequentially
+        var sql = selectLines.joinToString("\n").trim().removeSuffix(";")
+        for (op in ops) {
+            sql = when (op) {
+                is QueryOp.Filter -> op.wrapSql(sql)
+                is QueryOp.Aggregate -> op.wrapSql(sql)
+            }
+        }
+
         val prefix = if (includes.isNotEmpty()) includes.joinToString(";\n") + ";\n" else ""
-        return "${prefix}SELECT * FROM ($selectSql) WHERE $whereClauses;"
+        return "$prefix$sql;"
     }
 }
 
@@ -242,77 +278,47 @@ class MainViewModel(
         updateActiveTab { it.copy(mode = mode) }
     }
 
-    // ── Filters ──────────────────────────────────────────────────────
+    // ── Pipeline operations (filter + aggregate, sequential) ───────
 
-    fun addFilter(filter: ActiveFilter) {
+    /** Add any operation to the pipeline and execute. */
+    private fun pushOp(op: QueryOp) {
         val tab = _state.value.activeTab ?: return
-        // Save current SQL as base if first filter
-        val base = if (tab.filters.isEmpty()) tab.currentSql else tab.baseSql
-        val newFilters = tab.filters + filter
-        updateActiveTab { it.copy(filters = newFilters, baseSql = base) }
-        // Execute with filters
-        val composed = tab.copy(filters = newFilters, baseSql = base).composedSql()
-        executeQuery(composed)
-    }
-
-    fun removeFilter(index: Int) {
-        val tab = _state.value.activeTab ?: return
-        val newFilters = tab.filters.toMutableList().apply { removeAt(index) }
-        updateActiveTab { it.copy(filters = newFilters) }
-        if (newFilters.isEmpty()) {
-            // Restore base SQL
-            val base = tab.baseSql.ifBlank { tab.currentSql }
-            updateActiveTab { it.copy(currentSql = base, baseSql = "") }
-            executeQuery(base)
-        } else {
-            val composed = tab.copy(filters = newFilters).composedSql()
-            executeQuery(composed)
-        }
-    }
-
-    fun clearFilters() {
-        val tab = _state.value.activeTab ?: return
-        val base = tab.baseSql.ifBlank { tab.currentSql }
-        updateActiveTab { it.copy(filters = emptyList(), currentSql = base, baseSql = "") }
-        executeQuery(base)
-    }
-
-    fun addAggregate(function: String, column: String) {
-        val tab = _state.value.activeTab ?: return
-        val raw = tab.currentSql.trimEnd().removeSuffix(";").trim()
-
-        // Extract INCLUDE statements
-        val lines = raw.lines()
-        val includes = mutableListOf<String>()
-        val queryParts = mutableListOf<String>()
-        for (line in lines) {
-            val trimmed = line.trim()
-            if (trimmed.uppercase().startsWith("INCLUDE PERFETTO MODULE")) {
-                includes.add(trimmed.removeSuffix(";"))
-            } else if (trimmed.isNotEmpty()) {
-                queryParts.add(line)
-            }
-        }
-
-        val selectSql = queryParts.joinToString("\n").trim().removeSuffix(";")
-        val qCol = "\"${column.replace("\"", "\"\"")}\""
-        val prefix = if (includes.isNotEmpty()) includes.joinToString(";\n") + ";\n" else ""
-
-        val sql = if (function == "COUNT_DISTINCT") {
-            "${prefix}SELECT $qCol, COUNT(*) as count FROM ($selectSql) GROUP BY $qCol ORDER BY count DESC;"
-        } else {
-            "${prefix}SELECT $qCol, $function(*) as ${function.lowercase()} FROM ($selectSql) GROUP BY $qCol ORDER BY ${function.lowercase()} DESC;"
-        }
-        val aggLabel = if (function == "COUNT_DISTINCT") "COUNT(DISTINCT $column)" else "$function($column)"
-        val base = tab.currentSql  // save pre-aggregation SQL
-        updateActiveTab { it.copy(currentSql = sql, filters = emptyList(), baseSql = base, aggregation = aggLabel) }
+        val base = if (tab.ops.isEmpty()) tab.currentSql else tab.baseSql
+        val newOps = tab.ops + op
+        val newTab = tab.copy(ops = newOps, baseSql = base)
+        val sql = newTab.composedSql()
+        updateActiveTab { it.copy(ops = newOps, baseSql = base, currentSql = sql) }
         executeQuery(sql)
     }
 
-    fun clearAggregation() {
+    fun addFilter(filter: QueryOp.Filter) {
+        pushOp(filter)
+    }
+
+    fun addAggregate(function: String, column: String) {
+        pushOp(QueryOp.Aggregate(function, column))
+    }
+
+    /** Remove the op at [index] and everything after it, then re-execute. */
+    fun removeOp(index: Int) {
         val tab = _state.value.activeTab ?: return
-        val base = tab.baseSql.ifBlank { return }
-        updateActiveTab { it.copy(currentSql = base, baseSql = "", aggregation = null, filters = emptyList()) }
+        val newOps = tab.ops.take(index)
+        if (newOps.isEmpty()) {
+            val base = tab.baseSql.ifBlank { tab.currentSql }
+            updateActiveTab { it.copy(ops = emptyList(), currentSql = base, baseSql = "") }
+            executeQuery(base)
+        } else {
+            val newTab = tab.copy(ops = newOps)
+            val sql = newTab.composedSql()
+            updateActiveTab { it.copy(ops = newOps, currentSql = sql) }
+            executeQuery(sql)
+        }
+    }
+
+    fun clearOps() {
+        val tab = _state.value.activeTab ?: return
+        val base = tab.baseSql.ifBlank { tab.currentSql }
+        updateActiveTab { it.copy(ops = emptyList(), currentSql = base, baseSql = "") }
         executeQuery(base)
     }
 
