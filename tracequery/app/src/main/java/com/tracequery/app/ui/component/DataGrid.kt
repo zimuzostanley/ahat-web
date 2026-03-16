@@ -1,7 +1,9 @@
 package com.tracequery.app.ui.component
 
-import android.os.Environment
+import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -120,6 +122,8 @@ fun DataGrid(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+
+    // saveLauncher defined after visibleCols below
     val hScroll = rememberScrollState()
     val listState = rememberLazyListState()
 
@@ -133,6 +137,36 @@ fun DataGrid(
         mutableStateListOf(*pagedQuery.columns.indices.toList().toTypedArray())
     }
     var showColumnPicker by remember { mutableStateOf(false) }
+
+    // System file picker for saving TSV — no permissions needed
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/tab-separated-values")
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch(Dispatchers.IO) {
+            pagedQuery.readAll()
+            try {
+                context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { w ->
+                    val cols = visibleCols.mapNotNull { pagedQuery.columns.getOrNull(it) }
+                    w.write(cols.joinToString("\t") { it.name })
+                    w.newLine()
+                    for (i in 0 until pagedQuery.rowsRead) {
+                        val row = pagedQuery.getRow(i) ?: continue
+                        w.write(visibleCols.joinToString("\t") { row.getOrElse(it) { "" } })
+                        w.newLine()
+                    }
+                }
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Saved ${pagedQuery.rowsRead} rows", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     var colMenuIdx by remember { mutableIntStateOf(-1) }
     // Cell menu: store row/col index, show menu outside the LazyColumn
     var cellMenuRow by remember { mutableIntStateOf(-1) }
@@ -214,34 +248,7 @@ fun DataGrid(
                             text = { Text("Save as TSV") },
                             onClick = {
                                 showExportMenu = false
-                                scope.launch(Dispatchers.IO) {
-                                    pagedQuery.readAll()
-                                    try {
-                                        val dir = Environment.getExternalStoragePublicDirectory(
-                                            Environment.DIRECTORY_DOWNLOADS)
-                                        dir.mkdirs()
-                                        val fileName = "tracequery_${System.currentTimeMillis()}.tsv"
-                                        val file = File(dir, fileName)
-                                        file.bufferedWriter().use { w ->
-                                            w.write(displayedColumns.joinToString("\t") { it.name })
-                                            w.newLine()
-                                            for (i in 0 until pagedQuery.rowsRead) {
-                                                val row = pagedQuery.getRow(i) ?: continue
-                                                w.write(visibleCols.joinToString("\t") { row.getOrElse(it) { "" } })
-                                                w.newLine()
-                                            }
-                                        }
-                                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                            Toast.makeText(context,
-                                                "Saved: Downloads/$fileName (${pagedQuery.rowsRead} rows)",
-                                                Toast.LENGTH_LONG).show()
-                                        }
-                                    } catch (e: Exception) {
-                                        kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
-                                        }
-                                    }
-                                }
+                                saveLauncher.launch("tracequery.tsv")
                             },
                         )
                         HorizontalDivider()
