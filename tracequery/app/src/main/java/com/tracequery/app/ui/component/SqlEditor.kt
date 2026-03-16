@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -31,106 +35,84 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tracequery.app.ui.theme.CodeFontFamily
-import com.tracequery.app.ui.theme.SqlColors
+import com.tracequery.app.ui.theme.SqlColorsDark
+import com.tracequery.app.ui.theme.SqlColorsLight
 
 // ── Syntax rules ─────────────────────────────────────────────────────────────
 
 private data class SyntaxRule(val pattern: Regex, val style: SpanStyle)
 
-private val sqlSyntaxRules = listOf(
-    SyntaxRule(Regex("--.*"), SpanStyle(color = SqlColors.Comment)),
-    SyntaxRule(Regex("/\\*[\\s\\S]*?\\*/"), SpanStyle(color = SqlColors.Comment)),
-    SyntaxRule(Regex("'(?:[^'\\\\]|\\\\.)*'"), SpanStyle(color = SqlColors.String)),
+private fun buildRules(c: SqlColorSet): List<SyntaxRule> = listOf(
+    SyntaxRule(Regex("--.*"), SpanStyle(color = c.comment)),
+    SyntaxRule(Regex("/\\*[\\s\\S]*?\\*/"), SpanStyle(color = c.comment)),
+    SyntaxRule(Regex("'(?:[^'\\\\]|\\\\.)*'"), SpanStyle(color = c.string)),
+    SyntaxRule(Regex("\\bINCLUDE\\s+PERFETTO\\s+MODULE\\b", RegexOption.IGNORE_CASE), SpanStyle(color = c.module)),
     SyntaxRule(
-        Regex("\\bINCLUDE\\s+PERFETTO\\s+MODULE\\b", RegexOption.IGNORE_CASE),
-        SpanStyle(color = SqlColors.Module)
+        Regex("\\b(?:SELECT|FROM|WHERE|AND|OR|NOT|IN|LIKE|BETWEEN|ORDER|BY|GROUP|HAVING|LIMIT|OFFSET|AS|ON|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|UNION|ALL|INSERT|INTO|UPDATE|DELETE|CREATE|DROP|ALTER|TABLE|VIEW|INDEX|DISTINCT|CASE|WHEN|THEN|ELSE|END|IS|EXISTS|WITH|RECURSIVE|REPLACE|VALUES|SET|INCLUDE|PERFETTO|MODULE|ASC|DESC|OVER|PARTITION|ROWS|RANGE|UNBOUNDED|PRECEDING|FOLLOWING|CURRENT|ROW|WINDOW|EXCEPT|INTERSECT|NATURAL|USING|EXPLAIN|QUERY|PLAN|PRAGMA|VIRTUAL|IF|BEGIN|COMMIT|ROLLBACK|TEMP|TEMPORARY|TRIGGER|PRIMARY|KEY|FOREIGN|REFERENCES|CHECK|DEFAULT|UNIQUE|CONSTRAINT|CAST|GLOB|MATCH|REGEXP|ESCAPE|COLLATE|INDEXED|REINDEX|ATTACH|DETACH|DATABASE|VACUUM|ANALYZE|AUTOINCREMENT|CREATE_FUNCTION|CREATE_VIEW_FUNCTION|PERFETTO_TABLE|PERFETTO_VIEW|MACRO|RETURNS|SQL)\\b", RegexOption.IGNORE_CASE),
+        SpanStyle(color = c.keyword)
     ),
+    SyntaxRule(Regex("\\b(?:NULL|TRUE|FALSE)\\b", RegexOption.IGNORE_CASE), SpanStyle(color = c.null_)),
+    SyntaxRule(Regex("\\b(?:_interval_intersect|_interval_agg|_counter_intervals|_slice_flattened|_graph_scan|trace_start|trace_end|trace_dur|TRACE_BOUNDS)\\b", RegexOption.IGNORE_CASE), SpanStyle(color = c.table)),
     SyntaxRule(
-        Regex(
-            "\\b(?:SELECT|FROM|WHERE|AND|OR|NOT|IN|LIKE|BETWEEN|ORDER|BY|" +
-            "GROUP|HAVING|LIMIT|OFFSET|AS|ON|JOIN|LEFT|RIGHT|INNER|OUTER|CROSS|" +
-            "UNION|ALL|INSERT|INTO|UPDATE|DELETE|CREATE|DROP|ALTER|TABLE|VIEW|" +
-            "INDEX|DISTINCT|CASE|WHEN|THEN|ELSE|END|IS|EXISTS|WITH|RECURSIVE|" +
-            "REPLACE|VALUES|SET|INCLUDE|PERFETTO|MODULE|ASC|DESC|OVER|PARTITION|" +
-            "ROWS|RANGE|UNBOUNDED|PRECEDING|FOLLOWING|CURRENT|ROW|WINDOW|" +
-            "EXCEPT|INTERSECT|NATURAL|USING|EXPLAIN|QUERY|PLAN|PRAGMA|" +
-            "VIRTUAL|IF|BEGIN|COMMIT|ROLLBACK|TEMP|TEMPORARY|TRIGGER|" +
-            "PRIMARY|KEY|FOREIGN|REFERENCES|CHECK|DEFAULT|UNIQUE|CONSTRAINT|" +
-            "CAST|GLOB|MATCH|REGEXP|ESCAPE|COLLATE|INDEXED|REINDEX|" +
-            "ATTACH|DETACH|DATABASE|VACUUM|ANALYZE|AUTOINCREMENT|" +
-            "CREATE_FUNCTION|CREATE_VIEW_FUNCTION|PERFETTO_TABLE|PERFETTO_VIEW|MACRO|RETURNS|SQL)\\b",
-            RegexOption.IGNORE_CASE
-        ),
-        SpanStyle(color = SqlColors.Keyword)
+        Regex("\\b(?:COUNT|SUM|AVG|MIN|MAX|TOTAL|GROUP_CONCAT|ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|FIRST_VALUE|LAST_VALUE|ABS|COALESCE|IFNULL|IIF|INSTR|LENGTH|LOWER|UPPER|LTRIM|RTRIM|TRIM|SUBSTR|REPLACE|HEX|TYPEOF|PRINTF|NULLIF|RANDOM|ROUND|CAST|STR_SPLIT|EXTRACT_ARG|TO_REALTIME|TO_MONOTONIC|DUR_TO_STR|SPANS_OVERLAPPING_DUR|CAT_STACKS)\\b(?=\\s*\\()", RegexOption.IGNORE_CASE),
+        SpanStyle(color = c.function)
     ),
-    SyntaxRule(
-        Regex("\\b(?:NULL|TRUE|FALSE)\\b", RegexOption.IGNORE_CASE),
-        SpanStyle(color = SqlColors.Null)
-    ),
-    SyntaxRule(
-        Regex(
-            "\\b(?:_interval_intersect|_interval_agg|_counter_intervals|" +
-            "_slice_flattened|_graph_scan|trace_start|trace_end|trace_dur|TRACE_BOUNDS)\\b",
-            RegexOption.IGNORE_CASE
-        ),
-        SpanStyle(color = SqlColors.Table)
-    ),
-    SyntaxRule(
-        Regex(
-            "\\b(?:COUNT|SUM|AVG|MIN|MAX|TOTAL|GROUP_CONCAT|" +
-            "ROW_NUMBER|RANK|DENSE_RANK|LAG|LEAD|FIRST_VALUE|LAST_VALUE|" +
-            "ABS|COALESCE|IFNULL|IIF|INSTR|LENGTH|LOWER|UPPER|" +
-            "LTRIM|RTRIM|TRIM|SUBSTR|REPLACE|HEX|TYPEOF|" +
-            "PRINTF|NULLIF|RANDOM|ROUND|CAST|" +
-            "STR_SPLIT|EXTRACT_ARG|TO_REALTIME|TO_MONOTONIC|" +
-            "DUR_TO_STR|SPANS_OVERLAPPING_DUR|CAT_STACKS)\\b(?=\\s*\\()",
-            RegexOption.IGNORE_CASE
-        ),
-        SpanStyle(color = SqlColors.Function)
-    ),
-    SyntaxRule(
-        Regex("\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"),
-        SpanStyle(color = SqlColors.Number)
-    ),
+    SyntaxRule(Regex("\\b\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?\\b"), SpanStyle(color = c.number)),
 )
 
-// ── Syntax highlighting ──────────────────────────────────────────────────────
+private data class SqlColorSet(
+    val background: Color, val gutter: Color, val lineNumber: Color,
+    val cursor: Color, val plain: Color,
+    val keyword: Color, val function: Color, val string: Color,
+    val number: Color, val comment: Color, val table: Color,
+    val module: Color, val null_: Color,
+)
 
-private fun highlightSql(code: String): AnnotatedString = buildAnnotatedString {
-    append(code)
-    val styled = BooleanArray(code.length)
-    for (rule in sqlSyntaxRules) {
-        for (match in rule.pattern.findAll(code)) {
-            val range = match.range
-            if ((range.first..minOf(range.last, styled.size - 1)).any { styled[it] }) continue
-            addStyle(rule.style, range.first, range.last + 1)
-            for (i in range.first..minOf(range.last, styled.size - 1)) styled[i] = true
+private val LightSet = SqlColorSet(
+    SqlColorsLight.Background, SqlColorsLight.Gutter, SqlColorsLight.LineNumber,
+    SqlColorsLight.Cursor, SqlColorsLight.Plain,
+    SqlColorsLight.Keyword, SqlColorsLight.Function, SqlColorsLight.String,
+    SqlColorsLight.Number, SqlColorsLight.Comment, SqlColorsLight.Table,
+    SqlColorsLight.Module, SqlColorsLight.Null,
+)
+
+private val DarkSet = SqlColorSet(
+    SqlColorsDark.Background, SqlColorsDark.Gutter, SqlColorsDark.LineNumber,
+    SqlColorsDark.Cursor, SqlColorsDark.Plain,
+    SqlColorsDark.Keyword, SqlColorsDark.Function, SqlColorsDark.String,
+    SqlColorsDark.Number, SqlColorsDark.Comment, SqlColorsDark.Table,
+    SqlColorsDark.Module, SqlColorsDark.Null,
+)
+
+// ── Highlighting ─────────────────────────────────────────────────────────────
+
+private class SqlHighlight(private val rules: List<SyntaxRule>) : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        return TransformedText(highlight(text.text), OffsetMapping.Identity)
+    }
+
+    private fun highlight(text: String): AnnotatedString = buildAnnotatedString {
+        append(text)
+        val styled = BooleanArray(text.length)
+        for (rule in rules) {
+            for (match in rule.pattern.findAll(text)) {
+                val r = match.range
+                if ((r.first..minOf(r.last, styled.size - 1)).any { styled[it] }) continue
+                addStyle(rule.style, r.first, r.last + 1)
+                for (i in r.first..minOf(r.last, styled.size - 1)) styled[i] = true
+            }
         }
     }
 }
 
-private class SqlHighlightTransformation : VisualTransformation {
-    override fun filter(text: AnnotatedString): TransformedText {
-        return TransformedText(highlightSql(text.text), OffsetMapping.Identity)
-    }
-}
+// ── SqlEditor ────────────────────────────────────────────────────────────────
 
-// ── SqlEditor composable ─────────────────────────────────────────────────────
-
-/**
- * SQL editor with syntax highlighting and line numbers.
- *
- * Manages TextFieldValue INTERNALLY to preserve cursor position.
- * Only syncs with external [code] when it changes from outside (not from typing).
- */
 @Composable
 fun SqlEditor(
     code: String,
@@ -138,13 +120,14 @@ fun SqlEditor(
     modifier: Modifier = Modifier,
     placeholder: String = "Enter SQL query...",
 ) {
-    val transformation = remember { SqlHighlightTransformation() }
+    val isDark = isSystemInDarkTheme()
+    val colors = if (isDark) DarkSet else LightSet
+    val rules = remember(isDark) { buildRules(colors) }
+    val transformation = remember(isDark) { SqlHighlight(rules) }
     val vScroll = rememberScrollState()
     val hScroll = rememberScrollState()
     val focusRequester = remember { FocusRequester() }
 
-    // Internal TextFieldValue — preserves cursor across recompositions.
-    // Only resync when external code changes (not from our own typing).
     var tfv by remember { mutableStateOf(TextFieldValue(code)) }
     if (tfv.text != code) {
         tfv = TextFieldValue(code, TextRange(code.length))
@@ -155,31 +138,27 @@ fun SqlEditor(
     val gutterWidth = (lineCount.toString().length * 10 + 20).dp
 
     val codeStyle = TextStyle(
-        fontFamily = CodeFontFamily,
-        fontSize = 13.sp,
-        lineHeight = 20.sp,
-        color = SqlColors.Plain,
+        fontFamily = CodeFontFamily, fontSize = 13.sp,
+        lineHeight = 20.sp, color = colors.plain,
     )
 
     val outlineColor = MaterialTheme.colorScheme.outline
 
     Row(
         modifier = modifier
-            .background(SqlColors.Background, shape = MaterialTheme.shapes.small)
-            .border(1.dp, outlineColor.copy(alpha = 0.5f), MaterialTheme.shapes.small)
+            .background(colors.background, shape = MaterialTheme.shapes.medium)
+            .border(1.dp, outlineColor.copy(alpha = 0.5f), MaterialTheme.shapes.medium)
             .verticalScroll(vScroll),
     ) {
-        // Line number gutter
         Text(
             text = gutterText,
             modifier = Modifier
-                .background(SqlColors.Gutter)
+                .background(colors.gutter)
                 .padding(horizontal = 8.dp, vertical = 12.dp)
                 .widthIn(min = gutterWidth),
-            style = codeStyle.copy(color = SqlColors.LineNumber),
+            style = codeStyle.copy(color = colors.lineNumber),
         )
 
-        // Editor — clickable to focus
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -191,7 +170,7 @@ fun SqlEditor(
                 .padding(vertical = 12.dp, horizontal = 8.dp),
         ) {
             if (tfv.text.isEmpty()) {
-                Text(text = placeholder, style = codeStyle.copy(color = SqlColors.LineNumber))
+                Text(text = placeholder, style = codeStyle.copy(color = colors.lineNumber))
             }
 
             BasicTextField(
@@ -202,7 +181,7 @@ fun SqlEditor(
                 },
                 modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 textStyle = codeStyle,
-                cursorBrush = SolidColor(SqlColors.Cursor),
+                cursorBrush = SolidColor(colors.cursor),
                 visualTransformation = transformation,
                 keyboardOptions = KeyboardOptions(
                     capitalization = KeyboardCapitalization.None,

@@ -9,10 +9,10 @@ val LightOnPrimary = Color(0xFFFFFFFF)
 val LightSecondary = Color(0xFF0F9D9F)
 val LightBackground = Color(0xFFF8F9FC)
 val LightSurface = Color(0xFFFFFFFF)
-val LightSurfaceVariant = Color(0xFFF1F3F5)
+val LightSurfaceVariant = Color(0xFFEEF0F4)
 val LightOnSurface = Color(0xFF1A1C1E)
-val LightOnSurfaceVariant = Color(0xFF6B7280)
-val LightOutline = Color(0xFFDDE1E6)
+val LightOnSurfaceVariant = Color(0xFF5F6368)
+val LightOutline = Color(0xFFDADCE0)
 val LightError = Color(0xFFDC2626)
 
 // ── Dark theme ───────────────────────────────────────────────────────────────
@@ -28,9 +28,27 @@ val DarkOnSurfaceVariant = Color(0xFF9CA3AF)
 val DarkOutline = Color(0xFF363840)
 val DarkError = Color(0xFFF87171)
 
-// ── SQL syntax highlighting (always dark background) ─────────────────────────
+// ── SQL syntax highlighting ──────────────────────────────────────────────────
+// Light mode: dark text on light background
+// Dark mode: bright text on dark background
 
-object SqlColors {
+object SqlColorsLight {
+    val Background = Color(0xFFF5F5F5)
+    val Gutter = Color(0xFFEBEBEB)
+    val LineNumber = Color(0xFF999999)
+    val Cursor = Color(0xFF333333)
+    val Keyword = Color(0xFF0000FF)
+    val Function = Color(0xFF795E26)
+    val String = Color(0xFFA31515)
+    val Number = Color(0xFF098658)
+    val Comment = Color(0xFF008000)
+    val Table = Color(0xFF267F99)
+    val Module = Color(0xFFAF00DB)
+    val Null = Color(0xFF0000FF)
+    val Plain = Color(0xFF1A1A1A)
+}
+
+object SqlColorsDark {
     val Background = Color(0xFF1E1E1E)
     val Gutter = Color(0xFF252526)
     val LineNumber = Color(0xFF6E7681)
