@@ -251,7 +251,7 @@ fun QueryScreen(
                                     ),
                                 )
                             }
-                            TextButton(onClick = onClearOps, Modifier.height(32.dp)) {
+                            TextButton(onClick = onClearOps) {
                                 Icon(Icons.Default.Clear, null, Modifier.size(14.dp))
                                 Spacer(Modifier.width(2.dp))
                                 Text("Clear", style = MaterialTheme.typography.labelSmall)

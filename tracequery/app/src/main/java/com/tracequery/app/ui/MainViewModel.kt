@@ -61,16 +61,21 @@ sealed class QueryOp {
         val column: String,
     ) : QueryOp() {
         override val chipLabel: String get() = when (function) {
+            "COUNT" -> "COUNT(*) by $column"
             "COUNT_DISTINCT" -> "COUNT(DISTINCT $column)"
             else -> "$function($column)"
         }
 
         fun wrapSql(innerSql: String): String {
             val qCol = "\"${column.replace("\"", "\"\"")}\""
-            return if (function == "COUNT_DISTINCT") {
-                "SELECT $qCol, COUNT(*) as count FROM ($innerSql) GROUP BY $qCol ORDER BY count DESC"
-            } else {
-                "SELECT $qCol, $function(*) as ${function.lowercase()} FROM ($innerSql) GROUP BY $qCol ORDER BY ${function.lowercase()} DESC"
+            val fn = function.uppercase()
+            return when (fn) {
+                "COUNT" ->
+                    "SELECT $qCol, COUNT(*) as count FROM ($innerSql) GROUP BY $qCol ORDER BY count DESC"
+                "COUNT_DISTINCT" ->
+                    "SELECT $qCol, COUNT(DISTINCT $qCol) as count FROM ($innerSql) GROUP BY $qCol ORDER BY count DESC"
+                else ->
+                    "SELECT $qCol, $fn($qCol) as ${fn.lowercase()} FROM ($innerSql) GROUP BY $qCol ORDER BY ${fn.lowercase()} DESC"
             }
         }
     }
@@ -99,7 +104,7 @@ data class TabState(
         if (ops.isEmpty()) return currentSql
         val raw = baseSql.ifBlank { currentSql }.trimEnd().removeSuffix(";").trim()
 
-        // Extract INCLUDE statements
+        // Extract INCLUDE statements (must be top-level)
         val includes = mutableListOf<String>()
         val selectLines = mutableListOf<String>()
         for (line in raw.lines()) {
@@ -111,8 +116,15 @@ data class TabState(
             }
         }
 
-        // Apply ops sequentially
-        var sql = selectLines.joinToString("\n").trim().removeSuffix(";")
+        // Strip trailing LIMIT/OFFSET from base — don't want it constraining
+        // the subquery when filters/aggregations are applied on top
+        var basePart = selectLines.joinToString("\n").trim().removeSuffix(";")
+        basePart = basePart.replace(
+            Regex("\\s+LIMIT\\s+\\d+(?:\\s+OFFSET\\s+\\d+)?\\s*$", RegexOption.IGNORE_CASE), ""
+        ).trim()
+
+        // Apply ops sequentially — each wraps the previous
+        var sql = basePart
         for (op in ops) {
             sql = when (op) {
                 is QueryOp.Filter -> op.wrapSql(sql)
