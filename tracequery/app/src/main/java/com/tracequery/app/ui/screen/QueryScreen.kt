@@ -360,6 +360,7 @@ private fun handleGridAction(
 
     when (action) {
         is GridAction.CopyCellValue -> {}
+        is GridAction.SortColumn -> onAddOp(QueryOp.Sort(action.column, action.ascending))
         is GridAction.FilterEquals -> f(action.column, "=", sqlVal(action.value))
         is GridAction.FilterNotEquals -> f(action.column, "!=", sqlVal(action.value))
         is GridAction.FilterGreaterThan -> f(action.column, ">", action.value)

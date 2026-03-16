@@ -18,8 +18,9 @@ data class QueryResult(
     val isError: Boolean get() = error != null
     val isEmpty: Boolean get() = rows.isEmpty() && error == null
     val statusText: String get() = buildString {
-        append("${rowCount} row${if (rowCount != 1L) "s" else ""}")
-        if (truncated) append(" (showing first $maxRowsHit)")
+        val fmt = java.text.NumberFormat.getIntegerInstance()
+        append("${fmt.format(rowCount)} row${if (rowCount != 1L) "s" else ""}")
+        if (truncated) append(" (first ${fmt.format(maxRowsHit)})")
         append(" \u2022 ${executionTimeMs}ms")
     }
 }

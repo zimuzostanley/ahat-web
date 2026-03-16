@@ -30,6 +30,20 @@ import java.io.File
 sealed class QueryOp {
     abstract val chipLabel: String
 
+    data class Sort(
+        val column: String,
+        val ascending: Boolean,
+    ) : QueryOp() {
+        override val chipLabel: String get() =
+            "ORDER BY $column ${if (ascending) "ASC" else "DESC"}"
+
+        fun wrapSql(innerSql: String): String {
+            val qCol = "\"${column.replace("\"", "\"\"")}\""
+            val dir = if (ascending) "ASC" else "DESC"
+            return "SELECT *\nFROM ($innerSql)\nORDER BY $qCol $dir"
+        }
+    }
+
     data class Filter(
         val column: String,
         val op: String,
@@ -135,6 +149,7 @@ data class TabState(
         var sql = basePart
         for (op in ops) {
             sql = when (op) {
+                is QueryOp.Sort -> op.wrapSql(sql)
                 is QueryOp.Filter -> op.wrapSql(sql)
                 is QueryOp.Aggregate -> op.wrapSql(sql)
             }
@@ -301,7 +316,7 @@ class MainViewModel(
     // ── Pipeline operations (filter + aggregate, sequential) ───────
 
     /** Add any operation to the pipeline and execute. */
-    private fun pushOp(op: QueryOp) {
+    fun pushOp(op: QueryOp) {
         val tab = _state.value.activeTab ?: return
         val base = if (tab.ops.isEmpty()) tab.currentSql else tab.baseSql
         val newOps = tab.ops + op

@@ -78,6 +78,9 @@ sealed class GridAction {
     data class FilterNotContains(val column: String, val value: String) : GridAction()
     data class FilterGlob(val column: String, val value: String) : GridAction()
     data class FilterNotGlob(val column: String, val value: String) : GridAction()
+    /** Sort a column — pushed to SQL as ORDER BY. */
+    data class SortColumn(val column: String, val ascending: Boolean) : GridAction()
+
     /** Aggregate with metric column separate from group-by columns. */
     data class Aggregate(
         val function: String,
@@ -99,18 +102,7 @@ private fun estimateWidths(result: QueryResult): List<Float> {
     }
 }
 
-private data class SortState(val col: Int = -1, val asc: Boolean = true)
-private fun sorted(rows: List<List<String>>, s: SortState): List<List<String>> {
-    if (s.col < 0) return rows
-    return rows.sortedWith { a, b ->
-        val va = a.getOrElse(s.col) { "" }; val vb = b.getOrElse(s.col) { "" }
-        val na = va.toLongOrNull(); val nb = vb.toLongOrNull()
-        val c = if (na != null && nb != null) na.compareTo(nb)
-        else { val da = va.toDoubleOrNull(); val db = vb.toDoubleOrNull()
-            if (da != null && db != null) da.compareTo(db) else va.compareTo(vb, true) }
-        if (s.asc) c else -c
-    }
-}
+// No local sort — all sorting pushed to SQL via QueryOp.Sort
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -125,7 +117,9 @@ fun DataGrid(
     val clipboard = LocalClipboardManager.current
     val widths = remember(result) { mutableStateListOf(*estimateWidths(result).toTypedArray()) }
     val hScroll = rememberScrollState()
-    var sort by remember { mutableStateOf(SortState()) }
+    // Sort state — only for visual indicator. Actual sorting is pushed to SQL.
+    var sortCol by remember { mutableStateOf("") }
+    var sortAsc by remember { mutableStateOf(true) }
 
     // Column visibility
     val visibleCols = remember(result) { mutableStateListOf(*result.columns.indices.toList().toTypedArray()) }
@@ -145,7 +139,8 @@ fun DataGrid(
         )
     }
 
-    val rows by remember(displayedResult.rows, sort) { derivedStateOf { sorted(displayedResult.rows, sort) } }
+    // No local sort — data comes pre-sorted from SQL
+    val rows = displayedResult.rows
 
     // Menu state
     var colMenuIdx by remember { mutableIntStateOf(-1) }
@@ -204,8 +199,8 @@ fun DataGrid(
             Spacer(Modifier.width(1.dp).background(borderColor))
 
             displayedResult.columns.forEachIndexed { idx, col ->
-                val active = sort.col == idx
-                val arrow = if (active) (if (sort.asc) " ▲" else " ▼") else ""
+                val active = sortCol == col.name
+                val arrow = if (active) (if (sortAsc) " ▲" else " ▼") else ""
 
                 Row(Modifier.width(widths[idx].dp)) {
                     Box(
@@ -213,10 +208,10 @@ fun DataGrid(
                             .weight(1f)
                             .combinedClickable(
                                 onClick = {
-                                    sort = if (sort.col == idx) {
-                                        if (sort.asc) SortState(idx, false)
-                                        else SortState() // clear
-                                    } else SortState(idx)
+                                    val newAsc = if (sortCol == col.name) !sortAsc else true
+                                    sortCol = col.name
+                                    sortAsc = newAsc
+                                    onAction?.invoke(GridAction.SortColumn(col.name, newAsc))
                                 },
                                 onLongClick = { colMenuIdx = idx },
                             )
@@ -235,18 +230,20 @@ fun DataGrid(
                         ) {
                             DropdownMenuItem(
                                 text = { Text("Sort ascending") },
-                                onClick = { sort = SortState(idx, true); colMenuIdx = -1 },
+                                onClick = {
+                                    sortCol = col.name; sortAsc = true
+                                    onAction?.invoke(GridAction.SortColumn(col.name, true))
+                                    colMenuIdx = -1
+                                },
                             )
                             DropdownMenuItem(
                                 text = { Text("Sort descending") },
-                                onClick = { sort = SortState(idx, false); colMenuIdx = -1 },
+                                onClick = {
+                                    sortCol = col.name; sortAsc = false
+                                    onAction?.invoke(GridAction.SortColumn(col.name, false))
+                                    colMenuIdx = -1
+                                },
                             )
-                            if (active) {
-                                DropdownMenuItem(
-                                    text = { Text("Clear sort") },
-                                    onClick = { sort = SortState(); colMenuIdx = -1 },
-                                )
-                            }
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Aggregate...") },
