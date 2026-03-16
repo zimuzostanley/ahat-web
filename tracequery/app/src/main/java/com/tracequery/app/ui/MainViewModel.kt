@@ -59,37 +59,39 @@ sealed class QueryOp {
             "SELECT *\nFROM ($innerSql)\nWHERE ${toWhereClause()}"
     }
 
+    /** Each metric has its own function. */
+    data class MetricDef(val column: String, val function: String)
+
     data class Aggregate(
-        val function: String,
-        val metricColumns: List<String>,
+        val metrics: List<MetricDef>,
         val groupByColumns: List<String>,
     ) : QueryOp() {
         override val chipLabel: String get() {
-            val metrics = metricColumns.joinToString(", ") { col ->
-                when (function) {
+            val exprs = metrics.joinToString(", ") { m ->
+                when (m.function) {
                     "COUNT" -> "COUNT(*)"
-                    "COUNT_DISTINCT" -> "COUNT(DISTINCT $col)"
-                    else -> "$function($col)"
+                    "COUNT_DISTINCT" -> "COUNT(DISTINCT ${m.column})"
+                    else -> "${m.function}(${m.column})"
                 }
             }
-            val by = groupByColumns.joinToString(", ")
-            return "$metrics by $by"
+            return "$exprs by ${groupByColumns.joinToString(", ")}"
         }
 
         fun wrapSql(innerSql: String): String {
             val groupCols = groupByColumns.joinToString(", ")
-            val fn = function.uppercase()
-            val metricExprs = metricColumns.map { col ->
+            val metricExprs = metrics.map { m ->
+                val fn = m.function.uppercase()
                 when (fn) {
                     "COUNT" -> "COUNT(*) as count"
-                    "COUNT_DISTINCT" -> "COUNT(DISTINCT $col) as count_distinct_$col"
-                    else -> "$fn($col) as ${fn.lowercase()}_$col"
+                    "COUNT_DISTINCT" -> "COUNT(DISTINCT ${m.column}) as count_distinct_${m.column}"
+                    else -> "$fn(${m.column}) as ${fn.lowercase()}_${m.column}"
                 }
             }.joinToString(", ")
-            val orderCol = when (fn) {
+            val firstMetric = metrics.first()
+            val orderCol = when (firstMetric.function.uppercase()) {
                 "COUNT" -> "count"
-                "COUNT_DISTINCT" -> "count_distinct_${metricColumns.first()}"
-                else -> "${fn.lowercase()}_${metricColumns.first()}"
+                "COUNT_DISTINCT" -> "count_distinct_${firstMetric.column}"
+                else -> "${firstMetric.function.lowercase()}_${firstMetric.column}"
             }
             return "SELECT $groupCols, $metricExprs\nFROM ($innerSql)\nGROUP BY $groupCols\nORDER BY $orderCol DESC"
         }
@@ -417,8 +419,8 @@ class MainViewModel(
         pushOp(filter)
     }
 
-    fun addAggregate(function: String, metricColumns: List<String>, groupByColumns: List<String>) {
-        pushOp(QueryOp.Aggregate(function, metricColumns, groupByColumns))
+    fun addAggregate(metrics: List<QueryOp.MetricDef>, groupByColumns: List<String>) {
+        pushOp(QueryOp.Aggregate(metrics, groupByColumns))
     }
 
     /** Remove the op at [index] and everything after it, then re-execute. */
