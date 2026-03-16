@@ -6,32 +6,28 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Functions
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState as rememberVScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -39,6 +35,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -59,18 +56,19 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.tracequery.app.data.model.QueryResult
+import com.tracequery.app.data.PagedQuery
 import com.tracequery.app.ui.theme.CodeFontFamily
-// All colors resolved from MaterialTheme at composition time
 
-/** Action from cell/column context menus. */
+// ── Grid actions ─────────────────────────────────────────────────────────────
+
 sealed class GridAction {
     data class CopyCellValue(val value: String) : GridAction()
+    data class SortColumn(val column: String, val ascending: Boolean) : GridAction()
     data class FilterEquals(val column: String, val value: String) : GridAction()
     data class FilterNotEquals(val column: String, val value: String) : GridAction()
     data class FilterGreaterThan(val column: String, val value: String) : GridAction()
-    data class FilterLessThan(val column: String, val value: String) : GridAction()
     data class FilterGreaterOrEqual(val column: String, val value: String) : GridAction()
+    data class FilterLessThan(val column: String, val value: String) : GridAction()
     data class FilterLessOrEqual(val column: String, val value: String) : GridAction()
     data class FilterIsNull(val column: String) : GridAction()
     data class FilterIsNotNull(val column: String) : GridAction()
@@ -78,79 +76,66 @@ sealed class GridAction {
     data class FilterNotContains(val column: String, val value: String) : GridAction()
     data class FilterGlob(val column: String, val value: String) : GridAction()
     data class FilterNotGlob(val column: String, val value: String) : GridAction()
-    /** Sort a column — pushed to SQL as ORDER BY. */
-    data class SortColumn(val column: String, val ascending: Boolean) : GridAction()
-
-    /** Aggregate with metric column separate from group-by columns. */
-    data class Aggregate(
-        val function: String,
-        val metricColumn: String,
-        val groupByColumns: List<String>,
-    ) : GridAction()
+    data class Aggregate(val function: String, val metricColumn: String, val groupByColumns: List<String>) : GridAction()
 }
 
-private const val SAMPLE_ROWS = 200
+// ── Width estimation ─────────────────────────────────────────────────────────
+
 private const val ROW_NUM_W = 48
 
-private fun estimateWidths(result: QueryResult): List<Float> {
-    return result.columns.mapIndexed { c, col ->
+private fun estimateWidths(columns: List<com.tracequery.app.data.model.ColumnInfo>, sampleRows: List<List<String>>): List<Float> {
+    return columns.mapIndexed { c, col ->
         var max = col.name.length
-        for (r in 0 until minOf(SAMPLE_ROWS, result.rows.size)) {
-            if (c < result.rows[r].size) max = maxOf(max, result.rows[r][c].length)
+        for (r in 0 until minOf(200, sampleRows.size)) {
+            if (c < sampleRows[r].size) max = maxOf(max, sampleRows[r][c].length)
         }
         (max * 8 + 28).toFloat().coerceIn(64f, 360f)
     }
 }
 
-// No local sort — all sorting pushed to SQL via QueryOp.Sort
+// ── DataGrid composable ──────────────────────────────────────────────────────
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DataGrid(
-    result: QueryResult,
+    pagedQuery: PagedQuery,
     sortColumns: List<Pair<String, Boolean>> = emptyList(),
     onAction: ((GridAction) -> Unit)? = null,
+    onFetchPages: ((Int, Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    if (result.columns.isEmpty()) return
+    if (pagedQuery.columns.isEmpty()) return
 
     val density = LocalDensity.current
     val clipboard = LocalClipboardManager.current
-    val widths = remember(result) { mutableStateListOf(*estimateWidths(result).toTypedArray()) }
     val hScroll = rememberScrollState()
-    // Sort arrows driven by parent-provided sortColumns (from SQL ORDER BY)
+    val listState = rememberLazyListState()
 
-    // Column visibility
-    val visibleCols = remember(result) { mutableStateListOf(*result.columns.indices.toList().toTypedArray()) }
-    var showColumnPicker by remember { mutableStateOf(false) }
-
-    val displayedResult = remember(result, visibleCols.toList()) {
-        if (visibleCols.size == result.columns.size) result
-        else QueryResult(
-            columns = visibleCols.map { result.columns[it] },
-            rows = result.rows.map { row -> visibleCols.map { row.getOrElse(it) { "" } } },
-            executionTimeMs = result.executionTimeMs,
-            rowCount = result.rowCount,
-            sql = result.sql,
-            error = result.error,
-            truncated = result.truncated,
-            maxRowsHit = result.maxRowsHit,
-        )
+    // Estimate widths from first page
+    val firstPageRows = remember(pagedQuery.version) {
+        (0 until minOf(200, pagedQuery.totalRows.toInt())).mapNotNull { pagedQuery.getRow(it) }
+    }
+    val widths = remember(pagedQuery.columns, firstPageRows.size) {
+        mutableStateListOf(*estimateWidths(pagedQuery.columns, firstPageRows).toTypedArray())
     }
 
-    // No local sort — data comes pre-sorted from SQL
-    val rows = displayedResult.rows
+    // Column visibility
+    val visibleCols = remember(pagedQuery.columns) {
+        mutableStateListOf(*pagedQuery.columns.indices.toList().toTypedArray())
+    }
+    var showColumnPicker by remember { mutableStateOf(false) }
 
     // Menu state
     var colMenuIdx by remember { mutableIntStateOf(-1) }
     var cellMenuRow by remember { mutableIntStateOf(-1) }
     var cellMenuCol by remember { mutableIntStateOf(-1) }
 
-    // Aggregate dialog state
+    // Aggregate dialog
     var aggDialogCol by remember { mutableStateOf<String?>(null) }
     var aggFunction by remember { mutableStateOf("COUNT") }
     var aggGroupBy by remember { mutableStateOf(setOf<String>()) }
 
+    // Theme colors
     val headerBg = MaterialTheme.colorScheme.surfaceVariant
     val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
     val rowEven = MaterialTheme.colorScheme.surface
@@ -158,26 +143,39 @@ fun DataGrid(
     val onSurface = MaterialTheme.colorScheme.onSurface
     val onVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val primary = MaterialTheme.colorScheme.primary
-
     val cellText = TextStyle(fontFamily = CodeFontFamily, fontSize = 12.sp, lineHeight = 18.sp)
     val headerText = cellText.copy(fontWeight = FontWeight.SemiBold)
 
+    val totalRows = pagedQuery.totalRows.toInt()
+    val displayedColumns = remember(visibleCols.toList(), pagedQuery.columns) {
+        visibleCols.map { pagedQuery.columns[it] }
+    }
+
+    // ── Trigger page fetches based on scroll position ────────────────
+    val firstVisible by derivedStateOf { listState.firstVisibleItemIndex }
+    val visibleCount by derivedStateOf {
+        listState.layoutInfo.visibleItemsInfo.size
+    }
+    LaunchedEffect(firstVisible, visibleCount, pagedQuery.version) {
+        val last = firstVisible + visibleCount + PagedQuery.PAGE_SIZE
+        onFetchPages?.invoke(firstVisible, last)
+    }
+
     Column(modifier) {
-        // ── Column picker chip ───────────────────────────────────────────
-        if (showColumnPicker || visibleCols.size < result.columns.size) {
+        // Column picker
+        if (showColumnPicker || visibleCols.size < pagedQuery.columns.size) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("Columns:", style = MaterialTheme.typography.labelSmall, color = onVariant)
-                result.columns.forEachIndexed { idx, col ->
-                    val visible = idx in visibleCols
+                pagedQuery.columns.forEachIndexed { idx, col ->
                     FilterChip(
-                        selected = visible,
+                        selected = idx in visibleCols,
                         onClick = {
-                            if (visible && visibleCols.size > 1) visibleCols.remove(idx)
-                            else if (!visible) visibleCols.add(idx)
+                            if (idx in visibleCols && visibleCols.size > 1) visibleCols.remove(idx)
+                            else if (idx !in visibleCols) visibleCols.add(idx)
                         },
                         label = { Text(col.name, style = MaterialTheme.typography.labelSmall) },
                         shape = MaterialTheme.shapes.medium,
@@ -186,29 +184,28 @@ fun DataGrid(
             }
         }
 
-        // ── Header ───────────────────────────────────────────────────────
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(hScroll).background(headerBg)
-        ) {
-            // Row # header — tap to toggle column picker
-            Box(Modifier.width(ROW_NUM_W.dp).clickable { showColumnPicker = !showColumnPicker }
-                .padding(8.dp), contentAlignment = Alignment.CenterEnd) {
-                Text("#", style = headerText, color = onVariant)
-            }
+        // ── Header ───────────────────────────────────────────────────
+        Row(Modifier.fillMaxWidth().horizontalScroll(hScroll).background(headerBg)) {
+            Box(
+                Modifier.width(ROW_NUM_W.dp)
+                    .clickable { showColumnPicker = !showColumnPicker }
+                    .padding(8.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) { Text("#", style = headerText, color = onVariant) }
             Spacer(Modifier.width(1.dp).background(borderColor))
 
-            displayedResult.columns.forEachIndexed { idx, col ->
+            displayedColumns.forEachIndexed { idx, col ->
                 val sortEntry = sortColumns.find { it.first == col.name }
                 val arrow = when {
                     sortEntry != null && sortEntry.second -> " ▲"
                     sortEntry != null -> " ▼"
                     else -> ""
                 }
+                val origIdx = visibleCols[idx]
 
-                Row(Modifier.width(widths[idx].dp)) {
+                Row(Modifier.width(widths.getOrElse(origIdx) { 100f }.dp)) {
                     Box(
-                        Modifier
-                            .weight(1f)
+                        Modifier.weight(1f)
                             .combinedClickable(
                                 onClick = {
                                     val newAsc = if (sortEntry != null) !sortEntry.second else true
@@ -223,59 +220,41 @@ fun DataGrid(
                             color = if (sortEntry != null) primary else onSurface,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
-
                         // Column menu
-                        DropdownMenu(
-                            expanded = colMenuIdx == idx,
-                            onDismissRequest = { colMenuIdx = -1 },
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Sort ascending") },
-                                onClick = {
-                                    onAction?.invoke(GridAction.SortColumn(col.name, true))
-                                    colMenuIdx = -1
-                                },
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Sort descending") },
-                                onClick = {
-                                    onAction?.invoke(GridAction.SortColumn(col.name, false))
-                                    colMenuIdx = -1
-                                },
-                            )
+                        DropdownMenu(expanded = colMenuIdx == idx, onDismissRequest = { colMenuIdx = -1 }) {
+                            DropdownMenuItem(text = { Text("Sort ascending") },
+                                onClick = { onAction?.invoke(GridAction.SortColumn(col.name, true)); colMenuIdx = -1 })
+                            DropdownMenuItem(text = { Text("Sort descending") },
+                                onClick = { onAction?.invoke(GridAction.SortColumn(col.name, false)); colMenuIdx = -1 })
                             HorizontalDivider()
                             DropdownMenuItem(
                                 text = { Text("Aggregate...") },
                                 leadingIcon = { Icon(Icons.Default.Functions, null) },
                                 onClick = {
-                                    aggDialogCol = col.name
-                                    aggFunction = "COUNT"
-                                    aggGroupBy = emptySet()
+                                    aggDialogCol = col.name; aggFunction = "COUNT"; aggGroupBy = emptySet()
                                     colMenuIdx = -1
                                 },
                             )
                         }
                     }
-
-                    // Resize handle
-                    Box(
-                        Modifier.width(4.dp).background(borderColor)
-                            .pointerInput(idx) {
-                                detectHorizontalDragGestures { _, delta ->
-                                    val d = with(density) { delta.toDp().value }
-                                    widths[idx] = (widths[idx] + d).coerceIn(48f, 800f)
-                                }
-                            },
-                    )
+                    Box(Modifier.width(4.dp).background(borderColor)
+                        .pointerInput(origIdx) {
+                            detectHorizontalDragGestures { _, delta ->
+                                val d = with(density) { delta.toDp().value }
+                                widths[origIdx] = (widths[origIdx] + d).coerceIn(48f, 800f)
+                            }
+                        })
                 }
             }
         }
 
         HorizontalDivider(color = borderColor)
 
-        // ── Rows ─────────────────────────────────────────────────────────
-        LazyColumn(state = rememberLazyListState(), modifier = Modifier.fillMaxWidth()) {
-            itemsIndexed(rows, key = { i, _ -> i }) { ri, row ->
+        // ── Rows (paged, scroll-driven) ──────────────────────────────
+        LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
+            items(count = totalRows, key = { it }) { ri ->
+                val row = pagedQuery.getRow(ri)
+
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(hScroll)
                         .background(if (ri % 2 == 0) rowEven else rowOdd),
@@ -286,103 +265,80 @@ fun DataGrid(
                     }
                     Spacer(Modifier.width(1.dp).background(borderColor))
 
-                    row.forEachIndexed { ci, cell ->
-                        val isNull = cell == "NULL"
-                        val isNum = !isNull && (cell.toLongOrNull() != null || cell.toDoubleOrNull() != null)
-                        val colName = displayedResult.columns.getOrNull(ci)?.name ?: ""
+                    if (row == null) {
+                        // Loading placeholder
+                        Box(Modifier.padding(8.dp)) {
+                            Text("...", style = cellText, color = onVariant)
+                        }
+                    } else {
+                        visibleCols.forEachIndexed { ci, origColIdx ->
+                            val cell = row.getOrElse(origColIdx) { "" }
+                            val isNull = cell == "NULL"
+                            val isNum = !isNull && (cell.toLongOrNull() != null || cell.toDoubleOrNull() != null)
+                            val colName = displayedColumns.getOrNull(ci)?.name ?: ""
 
-                        Box(
-                            Modifier
-                                .width(widths.getOrElse(ci) { 100f }.dp)
-                                .combinedClickable(
-                                    onClick = {
-                                        clipboard.setText(AnnotatedString(cell))
-                                    },
-                                    onLongClick = {
-                                        cellMenuRow = ri; cellMenuCol = ci
-                                    },
-                                )
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                        ) {
-                            Text(
-                                cell, style = cellText,
-                                color = when {
-                                    isNull -> onVariant
-                                    isNum -> primary
-                                    else -> onSurface
-                                },
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                textAlign = if (isNum) TextAlign.End else TextAlign.Start,
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-
-                            // Cell context menu
-                            DropdownMenu(
-                                expanded = cellMenuRow == ri && cellMenuCol == ci,
-                                onDismissRequest = { cellMenuRow = -1; cellMenuCol = -1 },
-                                offset = DpOffset(0.dp, 0.dp),
+                            Box(
+                                Modifier.width(widths.getOrElse(origColIdx) { 100f }.dp)
+                                    .combinedClickable(
+                                        onClick = { clipboard.setText(AnnotatedString(cell)) },
+                                        onLongClick = { cellMenuRow = ri; cellMenuCol = ci },
+                                    )
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text("Copy") },
-                                    leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
-                                    onClick = {
-                                        clipboard.setText(AnnotatedString(cell))
-                                        cellMenuRow = -1; cellMenuCol = -1
+                                Text(
+                                    cell, style = cellText,
+                                    color = when {
+                                        isNull -> onVariant
+                                        isNum -> primary
+                                        else -> onSurface
                                     },
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    textAlign = if (isNum) TextAlign.End else TextAlign.Start,
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
-                                HorizontalDivider()
-                                fun dismiss() { cellMenuRow = -1; cellMenuCol = -1 }
-                                val fi = @Composable { Icon(Icons.Default.FilterAlt, null) }
-                                if (!isNull) {
-                                    DropdownMenuItem(text = { Text("= $cell") }, leadingIcon = fi,
-                                        onClick = { onAction?.invoke(GridAction.FilterEquals(colName, cell)); dismiss() })
-                                    DropdownMenuItem(text = { Text("≠ $cell") }, leadingIcon = fi,
-                                        onClick = { onAction?.invoke(GridAction.FilterNotEquals(colName, cell)); dismiss() })
-                                    if (isNum) {
-                                        DropdownMenuItem(text = { Text("> $cell") }, leadingIcon = fi,
-                                            onClick = { onAction?.invoke(GridAction.FilterGreaterThan(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("≥ $cell") }, leadingIcon = fi,
-                                            onClick = { onAction?.invoke(GridAction.FilterGreaterOrEqual(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("< $cell") }, leadingIcon = fi,
-                                            onClick = { onAction?.invoke(GridAction.FilterLessThan(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("≤ $cell") }, leadingIcon = fi,
-                                            onClick = { onAction?.invoke(GridAction.FilterLessOrEqual(colName, cell)); dismiss() })
-                                    } else {
-                                        DropdownMenuItem(text = { Text("Contains") }, leadingIcon = fi,
-                                            onClick = { onAction?.invoke(GridAction.FilterContains(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("Not contains") }, leadingIcon = fi,
-                                            onClick = { onAction?.invoke(GridAction.FilterNotContains(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("Glob '*$cell*'") }, leadingIcon = fi,
-                                            onClick = { onAction?.invoke(GridAction.FilterGlob(colName, "*$cell*")); dismiss() })
+
+                                // Cell context menu
+                                DropdownMenu(
+                                    expanded = cellMenuRow == ri && cellMenuCol == ci,
+                                    onDismissRequest = { cellMenuRow = -1; cellMenuCol = -1 },
+                                    offset = DpOffset(0.dp, 0.dp),
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Copy") },
+                                        leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
+                                        onClick = { clipboard.setText(AnnotatedString(cell)); cellMenuRow = -1; cellMenuCol = -1 },
+                                    )
+                                    HorizontalDivider()
+                                    fun dismiss() { cellMenuRow = -1; cellMenuCol = -1 }
+                                    val fi = @Composable { Icon(Icons.Default.FilterAlt, null) }
+                                    if (!isNull) {
+                                        DropdownMenuItem(text = { Text("= $cell") }, leadingIcon = fi,
+                                            onClick = { onAction?.invoke(GridAction.FilterEquals(colName, cell)); dismiss() })
+                                        DropdownMenuItem(text = { Text("≠ $cell") }, leadingIcon = fi,
+                                            onClick = { onAction?.invoke(GridAction.FilterNotEquals(colName, cell)); dismiss() })
+                                        if (isNum) {
+                                            DropdownMenuItem(text = { Text("> $cell") }, leadingIcon = fi,
+                                                onClick = { onAction?.invoke(GridAction.FilterGreaterThan(colName, cell)); dismiss() })
+                                            DropdownMenuItem(text = { Text("< $cell") }, leadingIcon = fi,
+                                                onClick = { onAction?.invoke(GridAction.FilterLessThan(colName, cell)); dismiss() })
+                                        } else {
+                                            DropdownMenuItem(text = { Text("Contains") }, leadingIcon = fi,
+                                                onClick = { onAction?.invoke(GridAction.FilterContains(colName, cell)); dismiss() })
+                                            DropdownMenuItem(text = { Text("Not contains") }, leadingIcon = fi,
+                                                onClick = { onAction?.invoke(GridAction.FilterNotContains(colName, cell)); dismiss() })
+                                        }
                                     }
+                                    HorizontalDivider()
+                                    DropdownMenuItem(text = { Text("IS NULL") }, leadingIcon = fi,
+                                        onClick = { onAction?.invoke(GridAction.FilterIsNull(colName)); dismiss() })
+                                    DropdownMenuItem(text = { Text("IS NOT NULL") }, leadingIcon = fi,
+                                        onClick = { onAction?.invoke(GridAction.FilterIsNotNull(colName)); dismiss() })
                                 }
-                                HorizontalDivider()
-                                DropdownMenuItem(text = { Text("IS NULL") }, leadingIcon = fi,
-                                    onClick = { onAction?.invoke(GridAction.FilterIsNull(colName)); dismiss() })
-                                DropdownMenuItem(text = { Text("IS NOT NULL") }, leadingIcon = fi,
-                                    onClick = { onAction?.invoke(GridAction.FilterIsNotNull(colName)); dismiss() })
+                            }
+                            if (ci < visibleCols.size - 1) {
+                                Spacer(Modifier.width(1.dp).background(borderColor))
                             }
                         }
-                        if (ci < row.size - 1) {
-                            Spacer(Modifier.width(1.dp).background(borderColor))
-                        }
-                    }
-                }
-            }
-
-            if (result.truncated) {
-                item {
-                    Box(
-                        Modifier.fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f))
-                            .padding(16.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            "Result truncated. Add LIMIT to your query.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                        )
                     }
                 }
             }
@@ -392,8 +348,7 @@ fun DataGrid(
     // ── Aggregate dialog ─────────────────────────────────────────────
     if (aggDialogCol != null) {
         val metricCol = aggDialogCol!!
-        // Use ALL columns from original result, not just visible ones
-        val allCols = result.columns.map { it.name }
+        val allCols = pagedQuery.columns.map { it.name }
         val functions = listOf("COUNT", "COUNT_DISTINCT", "SUM", "AVG", "MIN", "MAX")
 
         AlertDialog(
@@ -401,64 +356,42 @@ fun DataGrid(
             title = { Text("Aggregate") },
             text = {
                 Column(Modifier.verticalScroll(rememberVScrollState())) {
-                    // Function picker
-                    Text("Function", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary)
+                    Text("Function", style = MaterialTheme.typography.labelMedium, color = primary)
                     functions.forEach { fn ->
                         val label = when (fn) {
-                        "COUNT" -> "COUNT($metricCol)"
-                        "COUNT_DISTINCT" -> "COUNT(DISTINCT $metricCol)"
-                        else -> "$fn($metricCol)"
-                    }
-                        Row(
-                            Modifier.fillMaxWidth().clickable { aggFunction = fn }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            androidx.compose.material3.RadioButton(
-                                selected = aggFunction == fn,
-                                onClick = { aggFunction = fn },
-                            )
+                            "COUNT" -> "COUNT($metricCol)"
+                            "COUNT_DISTINCT" -> "COUNT(DISTINCT $metricCol)"
+                            else -> "$fn($metricCol)"
+                        }
+                        Row(Modifier.fillMaxWidth().clickable { aggFunction = fn }.padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.RadioButton(selected = aggFunction == fn, onClick = { aggFunction = fn })
                             Text(label, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
-
-                    Spacer(Modifier.height(12.dp))
-                    Text("Group by", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary)
-
+                    Spacer(Modifier.padding(6.dp))
+                    Text("Group by", style = MaterialTheme.typography.labelMedium, color = primary)
                     allCols.filter { it != metricCol || aggFunction == "COUNT" }.forEach { col ->
-                        Row(
-                            Modifier.fillMaxWidth().clickable {
-                                aggGroupBy = if (col in aggGroupBy) aggGroupBy - col else aggGroupBy + col
-                            }.padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Checkbox(
-                                checked = col in aggGroupBy,
-                                onCheckedChange = { checked ->
-                                    aggGroupBy = if (checked) aggGroupBy + col else aggGroupBy - col
-                                },
-                            )
+                        Row(Modifier.fillMaxWidth().clickable {
+                            aggGroupBy = if (col in aggGroupBy) aggGroupBy - col else aggGroupBy + col
+                        }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = col in aggGroupBy, onCheckedChange = { c ->
+                                aggGroupBy = if (c) aggGroupBy + col else aggGroupBy - col
+                            })
                             Text(col, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (aggGroupBy.isNotEmpty()) {
-                            onAction?.invoke(GridAction.Aggregate(aggFunction, metricCol, aggGroupBy.toList()))
-                        }
-                        aggDialogCol = null
-                    },
-                    enabled = aggGroupBy.isNotEmpty(),
-                ) { Text("Apply") }
+                TextButton(onClick = {
+                    if (aggGroupBy.isNotEmpty()) {
+                        onAction?.invoke(GridAction.Aggregate(aggFunction, metricCol, aggGroupBy.toList()))
+                    }
+                    aggDialogCol = null
+                }, enabled = aggGroupBy.isNotEmpty()) { Text("Apply") }
             },
-            dismissButton = {
-                TextButton(onClick = { aggDialogCol = null }) { Text("Cancel") }
-            },
+            dismissButton = { TextButton(onClick = { aggDialogCol = null }) { Text("Cancel") } },
         )
     }
 }

@@ -92,6 +92,7 @@ fun QueryScreen(
     onRemoveOp: (Int) -> Unit,
     onClearOps: () -> Unit,
     onSort: (String, Boolean) -> Unit,
+    onFetchPages: (Int, Int) -> Unit,
     onOpenTrace: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -237,10 +238,14 @@ fun QueryScreen(
                             Text("Run")
                         }
 
-                        val r = tab.result
-                        if (r != null && !r.isError) {
-                            Text(r.statusText, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val pq = tab.pagedQuery
+                        if (pq != null && !pq.isError) {
+                            val fmt = java.text.NumberFormat.getIntegerInstance()
+                            Text(
+                                "${fmt.format(pq.totalRows)} rows \u2022 ${pq.executionTimeMs}ms",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
 
@@ -289,11 +294,11 @@ fun QueryScreen(
                         }
                     }
 
-                    // Grid
-                    val queryResult = tab.result
-                    if (queryResult != null && !queryResult.isError) {
+                    // Grid (paged or legacy)
+                    val paged = tab.pagedQuery
+                    if (paged != null && !paged.isError) {
                         DataGrid(
-                            result = queryResult,
+                            pagedQuery = paged,
                             sortColumns = tab.sortColumns,
                             onAction = { action ->
                                 if (action is GridAction.SortColumn) {
@@ -302,9 +307,10 @@ fun QueryScreen(
                                     handleGridAction(action, onAddOp)
                                 }
                             },
+                            onFetchPages = onFetchPages,
                             modifier = Modifier.fillMaxWidth().weight(1f),
                         )
-                    } else if (!tab.isQuerying && tab.result == null) {
+                    } else if (!tab.isQuerying && paged == null) {
                         Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
                             Text("Execute a query to see results",
                                 style = MaterialTheme.typography.bodyMedium,

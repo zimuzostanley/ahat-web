@@ -93,6 +93,7 @@ class MainActivity : AppCompatActivity() {
                             onRemoveOp = vm::removeOp,
                             onClearOps = vm::clearOps,
                             onSort = vm::sortBy,
+                            onFetchPages = vm::fetchPagesForRange,
                             onOpenTrace = { filePicker.launch(arrayOf("*/*")) },
                             onOpenSettings = { showSettings = true },
                             modifier = Modifier.fillMaxSize(),

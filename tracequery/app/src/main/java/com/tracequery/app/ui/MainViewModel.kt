@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.tracequery.app.data.PagedQuery
 import com.tracequery.app.data.QueryHistory
 import com.tracequery.app.data.TraceProcessorSession
 import com.tracequery.app.data.model.HistoryEntry
@@ -98,8 +99,9 @@ data class TabState(
     val currentSql: String = "SELECT * FROM slice LIMIT 100;",
     val baseSql: String = "",
     val ops: List<QueryOp> = emptyList(),
-    val sortColumns: List<Pair<String, Boolean>> = emptyList(), // column to ascending
+    val sortColumns: List<Pair<String, Boolean>> = emptyList(),
     val result: QueryResult? = null,
+    val pagedQuery: PagedQuery? = null,
     val isQuerying: Boolean = false,
     val isLoading: Boolean = false,
     val loadProgress: String = "",
@@ -259,37 +261,47 @@ class MainViewModel(
         val session = tab.session ?: return
         if (tab.isQuerying) return
 
-        updateActiveTab { it.copy(currentSql = sql, isQuerying = true, error = null, result = null) }
+        updateActiveTab { it.copy(currentSql = sql, isQuerying = true, error = null, result = null, pagedQuery = null) }
 
         viewModelScope.launch {
-            val result = session.query(sql) { progressResult ->
-                // Streaming callback — update UI with rows so far
-                withContext(kotlinx.coroutines.Dispatchers.Main) {
-                    updateActiveTab { it.copy(result = progressResult) }
-                }
-            }
+            val paged = PagedQuery.create(session, sql)
 
             val entry = HistoryEntry(
                 sql = sql,
                 timestamp = System.currentTimeMillis(),
                 traceFileName = tab.fileName,
-                rowCount = result.rowCount,
-                executionTimeMs = result.executionTimeMs,
-                error = result.error,
+                rowCount = paged.totalRows,
+                executionTimeMs = paged.executionTimeMs,
+                error = paged.error,
             )
-
-            // Persist to disk
             queryHistory.add(entry)
 
             updateActiveTab {
                 it.copy(
-                    result = result,
+                    pagedQuery = paged,
+                    result = null, // use pagedQuery instead
                     isQuerying = false,
-                    error = result.error,
+                    error = paged.error,
                     history = queryHistory.getAll().filter { h ->
                         h.traceFileName == tab.fileName
                     }.take(50),
                 )
+            }
+        }
+    }
+
+    /** Fetch pages needed for the visible scroll range. Called by DataGrid. */
+    fun fetchPagesForRange(firstVisible: Int, lastVisible: Int) {
+        val paged = _state.value.activeTab?.pagedQuery ?: return
+        val needed = paged.neededPages(firstVisible, lastVisible)
+        for (pageNum in needed) {
+            viewModelScope.launch(Dispatchers.IO) {
+                if (paged.fetchPage(pageNum)) {
+                    // Trigger recomposition by bumping a version counter
+                    withContext(Dispatchers.Main) {
+                        updateActiveTab { it.copy(pagedQuery = paged) }
+                    }
+                }
             }
         }
     }
