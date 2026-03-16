@@ -24,6 +24,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState as rememberVScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -70,8 +76,12 @@ sealed class GridAction {
     data class FilterNotContains(val column: String, val value: String) : GridAction()
     data class FilterGlob(val column: String, val value: String) : GridAction()
     data class FilterNotGlob(val column: String, val value: String) : GridAction()
-    data class Aggregate(val function: String, val column: String) : GridAction()
-    data class CountDistinct(val column: String) : GridAction()
+    /** Aggregate with metric column separate from group-by columns. */
+    data class Aggregate(
+        val function: String,
+        val metricColumn: String,
+        val groupByColumns: List<String>,
+    ) : GridAction()
 }
 
 private const val SAMPLE_ROWS = 200
@@ -121,10 +131,15 @@ fun DataGrid(
     var cellMenuRow by remember { mutableIntStateOf(-1) }
     var cellMenuCol by remember { mutableIntStateOf(-1) }
 
+    // Aggregate dialog state
+    var aggDialogCol by remember { mutableStateOf<String?>(null) }
+    var aggFunction by remember { mutableStateOf("COUNT") }
+    var aggGroupBy by remember { mutableStateOf(setOf<String>()) }
+
     val headerBg = MaterialTheme.colorScheme.surfaceVariant
     val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-    val rowEven = MaterialTheme.colorScheme.background
-    val rowOdd = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+    val rowEven = MaterialTheme.colorScheme.surface
+    val rowOdd = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     val onSurface = MaterialTheme.colorScheme.onSurface
     val onVariant = MaterialTheme.colorScheme.onSurfaceVariant
     val primary = MaterialTheme.colorScheme.primary
@@ -188,17 +203,15 @@ fun DataGrid(
                                 )
                             }
                             HorizontalDivider()
-                            for (fn in listOf("COUNT", "SUM", "AVG", "MIN", "MAX")) {
-                                DropdownMenuItem(
-                                    text = { Text("$fn(${col.name})") },
-                                    leadingIcon = { Icon(Icons.Default.Functions, null) },
-                                    onClick = { onAction?.invoke(GridAction.Aggregate(fn, col.name)); colMenuIdx = -1 },
-                                )
-                            }
                             DropdownMenuItem(
-                                text = { Text("COUNT(DISTINCT ${col.name})") },
+                                text = { Text("Aggregate...") },
                                 leadingIcon = { Icon(Icons.Default.Functions, null) },
-                                onClick = { onAction?.invoke(GridAction.CountDistinct(col.name)); colMenuIdx = -1 },
+                                onClick = {
+                                    aggDialogCol = col.name
+                                    aggFunction = "COUNT"
+                                    aggGroupBy = emptySet()
+                                    colMenuIdx = -1
+                                },
                             )
                         }
                     }
@@ -338,5 +351,75 @@ fun DataGrid(
                 }
             }
         }
+    }
+
+    // ── Aggregate dialog ─────────────────────────────────────────────
+    if (aggDialogCol != null) {
+        val metricCol = aggDialogCol!!
+        val allCols = result.columns.map { it.name }
+        val functions = listOf("COUNT", "SUM", "AVG", "MIN", "MAX", "COUNT_DISTINCT")
+
+        AlertDialog(
+            onDismissRequest = { aggDialogCol = null },
+            title = { Text("Aggregate") },
+            text = {
+                Column(Modifier.verticalScroll(rememberVScrollState()).heightIn(max = 400.dp)) {
+                    // Function picker
+                    Text("Function", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+                    functions.forEach { fn ->
+                        val label = if (fn == "COUNT_DISTINCT") "COUNT(DISTINCT $metricCol)"
+                                   else if (fn == "COUNT") "COUNT(*)"
+                                   else "$fn($metricCol)"
+                        Row(
+                            Modifier.fillMaxWidth().clickable { aggFunction = fn }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.RadioButton(
+                                selected = aggFunction == fn,
+                                onClick = { aggFunction = fn },
+                            )
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Text("Group by", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+
+                    allCols.filter { it != metricCol || aggFunction == "COUNT" }.forEach { col ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable {
+                                aggGroupBy = if (col in aggGroupBy) aggGroupBy - col else aggGroupBy + col
+                            }.padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = col in aggGroupBy,
+                                onCheckedChange = { checked ->
+                                    aggGroupBy = if (checked) aggGroupBy + col else aggGroupBy - col
+                                },
+                            )
+                            Text(col, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (aggGroupBy.isNotEmpty()) {
+                            onAction?.invoke(GridAction.Aggregate(aggFunction, metricCol, aggGroupBy.toList()))
+                        }
+                        aggDialogCol = null
+                    },
+                    enabled = aggGroupBy.isNotEmpty(),
+                ) { Text("Apply") }
+            },
+            dismissButton = {
+                TextButton(onClick = { aggDialogCol = null }) { Text("Cancel") }
+            },
+        )
     }
 }

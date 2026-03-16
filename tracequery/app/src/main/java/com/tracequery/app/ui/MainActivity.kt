@@ -83,7 +83,7 @@ class MainActivity : ComponentActivity() {
                             onAddOp = { op ->
                                 when (op) {
                                     is com.tracequery.app.ui.QueryOp.Filter -> vm.addFilter(op)
-                                    is com.tracequery.app.ui.QueryOp.Aggregate -> vm.addAggregate(op.function, op.column)
+                                    is com.tracequery.app.ui.QueryOp.Aggregate -> vm.addAggregate(op.function, op.metricColumn, op.groupByColumns)
                                 }
                             },
                             onRemoveOp = vm::removeOp,

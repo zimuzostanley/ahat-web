@@ -2,6 +2,8 @@ package com.tracequery.app.ui.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -29,6 +31,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
@@ -137,6 +141,7 @@ fun SqlEditor(
     val transformation = remember { SqlHighlightTransformation() }
     val vScroll = rememberScrollState()
     val hScroll = rememberScrollState()
+    val focusRequester = remember { FocusRequester() }
 
     // Internal TextFieldValue — preserves cursor across recompositions.
     // Only resync when external code changes (not from our own typing).
@@ -174,10 +179,14 @@ fun SqlEditor(
             style = codeStyle.copy(color = SqlColors.LineNumber),
         )
 
-        // Editor
+        // Editor — clickable to focus
         Box(
             modifier = Modifier
                 .weight(1f)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                ) { focusRequester.requestFocus() }
                 .horizontalScroll(hScroll)
                 .padding(vertical = 12.dp, horizontal = 8.dp),
         ) {
@@ -191,7 +200,7 @@ fun SqlEditor(
                     tfv = newTfv
                     onCodeChange(newTfv.text)
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().focusRequester(focusRequester),
                 textStyle = codeStyle,
                 cursorBrush = SolidColor(SqlColors.Cursor),
                 visualTransformation = transformation,

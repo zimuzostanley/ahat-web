@@ -353,7 +353,6 @@ private fun handleGridAction(
         is GridAction.FilterNotContains -> f(action.column, "NOT LIKE", "'%${esc(action.value)}%'")
         is GridAction.FilterGlob -> f(action.column, "GLOB", "'${esc(action.value)}'")
         is GridAction.FilterNotGlob -> f(action.column, "NOT GLOB", "'${esc(action.value)}'")
-        is GridAction.Aggregate -> onAddOp(QueryOp.Aggregate(action.function, action.column))
-        is GridAction.CountDistinct -> onAddOp(QueryOp.Aggregate("COUNT_DISTINCT", action.column))
+        is GridAction.Aggregate -> onAddOp(QueryOp.Aggregate(action.function, action.metricColumn, action.groupByColumns))
     }
 }
