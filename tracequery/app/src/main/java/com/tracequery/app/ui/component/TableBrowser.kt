@@ -185,9 +185,6 @@ private fun JoinDialog(
     var useIntervalIntersect by remember { mutableStateOf(false) }
     var partitionColumns by remember { mutableStateOf(setOf<String>()) }
 
-    val sourceHasTsDur = sourceTable.columns.any { it.name == "ts" } &&
-            sourceTable.columns.any { it.name == "dur" }
-
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Join: ${sourceTable.name}") },
@@ -239,11 +236,6 @@ private fun JoinDialog(
                 if (targetTable != null) {
                     Spacer(Modifier.height(4.dp))
 
-                    // Check if both have ts/dur for interval intersect
-                    val targetHasTsDur = targetTable!!.columns.any { it.name == "ts" } &&
-                            targetTable!!.columns.any { it.name == "dur" }
-                    val canIntersect = sourceHasTsDur && targetHasTsDur
-
                     // Join type
                     Text("Type:", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary)
@@ -257,14 +249,12 @@ private fun JoinDialog(
                         }
                     }
 
-                    if (canIntersect) {
-                        Row(Modifier.fillMaxWidth().clickable { useIntervalIntersect = true },
-                            verticalAlignment = Alignment.CenterVertically) {
-                            RadioButton(selected = useIntervalIntersect,
-                                onClick = { useIntervalIntersect = true })
-                            Text("_interval_intersect", style = MaterialTheme.typography.bodyMedium.copy(
-                                fontFamily = CodeFontFamily))
-                        }
+                    Row(Modifier.fillMaxWidth().clickable { useIntervalIntersect = true },
+                        verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = useIntervalIntersect,
+                            onClick = { useIntervalIntersect = true })
+                        Text("_interval_intersect", style = MaterialTheme.typography.bodyMedium.copy(
+                            fontFamily = CodeFontFamily))
                     }
 
                     if (!useIntervalIntersect) {
@@ -316,16 +306,22 @@ private fun JoinDialog(
                             }
                         }
                     } else {
-                        // Partition columns for interval intersect
-                        val srcCols = sourceTable.columns.map { it.name }
-                            .filter { it != "ts" && it != "dur" && it != "id" }
-                        val tgtCols = targetTable!!.columns.map { it.name }.toSet()
-                        val commonPartition = srcCols.filter { it in tgtCols }.sorted()
+                        // Interval intersect — user picks columns
+                        val allSrcCols = sourceTable.columns.map { it.name }
+                        val allTgtCols = targetTable!!.columns.map { it.name }
+                        val commonCols = allSrcCols.toSet().intersect(allTgtCols.toSet()).sorted()
 
-                        if (commonPartition.isNotEmpty()) {
-                            Text("Partition by (optional):", style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary)
-                            commonPartition.forEach { col ->
+                        Text("The tables must have timestamp (ts), duration (dur) columns.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                        Spacer(Modifier.height(4.dp))
+
+                        // Partition columns
+                        Text("Partition by (optional):", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                        if (commonCols.isNotEmpty()) {
+                            commonCols.forEach { col ->
                                 Row(Modifier.fillMaxWidth().clickable {
                                     partitionColumns = if (col in partitionColumns)
                                         partitionColumns - col else partitionColumns + col
@@ -339,6 +335,10 @@ private fun JoinDialog(
                                         fontFamily = CodeFontFamily))
                                 }
                             }
+                        } else {
+                            Text("No common columns for partitioning",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -352,8 +352,8 @@ private fun JoinDialog(
                         leftJoinColumn, rightJoinColumn, useIntervalIntersect, partitionColumns.toList())
                     onJoinGenerated(sql)
                 },
-                enabled = targetTable != null && (useIntervalIntersect ||
-                    (leftJoinColumn.isNotBlank() && rightJoinColumn.isNotBlank())),
+                enabled = targetTable != null &&
+                    (useIntervalIntersect || (leftJoinColumn.isNotBlank() && rightJoinColumn.isNotBlank())),
             ) { Text("Generate SQL") }
         },
         dismissButton = {
@@ -378,10 +378,13 @@ private fun generateJoinSql(
     return if (useIntervalIntersect) {
         val partStr = if (partitionColumns.isNotEmpty())
             "(${partitionColumns.joinToString(", ")})" else "()"
+        // Wrap each table in a subquery filtering dur >= 0 (required by _interval_intersect)
+        val srcSub = "(SELECT * FROM ${source.name} WHERE dur >= 0)"
+        val tgtSub = "(SELECT * FROM ${target.name} WHERE dur >= 0)"
         """INCLUDE PERFETTO MODULE intervals.intersect;
 ${includes}SELECT *
 FROM _interval_intersect!(
-  (${source.name}, ${target.name}),
+  ($srcSub, $tgtSub),
   $partStr
 );"""
     } else {
