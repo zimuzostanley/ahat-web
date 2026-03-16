@@ -54,17 +54,11 @@ class PagedQuery private constructor(
                 var knownTotal = -1L
                 try {
                     val countSql = "${includePrefix}SELECT COUNT(*) FROM ($selectSql);"
-                    android.util.Log.d("PagedQuery", "COUNT SQL: $countSql")
                     val countResult = session.query(countSql)
                     if (!countResult.isError && countResult.rows.isNotEmpty()) {
                         knownTotal = countResult.rows[0].firstOrNull()?.toLongOrNull() ?: -1L
-                        android.util.Log.d("PagedQuery", "COUNT result: $knownTotal")
-                    } else {
-                        android.util.Log.w("PagedQuery", "COUNT failed: ${countResult.error}")
                     }
-                } catch (e: Exception) {
-                    android.util.Log.w("PagedQuery", "COUNT exception: ${e.message}")
-                }
+                } catch (_: Exception) {}
 
                 // Open the cursor for iteration
                 val cursor = TraceProcessorNative.nativeQueryStart(session.handle, sql)

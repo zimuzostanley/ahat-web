@@ -488,8 +488,7 @@ private fun TableListItem(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                val colsToShow = table.columns.take(6)
-                colsToShow.forEach { col ->
+                table.columns.forEach { col ->
                     Text(
                         text = "${col.name}: ${col.type.lowercase().ifBlank { "?" }}",
                         modifier = Modifier
@@ -500,15 +499,6 @@ private fun TableListItem(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         // use labelSmall default size
                         maxLines = 1,
-                    )
-                }
-                if (table.columns.size > 6) {
-                    Text(
-                        text = "+${table.columns.size - 6} more",
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        // use labelSmall default size
                     )
                 }
             }

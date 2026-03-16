@@ -1,7 +1,9 @@
 package com.tracequery.app.ui.screen
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -77,7 +79,7 @@ import com.tracequery.app.ui.component.TableBrowser
 import com.tracequery.app.ui.theme.CodeFontFamily
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun QueryScreen(
     uiState: MainUiState,
@@ -212,6 +214,8 @@ fun QueryScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
                 QueryMode.SQL -> {
+                    val clipboard = LocalClipboardManager.current
+
                     SqlEditor(
                         code = tab.currentSql,
                         onCodeChange = onSqlChange,
@@ -222,7 +226,7 @@ fun QueryScreen(
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         OutlinedButton(
                             onClick = { onExecuteQuery(tab.currentSql) },
@@ -237,6 +241,15 @@ fun QueryScreen(
                             Spacer(Modifier.width(4.dp))
                             Text("Run")
                         }
+
+                        // Copy SQL
+                        IconButton(onClick = {
+                            clipboard.setText(AnnotatedString(tab.currentSql))
+                        }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.ContentCopy, "Copy SQL", Modifier.size(16.dp))
+                        }
+
+                        Spacer(Modifier.weight(1f))
 
                         val pq = tab.pagedQuery
                         if (pq != null && !pq.isError) {
@@ -331,7 +344,7 @@ fun QueryScreen(
     if (showHistory) {
         ModalBottomSheet(
             onDismissRequest = { showHistory = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
             Text("Query History", Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -342,9 +355,13 @@ fun QueryScreen(
             }
             LazyColumn {
                 items(tab.history) { entry ->
+                    val histClipboard = LocalClipboardManager.current
                     Column(
                         Modifier.fillMaxWidth()
-                            .clickable { onLoadHistory(entry); showHistory = false }
+                            .combinedClickable(
+                                onClick = { onLoadHistory(entry); showHistory = false },
+                                onLongClick = { histClipboard.setText(AnnotatedString(entry.sql)) },
+                            )
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                     ) {
                         Text(entry.sql.take(120),

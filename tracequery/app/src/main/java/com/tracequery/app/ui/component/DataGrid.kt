@@ -166,11 +166,17 @@ fun DataGrid(
         // Column picker
         if (showColumnPicker || visibleCols.size < pagedQuery.columns.size) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Columns:", style = MaterialTheme.typography.labelSmall, color = onVariant)
+                // Select all / deselect
+                TextButton(onClick = {
+                    visibleCols.clear()
+                    visibleCols.addAll(pagedQuery.columns.indices)
+                }) { Text("All", style = MaterialTheme.typography.labelSmall) }
+
                 pagedQuery.columns.forEachIndexed { idx, col ->
                     FilterChip(
                         selected = idx in visibleCols,
