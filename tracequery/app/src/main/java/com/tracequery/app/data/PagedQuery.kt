@@ -146,6 +146,15 @@ class PagedQuery private constructor(
         return readMore(needed) > 0
     }
 
+    /** Read ALL remaining rows from the cursor. After this, isComplete = true
+     *  and all rows are in the cache. Used by export. */
+    fun readAll() {
+        if (isComplete || cursorHandle == 0L) return
+        while (!isComplete) {
+            readMore(10000)
+        }
+    }
+
     /** Close the cursor. Must be called to prevent leaks. */
     fun close() {
         if (cursorHandle != 0L) {

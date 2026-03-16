@@ -36,6 +36,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -60,6 +61,8 @@ import androidx.compose.ui.unit.sp
 import android.os.Environment
 import android.widget.Toast
 import com.tracequery.app.data.PagedQuery
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.io.File
 import com.tracequery.app.ui.theme.CodeFontFamily
 
@@ -113,6 +116,7 @@ fun DataGrid(
     val density = LocalDensity.current
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val hScroll = rememberScrollState()
     val listState = rememberLazyListState()
 
@@ -194,44 +198,49 @@ fun DataGrid(
                 Text("#", style = headerText, color = onVariant)
                 DropdownMenu(expanded = showExportMenu, onDismissRequest = { showExportMenu = false }) {
                     DropdownMenuItem(
-                        text = { Text("Copy as TSV") },
+                        text = { Text("Copy all as TSV") },
                         leadingIcon = { Icon(Icons.Default.ContentCopy, null) },
                         onClick = {
-                            val tsv = buildString {
-                                append(displayedColumns.joinToString("\t") { it.name })
-                                append("\n")
-                                for (i in 0 until pagedQuery.rowsRead) {
-                                    val row = pagedQuery.getRow(i) ?: continue
-                                    append(visibleCols.joinToString("\t") { row.getOrElse(it) { "" } })
-                                    append("\n")
+                            showExportMenu = false
+                            scope.launch(Dispatchers.IO) {
+                                pagedQuery.readAll() // load entire result
+                                val tsv = buildTsv(pagedQuery, displayedColumns, visibleCols)
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                    clipboard.setText(AnnotatedString(tsv))
+                                    Toast.makeText(context, "Copied ${pagedQuery.rowsRead} rows", Toast.LENGTH_SHORT).show()
                                 }
                             }
-                            clipboard.setText(AnnotatedString(tsv))
-                            showExportMenu = false
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("Save as TSV") },
+                        text = { Text("Save all as TSV") },
                         onClick = {
-                            try {
-                                val dir = Environment.getExternalStoragePublicDirectory(
-                                    Environment.DIRECTORY_DOWNLOADS)
-                                dir.mkdirs()
-                                val file = File(dir, "tracequery_${System.currentTimeMillis()}.tsv")
-                                file.bufferedWriter().use { w ->
-                                    w.write(displayedColumns.joinToString("\t") { it.name })
-                                    w.newLine()
-                                    for (i in 0 until pagedQuery.rowsRead) {
-                                        val row = pagedQuery.getRow(i) ?: continue
-                                        w.write(visibleCols.joinToString("\t") { row.getOrElse(it) { "" } })
+                            showExportMenu = false
+                            scope.launch(Dispatchers.IO) {
+                                pagedQuery.readAll()
+                                try {
+                                    val dir = Environment.getExternalStoragePublicDirectory(
+                                        Environment.DIRECTORY_DOWNLOADS)
+                                    dir.mkdirs()
+                                    val file = File(dir, "tracequery_${System.currentTimeMillis()}.tsv")
+                                    file.bufferedWriter().use { w ->
+                                        w.write(displayedColumns.joinToString("\t") { it.name })
                                         w.newLine()
+                                        for (i in 0 until pagedQuery.rowsRead) {
+                                            val row = pagedQuery.getRow(i) ?: continue
+                                            w.write(visibleCols.joinToString("\t") { row.getOrElse(it) { "" } })
+                                            w.newLine()
+                                        }
+                                    }
+                                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                        Toast.makeText(context, "Saved: ${file.name}", Toast.LENGTH_SHORT).show()
+                                    }
+                                } catch (e: Exception) {
+                                    kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                                     }
                                 }
-                                Toast.makeText(context, "Saved: ${file.name}", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
                             }
-                            showExportMenu = false
                         },
                     )
                     HorizontalDivider()
@@ -494,5 +503,19 @@ fun DataGrid(
             },
             dismissButton = { TextButton(onClick = { aggDialogCol = null }) { Text("Cancel") } },
         )
+    }
+}
+
+private fun buildTsv(
+    paged: PagedQuery,
+    columns: List<com.tracequery.app.data.model.ColumnInfo>,
+    visibleCols: List<Int>,
+): String = buildString {
+    append(columns.joinToString("\t") { it.name })
+    append("\n")
+    for (i in 0 until paged.rowsRead) {
+        val row = paged.getRow(i) ?: continue
+        append(visibleCols.joinToString("\t") { row.getOrElse(it) { "" } })
+        append("\n")
     }
 }
