@@ -103,6 +103,7 @@ data class TabState(
     val sortColumns: List<Pair<String, Boolean>> = emptyList(),
     val result: QueryResult? = null,
     val pagedQuery: PagedQuery? = null,
+    val traceTables: List<String> = emptyList(), // tables in the loaded trace
     val isQuerying: Boolean = false,
     val isLoading: Boolean = false,
     val loadProgress: String = "",
@@ -219,13 +220,36 @@ class MainViewModel(
                 val cacheFile = File(appContext.cacheDir, "trace_$tabId")
                 updateTab(tabId) { it.copy(loadProgress = "Copying trace...") }
 
-                appContext.contentResolver.openInputStream(uri)?.use { input ->
-                    cacheFile.outputStream().use { output ->
-                        input.copyTo(output, bufferSize = 4 * 1024 * 1024)
-                    }
-                } ?: throw Exception("Cannot open file")
+                // Copy with progress
+                val inputStream = appContext.contentResolver.openInputStream(uri)
+                    ?: throw Exception("Cannot open file")
+                val fileSize = try {
+                    appContext.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                        val idx = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                        if (c.moveToFirst() && idx >= 0) c.getLong(idx) else -1L
+                    } ?: -1L
+                } catch (_: Exception) { -1L }
 
-                updateTab(tabId) { it.copy(loadProgress = "Loading into trace processor...") }
+                inputStream.use { input ->
+                    cacheFile.outputStream().use { output ->
+                        val buf = ByteArray(4 * 1024 * 1024)
+                        var copied = 0L
+                        var read: Int
+                        while (input.read(buf).also { read = it } > 0) {
+                            output.write(buf, 0, read)
+                            copied += read
+                            if (fileSize > 0) {
+                                val pct = (copied * 100 / fileSize).toInt()
+                                val mb = copied / (1024 * 1024)
+                                withContext(Dispatchers.Main) {
+                                    updateTab(tabId) { it.copy(loadProgress = "Copying: ${mb}MB ($pct%)") }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                updateTab(tabId) { it.copy(loadProgress = "Parsing trace...") }
 
                 val session = TraceProcessorSession.open(
                     tracePath = cacheFile.absolutePath,
@@ -236,12 +260,21 @@ class MainViewModel(
                     h.traceFileName == fileName
                 }.take(50)
 
+                // Get tables in this trace
+                val tablesResult = session.query(
+                    "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name;"
+                )
+                val tables = if (!tablesResult.isError) {
+                    tablesResult.rows.mapNotNull { it.firstOrNull() }
+                } else emptyList()
+
                 updateTab(tabId) {
                     it.copy(
                         session = session,
                         isLoading = false,
                         loadProgress = "",
                         history = history,
+                        traceTables = tables,
                     )
                 }
             } catch (e: Exception) {
