@@ -338,10 +338,15 @@ class MainViewModel(
         val baseSql = tab.baseSql.ifBlank { tab.currentSql }.trimEnd().removeSuffix(";").trim()
 
         viewModelScope.launch {
-            val sql = "SELECT DISTINCT $column FROM ($baseSql) WHERE $column IS NOT NULL ORDER BY $column LIMIT 500;"
+            val sql = "SELECT $column, COUNT(*) as cnt FROM ($baseSql) WHERE $column IS NOT NULL GROUP BY $column ORDER BY cnt DESC;"
             val result = session.query(sql)
             if (!result.isError) {
-                callback(result.rows.mapNotNull { it.firstOrNull() })
+                // Return "value (count)" pairs
+                callback(result.rows.map { row ->
+                    val value = row.getOrNull(0) ?: ""
+                    val count = row.getOrNull(1) ?: ""
+                    "$value\t$count" // tab-separated value and count
+                })
             } else {
                 callback(emptyList())
             }

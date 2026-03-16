@@ -414,8 +414,13 @@ fun QueryScreen(
     // Distinct values filter dialog
     if (filterValuesCol != null) {
         val col = filterValuesCol!!
-        val filtered = if (filterValuesSearch.isBlank()) filterValuesData
-            else filterValuesData.filter { it.contains(filterValuesSearch, ignoreCase = true) }
+        // Data is "value\tcount" pairs
+        val parsed = filterValuesData.map { raw ->
+            val parts = raw.split("\t", limit = 2)
+            parts[0] to (parts.getOrNull(1) ?: "")
+        }
+        val filtered = if (filterValuesSearch.isBlank()) parsed
+            else parsed.filter { it.first.contains(filterValuesSearch, ignoreCase = true) }
 
         AlertDialog(
             onDismissRequest = { filterValuesCol = null },
@@ -445,9 +450,8 @@ fun QueryScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.height(4.dp))
 
-                        // Scrollable checkbox list
                         Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 300.dp)) {
-                            filtered.forEach { value ->
+                            filtered.forEach { (value, count) ->
                                 Row(
                                     Modifier.fillMaxWidth()
                                         .clickable {
@@ -466,7 +470,12 @@ fun QueryScreen(
                                     )
                                     Text(value, style = MaterialTheme.typography.bodySmall.copy(
                                         fontFamily = CodeFontFamily), maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis)
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f))
+                                    if (count.isNotBlank()) {
+                                        Text(count, style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
                             }
                         }
