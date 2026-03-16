@@ -113,8 +113,8 @@ data class StdlibDocs(
                             desc = obj.optString("desc", ""),
                             summaryDesc = obj.optString("summary_desc", ""),
                             type = obj.optString("type", "table"),
-                            importance = obj.optString("importance", null)
-                                .takeIf { it != "null" && it.isNotEmpty() },
+                            importance = obj.optString("importance", "")
+                                .takeIf { it.isNotBlank() && it != "null" },
                             columns = columns,
                         ))
                     }
@@ -133,7 +133,7 @@ data class StdlibDocs(
                                 val a = args.getJSONObject(i)
                                 StdlibColumn(a.getString("name"), a.optString("type", ""), a.optString("desc", ""))
                             },
-                            returnType = fn.optString("return_type", null),
+                            returnType = fn.optString("return_type", ""),
                             returnColumns = emptyList(),
                         ))
                     }

@@ -25,7 +25,7 @@ class QueryHistory(context: Context) {
                     traceFileName = obj.optString("trace", ""),
                     rowCount = obj.optLong("rows", 0),
                     executionTimeMs = obj.optLong("ms", 0),
-                    error = obj.optString("error", null).takeIf { it != "null" && !it.isNullOrEmpty() },
+                    error = obj.optString("error", "").takeIf { it.isNotBlank() && it != "null" },
                 )
             }
         } catch (e: Exception) {
