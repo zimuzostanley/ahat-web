@@ -3,7 +3,13 @@ package com.tracequery.app.ui.component
 import android.os.Environment
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -146,6 +152,8 @@ fun DataGrid(
     val primary = MaterialTheme.colorScheme.primary
     val cellText = TextStyle(fontFamily = CodeFontFamily, fontSize = 12.sp, lineHeight = 18.sp)
     val headerText = cellText.copy(fontWeight = FontWeight.SemiBold)
+    val textMeasurer = rememberTextMeasurer()
+    val rowHeightDp = 30.dp
 
     val totalRows = if (pagedQuery.knownTotalRows >= 0) pagedQuery.knownTotalRows.toInt()
                     else pagedQuery.rowsRead + if (pagedQuery.isComplete) 0 else 1
@@ -286,32 +294,36 @@ fun DataGrid(
 
             HorizontalDivider(color = borderColor)
 
-            // ── Rows ─────────────────────────────────────────────────
-            // Cells are plain Text — NO gesture handlers per cell.
-            // Interaction handled at Row level via single pointerInput.
+            // ── Rows — Canvas-based for maximum scroll performance ──
+            // ONE composable per row (Canvas), draws all cells directly.
+            // No per-cell composable creation/layout/measure.
+            val colWidthSnapshot = remember(widths.toList()) { widths.toList() }
+            val paddingPx = 8.dp.value * density.density
+            val rowNumWPx = ROW_NUM_W.dp.value * density.density
+
             LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
                 items(count = totalRows, key = { it }) { ri ->
                     val row = pagedQuery.getRow(ri)
-                    // Snapshot column widths to avoid reading mutableStateList per cell
-                    val colWidthSnapshot = remember(widths.toList()) { widths.toList() }
+                    val bgColor = if (ri % 2 == 0) rowEven else rowOdd
 
-                    Row(
-                        Modifier.background(if (ri % 2 == 0) rowEven else rowOdd)
-                            .pointerInput(ri, row) {
-                                // Single gesture handler for entire row
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(rowHeightDp)
+                            .background(bgColor)
+                            .pointerInput(ri) {
                                 detectTapGestures(
                                     onTap = { offset ->
                                         if (row == null) return@detectTapGestures
-                                        val ci = columnAtX(offset.x, ROW_NUM_W.toFloat() * density.density, colWidthSnapshot, visibleCols, density.density)
+                                        val ci = columnAtX(offset.x, rowNumWPx, colWidthSnapshot, visibleCols, density.density)
                                         if (ci >= 0) {
                                             val origIdx = visibleCols.getOrNull(ci) ?: return@detectTapGestures
-                                            val cell = row.getOrElse(origIdx) { "" }
-                                            clipboard.setText(AnnotatedString(cell))
+                                            clipboard.setText(AnnotatedString(row.getOrElse(origIdx) { "" }))
                                         }
                                     },
                                     onLongPress = { offset ->
                                         if (row == null) return@detectTapGestures
-                                        val ci = columnAtX(offset.x, ROW_NUM_W.toFloat() * density.density, colWidthSnapshot, visibleCols, density.density)
+                                        val ci = columnAtX(offset.x, rowNumWPx, colWidthSnapshot, visibleCols, density.density)
                                         if (ci >= 0) {
                                             val origIdx = visibleCols.getOrNull(ci) ?: return@detectTapGestures
                                             cellMenuValue = row.getOrElse(origIdx) { "" }
@@ -323,36 +335,42 @@ fun DataGrid(
                                 )
                             },
                     ) {
-                        Text("${ri + 1}", style = cellText, color = onVariant,
-                            textAlign = TextAlign.End,
-                            modifier = Modifier.width(ROW_NUM_W.dp).padding(horizontal = 4.dp, vertical = 6.dp))
+                        val textY = (size.height - 14.sp.toPx()) / 2 // center vertically
+
+                        // Row number
+                        val rowNumText = "${ri + 1}"
+                        val rowNumResult = textMeasurer.measure(rowNumText, cellText.copy(color = onVariant),
+                            maxLines = 1, constraints = androidx.compose.ui.unit.Constraints(maxWidth = rowNumWPx.toInt()))
+                        drawText(rowNumResult, topLeft = Offset(rowNumWPx - rowNumResult.size.width - paddingPx, textY))
 
                         if (row == null) {
-                            Text("...", style = cellText, color = onVariant,
-                                modifier = Modifier.padding(8.dp))
+                            val dotResult = textMeasurer.measure("...", cellText.copy(color = onVariant), maxLines = 1)
+                            drawText(dotResult, topLeft = Offset(rowNumWPx + paddingPx, textY))
                         } else {
-                            visibleCols.forEachIndexed { ci, origColIdx ->
+                            var x = rowNumWPx
+                            visibleCols.forEach { origColIdx ->
+                                val colW = (colWidthSnapshot.getOrElse(origColIdx) { 100f }) * density.density
                                 val cell = row.getOrElse(origColIdx) { "" }
                                 val isNull = cell == "NULL"
                                 val firstChar = cell.firstOrNull()
                                 val isNum = !isNull && firstChar != null &&
                                     (firstChar.isDigit() || firstChar == '-' || firstChar == '.')
-
-                                Text(
-                                    text = cell,
-                                    style = cellText,
-                                    color = when {
-                                        isNull -> onVariant
-                                        isNum -> primary
-                                        else -> onSurface
-                                    },
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = if (isNum) TextAlign.End else TextAlign.Start,
-                                    modifier = Modifier
-                                        .width(colWidthSnapshot.getOrElse(origColIdx) { 100f }.dp)
-                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                val color = when {
+                                    isNull -> onVariant
+                                    isNum -> primary
+                                    else -> onSurface
+                                }
+                                val measured = textMeasurer.measure(
+                                    cell, cellText.copy(color = color),
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    constraints = androidx.compose.ui.unit.Constraints(
+                                        maxWidth = (colW - paddingPx * 2).toInt().coerceAtLeast(1)
+                                    ),
                                 )
+                                val textX = if (isNum) x + colW - paddingPx - measured.size.width
+                                           else x + paddingPx
+                                drawText(measured, topLeft = Offset(textX, textY))
+                                x += colW
                             }
                         }
                     }
