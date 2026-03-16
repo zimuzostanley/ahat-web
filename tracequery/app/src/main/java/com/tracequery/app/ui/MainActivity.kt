@@ -84,6 +84,7 @@ class MainActivity : ComponentActivity() {
                             onRemoveFilter = vm::removeFilter,
                             onClearFilters = vm::clearFilters,
                             onAggregate = vm::addAggregate,
+                            onClearAggregation = vm::clearAggregation,
                             onOpenTrace = { filePicker.launch(arrayOf("*/*")) },
                             onOpenSettings = { showSettings = true },
                             modifier = Modifier.fillMaxSize(),

@@ -40,6 +40,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -86,6 +87,7 @@ fun QueryScreen(
     onRemoveFilter: (Int) -> Unit,
     onClearFilters: () -> Unit,
     onAggregate: (String, String) -> Unit,
+    onClearAggregation: () -> Unit,
     onOpenTrace: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -109,6 +111,7 @@ fun QueryScreen(
                         label = { Text("Open Trace") },
                         selected = false,
                         onClick = { scope.launch { drawerState.close() }; onOpenTrace() },
+                        shape = RectangleShape,
                     )
                 }
 
@@ -124,6 +127,7 @@ fun QueryScreen(
                         onClick = { onSwitchTab(t.id); scope.launch { drawerState.close() } },
                         badge = { Icon(Icons.Default.Close, "Close",
                             Modifier.size(18.dp).clickable { onCloseTab(t.id) }) },
+                        shape = RectangleShape,
                         modifier = Modifier.padding(horizontal = 12.dp),
                     )
                 }
@@ -137,6 +141,7 @@ fun QueryScreen(
                         label = { Text("Settings") },
                         selected = false,
                         onClick = { scope.launch { drawerState.close() }; onOpenSettings() },
+                        shape = RectangleShape,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
                     )
                 }
@@ -204,6 +209,7 @@ fun QueryScreen(
                         OutlinedButton(
                             onClick = { onExecuteQuery(tab.currentSql) },
                             enabled = !tab.isQuerying && tab.currentSql.isNotBlank(),
+                            shape = MaterialTheme.shapes.medium,
                         ) {
                             if (tab.isQuerying) {
                                 CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
@@ -221,13 +227,33 @@ fun QueryScreen(
                         }
                     }
 
-                    // ── Filter chips ─────────────────────────────────────
-                    if (tab.filters.isNotEmpty()) {
+                    // ── Active chips (aggregation + filters) ─────────────
+                    if (tab.aggregation != null || tab.filters.isNotEmpty()) {
                         FlowRow(
-                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp),
+                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
+                            // Aggregation chip
+                            if (tab.aggregation != null) {
+                                AssistChip(
+                                    onClick = onClearAggregation,
+                                    label = {
+                                        Text("GROUP BY: ${tab.aggregation}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    },
+                                    trailingIcon = {
+                                        Icon(Icons.Default.Close, "Remove", Modifier.size(14.dp))
+                                    },
+                                    shape = MaterialTheme.shapes.medium,
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                        labelColor = MaterialTheme.colorScheme.onTertiaryContainer,
+                                    ),
+                                )
+                            }
+                            // Filter chips
                             tab.filters.forEachIndexed { idx, filter ->
                                 AssistChip(
                                     onClick = { onRemoveFilter(idx) },
@@ -237,20 +263,24 @@ fun QueryScreen(
                                             maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     },
                                     trailingIcon = {
-                                        Icon(Icons.Default.Close, "Remove",
-                                            Modifier.size(14.dp))
+                                        Icon(Icons.Default.Close, "Remove", Modifier.size(14.dp))
                                     },
-                                    shape = MaterialTheme.shapes.small,
+                                    shape = MaterialTheme.shapes.medium,
                                     colors = AssistChipDefaults.assistChipColors(
                                         containerColor = MaterialTheme.colorScheme.secondaryContainer,
                                         labelColor = MaterialTheme.colorScheme.onSecondaryContainer,
                                     ),
                                 )
                             }
-                            TextButton(onClick = onClearFilters, Modifier.height(32.dp)) {
-                                Icon(Icons.Default.Clear, null, Modifier.size(14.dp))
-                                Spacer(Modifier.width(2.dp))
-                                Text("Clear", style = MaterialTheme.typography.labelSmall)
+                            if (tab.filters.isNotEmpty() || tab.aggregation != null) {
+                                TextButton(
+                                    onClick = { onClearFilters(); onClearAggregation() },
+                                    Modifier.height(32.dp),
+                                ) {
+                                    Icon(Icons.Default.Clear, null, Modifier.size(14.dp))
+                                    Spacer(Modifier.width(2.dp))
+                                    Text("Clear all", style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                     }

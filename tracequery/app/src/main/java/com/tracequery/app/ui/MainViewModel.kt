@@ -51,8 +51,9 @@ data class TabState(
     val fileName: String,
     val session: TraceProcessorSession? = null,
     val currentSql: String = "SELECT * FROM slice LIMIT 100;",
-    val baseSql: String = "",  // SQL before filters (for filter composition)
+    val baseSql: String = "",  // SQL before filters/aggregation
     val filters: List<ActiveFilter> = emptyList(),
+    val aggregation: String? = null,  // e.g. "COUNT(name)" — displayed as chip
     val result: QueryResult? = null,
     val isQuerying: Boolean = false,
     val isLoading: Boolean = false,
@@ -302,8 +303,17 @@ class MainViewModel(
         } else {
             "${prefix}SELECT $qCol, $function(*) as ${function.lowercase()} FROM ($selectSql) GROUP BY $qCol ORDER BY ${function.lowercase()} DESC;"
         }
-        updateActiveTab { it.copy(currentSql = sql, filters = emptyList(), baseSql = "") }
+        val aggLabel = if (function == "COUNT_DISTINCT") "COUNT(DISTINCT $column)" else "$function($column)"
+        val base = tab.currentSql  // save pre-aggregation SQL
+        updateActiveTab { it.copy(currentSql = sql, filters = emptyList(), baseSql = base, aggregation = aggLabel) }
         executeQuery(sql)
+    }
+
+    fun clearAggregation() {
+        val tab = _state.value.activeTab ?: return
+        val base = tab.baseSql.ifBlank { return }
+        updateActiveTab { it.copy(currentSql = base, baseSql = "", aggregation = null, filters = emptyList()) }
+        executeQuery(base)
     }
 
     // ── Tab management ───────────────────────────────────────────────────
