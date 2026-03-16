@@ -115,7 +115,7 @@ data class TabState(
      * INCLUDE statements are extracted to the top.
      */
     fun composedSql(): String {
-        if (ops.isEmpty()) return currentSql
+        if (ops.isEmpty() && sortColumns.isEmpty()) return currentSql
         val raw = baseSql.ifBlank { currentSql }.trimEnd().removeSuffix(";").trim()
 
         // Extract INCLUDE statements (must be top-level)
