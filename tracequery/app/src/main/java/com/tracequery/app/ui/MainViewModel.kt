@@ -97,7 +97,7 @@ data class TabState(
     val id: Int,
     val fileName: String,
     val session: TraceProcessorSession? = null,
-    val currentSql: String = "SELECT * FROM slice LIMIT 100;",
+    val currentSql: String = "SELECT * FROM slice;",
     val baseSql: String = "",
     val ops: List<QueryOp> = emptyList(),
     val sortColumns: List<Pair<String, Boolean>> = emptyList(),

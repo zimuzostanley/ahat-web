@@ -47,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -56,7 +57,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.os.Environment
+import android.widget.Toast
 import com.tracequery.app.data.PagedQuery
+import java.io.File
 import com.tracequery.app.ui.theme.CodeFontFamily
 
 // ── Grid actions ─────────────────────────────────────────────────────────────
@@ -108,6 +112,7 @@ fun DataGrid(
 
     val density = LocalDensity.current
     val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
     val hScroll = rememberScrollState()
     val listState = rememberLazyListState()
 
@@ -205,6 +210,31 @@ fun DataGrid(
                             showExportMenu = false
                         },
                     )
+                    DropdownMenuItem(
+                        text = { Text("Save as TSV") },
+                        onClick = {
+                            try {
+                                val dir = Environment.getExternalStoragePublicDirectory(
+                                    Environment.DIRECTORY_DOWNLOADS)
+                                dir.mkdirs()
+                                val file = File(dir, "tracequery_${System.currentTimeMillis()}.tsv")
+                                file.bufferedWriter().use { w ->
+                                    w.write(displayedColumns.joinToString("\t") { it.name })
+                                    w.newLine()
+                                    for (i in 0 until pagedQuery.rowsRead) {
+                                        val row = pagedQuery.getRow(i) ?: continue
+                                        w.write(visibleCols.joinToString("\t") { row.getOrElse(it) { "" } })
+                                        w.newLine()
+                                    }
+                                }
+                                Toast.makeText(context, "Saved: ${file.name}", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                            showExportMenu = false
+                        },
+                    )
+                    HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text("Columns...") },
                         onClick = { showColumnPicker = true; showExportMenu = false },
