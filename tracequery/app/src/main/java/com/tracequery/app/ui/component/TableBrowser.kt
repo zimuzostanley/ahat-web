@@ -184,6 +184,13 @@ private fun JoinDialog(
     var rightJoinColumn by remember { mutableStateOf("") }
     var useIntervalIntersect by remember { mutableStateOf(false) }
     var partitionColumns by remember { mutableStateOf(setOf<String>()) }
+    // Column mapping for interval intersect (user picks which col is ts/dur/id)
+    var srcTsCol by remember { mutableStateOf("ts") }
+    var srcDurCol by remember { mutableStateOf("dur") }
+    var srcIdCol by remember { mutableStateOf("id") }
+    var tgtTsCol by remember { mutableStateOf("ts") }
+    var tgtDurCol by remember { mutableStateOf("dur") }
+    var tgtIdCol by remember { mutableStateOf("id") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -306,16 +313,41 @@ private fun JoinDialog(
                             }
                         }
                     } else {
-                        // Interval intersect — user picks columns
                         val allSrcCols = sourceTable.columns.map { it.name }
                         val allTgtCols = targetTable!!.columns.map { it.name }
                         val commonCols = allSrcCols.toSet().intersect(allTgtCols.toSet()).sorted()
 
-                        Text("The tables must have timestamp (ts), duration (dur) columns.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        // Auto-detect defaults when target changes
+                        androidx.compose.runtime.LaunchedEffect(targetTable) {
+                            fun pick(cols: List<String>, vararg candidates: String): String {
+                                for (c in candidates) if (c in cols) return c
+                                return cols.firstOrNull() ?: ""
+                            }
+                            srcTsCol = pick(allSrcCols, "ts", "timestamp")
+                            srcDurCol = pick(allSrcCols, "dur", "duration")
+                            srcIdCol = pick(allSrcCols, "id", "rowid")
+                            tgtTsCol = pick(allTgtCols, "ts", "timestamp")
+                            tgtDurCol = pick(allTgtCols, "dur", "duration")
+                            tgtIdCol = pick(allTgtCols, "id", "rowid")
+                        }
 
-                        Spacer(Modifier.height(4.dp))
+                        // Source column mapping
+                        Text("${sourceTable.name} columns:", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                        ColumnPicker("id", srcIdCol, allSrcCols) { srcIdCol = it }
+                        ColumnPicker("ts", srcTsCol, allSrcCols) { srcTsCol = it }
+                        ColumnPicker("dur", srcDurCol, allSrcCols) { srcDurCol = it }
+
+                        Spacer(Modifier.height(8.dp))
+
+                        // Target column mapping
+                        Text("${targetTable!!.name} columns:", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                        ColumnPicker("id", tgtIdCol, allTgtCols) { tgtIdCol = it }
+                        ColumnPicker("ts", tgtTsCol, allTgtCols) { tgtTsCol = it }
+                        ColumnPicker("dur", tgtDurCol, allTgtCols) { tgtDurCol = it }
+
+                        Spacer(Modifier.height(8.dp))
 
                         // Partition columns
                         Text("Partition by (optional):", style = MaterialTheme.typography.labelMedium,
@@ -336,7 +368,7 @@ private fun JoinDialog(
                                 }
                             }
                         } else {
-                            Text("No common columns for partitioning",
+                            Text("No common columns",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -348,8 +380,13 @@ private fun JoinDialog(
             TextButton(
                 onClick = {
                     val target = targetTable ?: return@TextButton
-                    val sql = generateJoinSql(sourceTable, target, joinType,
-                        leftJoinColumn, rightJoinColumn, useIntervalIntersect, partitionColumns.toList())
+                    val sql = generateJoinSql(
+                        sourceTable, target, joinType,
+                        leftJoinColumn, rightJoinColumn, useIntervalIntersect,
+                        partitionColumns.toList(),
+                        srcIdCol, srcTsCol, srcDurCol,
+                        tgtIdCol, tgtTsCol, tgtDurCol,
+                    )
                     onJoinGenerated(sql)
                 },
                 enabled = targetTable != null &&
@@ -362,6 +399,37 @@ private fun JoinDialog(
     )
 }
 
+/** Inline column picker — label + dropdown-style radio list. */
+@Composable
+private fun ColumnPicker(
+    label: String,
+    selected: String,
+    columns: List<String>,
+    onSelect: (String) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(
+        Modifier.fillMaxWidth().clickable { expanded = !expanded }
+            .padding(vertical = 4.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("$label:", style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.width(40.dp))
+        Text(selected, style = MaterialTheme.typography.bodySmall.copy(
+            fontFamily = CodeFontFamily, fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary)
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            columns.forEach { col ->
+                DropdownMenuItem(
+                    text = { Text(col, style = MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = CodeFontFamily)) },
+                    onClick = { onSelect(col); expanded = false },
+                )
+            }
+        }
+    }
+}
+
 private fun generateJoinSql(
     source: StdlibTable,
     target: StdlibTable,
@@ -370,6 +438,8 @@ private fun generateJoinSql(
     rightCol: String,
     useIntervalIntersect: Boolean,
     partitionColumns: List<String>,
+    srcId: String, srcTs: String, srcDur: String,
+    tgtId: String, tgtTs: String, tgtDur: String,
 ): String {
     val srcInclude = source.includeStatement.let { if (it.isNotBlank()) "$it\n" else "" }
     val tgtInclude = target.includeStatement.let { if (it.isNotBlank()) "$it\n" else "" }
@@ -378,9 +448,20 @@ private fun generateJoinSql(
     return if (useIntervalIntersect) {
         val partStr = if (partitionColumns.isNotEmpty())
             "(${partitionColumns.joinToString(", ")})" else "()"
-        // Wrap each table in a subquery filtering dur >= 0 (required by _interval_intersect)
-        val srcSub = "(SELECT * FROM ${source.name} WHERE dur >= 0)"
-        val tgtSub = "(SELECT * FROM ${target.name} WHERE dur >= 0)"
+
+        // Rename user's columns to id/ts/dur (what the macro expects)
+        fun subquery(table: String, id: String, ts: String, dur: String): String {
+            val renames = mutableListOf<String>()
+            if (id != "id") renames.add("$id AS id")
+            if (ts != "ts") renames.add("$ts AS ts")
+            if (dur != "dur") renames.add("$dur AS dur")
+            val select = if (renames.isEmpty()) "*" else "${renames.joinToString(", ")}, *"
+            return "(SELECT $select FROM $table WHERE $dur >= 0)"
+        }
+
+        val srcSub = subquery(source.name, srcId, srcTs, srcDur)
+        val tgtSub = subquery(target.name, tgtId, tgtTs, tgtDur)
+
         """INCLUDE PERFETTO MODULE intervals.intersect;
 ${includes}SELECT *
 FROM _interval_intersect!(
