@@ -358,16 +358,15 @@ class MainViewModel(
 
     fun sortBy(column: String, ascending: Boolean) {
         val tab = _state.value.activeTab ?: return
-        val existing = tab.sortColumns.toMutableList()
-        existing.removeAll { it.first == column }
-        existing.add(column to ascending)
-        updateActiveTab { it.copy(sortColumns = existing) }
-        val newTab = tab.copy(sortColumns = existing)
-        val rawComposed = newTab.composedSql()
-        val composed = SqlFormatter.format(rawComposed)
-        android.util.Log.d("TraceQuery", "sortBy: column=$column asc=$ascending")
-        android.util.Log.d("TraceQuery", "sortBy: raw=$rawComposed")
-        android.util.Log.d("TraceQuery", "sortBy: formatted=$composed")
+        // Replace sort — clicking a column sorts by that column only
+        val newSort = listOf(column to ascending)
+        // Save original SQL before sort was applied (so we don't nest ORDER BYs)
+        val base = if (tab.sortColumns.isEmpty()) tab.currentSql else tab.baseSql.ifBlank { tab.currentSql }
+        updateActiveTab { it.copy(sortColumns = newSort, baseSql = base) }
+        val newTab = tab.copy(sortColumns = newSort, baseSql = base)
+        val composed = SqlFormatter.format(newTab.composedSql())
+        // Execute but restore baseSql so currentSql doesn't accumulate ORDER BYs
+        updateActiveTab { it.copy(currentSql = composed, baseSql = base) }
         executeQuery(composed)
     }
 
