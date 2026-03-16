@@ -469,24 +469,40 @@ fun DataGrid(
                     Text("Metrics", style = MaterialTheme.typography.labelMedium, color = primary)
                     allCols.forEach { col ->
                         val colFns = aggMetrics[col] ?: emptySet()
-                        // Column name
-                        Text(col, style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = CodeFontFamily, fontWeight = FontWeight.SemiBold),
-                            modifier = Modifier.padding(top = 4.dp))
-                        // Function checkboxes in a row
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                            functions.forEach { fn ->
-                                val checked = fn in colFns
-                                FilterChip(
-                                    selected = checked,
-                                    onClick = {
-                                        val newFns = if (checked) colFns - fn else colFns + fn
-                                        aggMetrics = if (newFns.isEmpty()) aggMetrics - col
-                                            else aggMetrics + (col to newFns)
-                                    },
-                                    label = { Text(fn, style = MaterialTheme.typography.labelSmall) },
-                                    shape = MaterialTheme.shapes.medium,
-                                )
+                        val isMetric = colFns.isNotEmpty()
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = isMetric, onCheckedChange = { checked ->
+                                aggMetrics = if (checked) aggMetrics + (col to setOf("SUM"))
+                                    else aggMetrics - col
+                            })
+                            Text(col, style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily),
+                                modifier = Modifier.weight(1f))
+                            if (isMetric) {
+                                var expanded by remember { mutableStateOf(false) }
+                                Box {
+                                    TextButton(onClick = { expanded = true }) {
+                                        Text(colFns.joinToString(", "), style = MaterialTheme.typography.labelSmall)
+                                    }
+                                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                                        functions.forEach { fn ->
+                                            val checked = fn in colFns
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        Checkbox(checked = checked, onCheckedChange = null)
+                                                        Text(fn, style = MaterialTheme.typography.bodySmall)
+                                                    }
+                                                },
+                                                onClick = {
+                                                    val newFns = if (checked) colFns - fn else colFns + fn
+                                                    aggMetrics = if (newFns.isEmpty()) aggMetrics - col
+                                                        else aggMetrics + (col to newFns)
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
