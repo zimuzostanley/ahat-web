@@ -103,7 +103,6 @@ data class TabState(
     val sortColumns: List<Pair<String, Boolean>> = emptyList(),
     val result: QueryResult? = null,
     val pagedQuery: PagedQuery? = null,
-    val traceTables: List<String> = emptyList(), // tables in the loaded trace
     val isQuerying: Boolean = false,
     val isLoading: Boolean = false,
     val loadProgress: String = "",
@@ -260,21 +259,12 @@ class MainViewModel(
                     h.traceFileName == fileName
                 }.take(50)
 
-                // Get tables in this trace
-                val tablesResult = session.query(
-                    "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name;"
-                )
-                val tables = if (!tablesResult.isError) {
-                    tablesResult.rows.mapNotNull { it.firstOrNull() }
-                } else emptyList()
-
                 updateTab(tabId) {
                     it.copy(
                         session = session,
                         isLoading = false,
                         loadProgress = "",
                         history = history,
-                        traceTables = tables,
                     )
                 }
             } catch (e: Exception) {

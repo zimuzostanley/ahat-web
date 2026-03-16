@@ -68,9 +68,7 @@ typealias OnJoinGenerated = (String) -> Unit
 @Composable
 fun TableBrowser(
     tables: List<StdlibTable>,
-    traceTables: List<String> = emptyList(),
     onTableSelect: (StdlibTable) -> Unit,
-    onTraceTableSelect: ((String) -> Unit)? = null,
     onJoinGenerated: OnJoinGenerated? = null,
     modifier: Modifier = Modifier,
 ) {
@@ -119,49 +117,7 @@ fun TableBrowser(
         )
 
         // Table list
-        val filteredTraceTables = remember(searchQuery, traceTables) {
-            if (searchQuery.isBlank()) traceTables
-            else traceTables.filter { it.lowercase().contains(searchQuery.lowercase()) }
-        }
-
         LazyColumn(modifier = Modifier.fillMaxWidth()) {
-            // Trace tables section (tables that exist in the loaded trace)
-            if (filteredTraceTables.isNotEmpty()) {
-                item {
-                    Text(
-                        "Tables in this trace (${filteredTraceTables.size})",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                items(
-                    items = filteredTraceTables,
-                    key = { "trace:$it" },
-                ) { name ->
-                    Row(
-                        Modifier.fillMaxWidth()
-                            .clickable { onTraceTableSelect?.invoke(name) }
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(Icons.Default.TableChart, null, Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary)
-                        Text(name, style = MaterialTheme.typography.bodyMedium.copy(
-                            fontFamily = CodeFontFamily))
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-                }
-                item {
-                    Text(
-                        "Stdlib tables",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-            }
             items(
                 items = filtered,
                 key = { it.name },

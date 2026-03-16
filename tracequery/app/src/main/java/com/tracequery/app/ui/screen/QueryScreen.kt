@@ -206,14 +206,7 @@ fun QueryScreen(
             when (tab.mode) {
                 QueryMode.EXPLORE -> TableBrowser(
                     tables = uiState.stdlibDocs?.tables ?: emptyList(),
-                    traceTables = tab.traceTables,
                     onTableSelect = onTableSelect,
-                    onTraceTableSelect = { tableName ->
-                        val sql = "SELECT * FROM $tableName;"
-                        onSqlChange(sql)
-                        onModeChange(QueryMode.SQL)
-                        onExecuteQuery(sql)
-                    },
                     onJoinGenerated = { sql ->
                         onSqlChange(sql)
                         onModeChange(QueryMode.SQL)
