@@ -164,31 +164,14 @@ fun DataGrid(
 
     Column(modifier) {
         // Column picker
-        if (showColumnPicker || visibleCols.size < pagedQuery.columns.size) {
-            Row(
-                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Select all / deselect
-                TextButton(onClick = {
-                    visibleCols.clear()
-                    visibleCols.addAll(pagedQuery.columns.indices)
-                }) { Text("All", style = MaterialTheme.typography.labelSmall) }
-
-                pagedQuery.columns.forEachIndexed { idx, col ->
-                    FilterChip(
-                        selected = idx in visibleCols,
-                        onClick = {
-                            if (idx in visibleCols && visibleCols.size > 1) visibleCols.remove(idx)
-                            else if (idx !in visibleCols) visibleCols.add(idx)
-                        },
-                        label = { Text(col.name, style = MaterialTheme.typography.labelSmall) },
-                        shape = MaterialTheme.shapes.medium,
-                    )
-                }
-            }
+        // Column visibility indicator (shows count when not all visible)
+        if (visibleCols.size < pagedQuery.columns.size) {
+            Text(
+                "${visibleCols.size}/${pagedQuery.columns.size} columns shown",
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = onVariant,
+            )
         }
 
         // ── Header ───────────────────────────────────────────────────
@@ -350,6 +333,58 @@ fun DataGrid(
                 }
             }
         }
+    }
+
+    // ── Column visibility dialog ───────────────────────────────────
+    if (showColumnPicker) {
+        AlertDialog(
+            onDismissRequest = { showColumnPicker = false },
+            title = { Text("Columns") },
+            text = {
+                Column(Modifier.verticalScroll(rememberVScrollState())) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        TextButton(onClick = {
+                            visibleCols.clear()
+                            visibleCols.addAll(pagedQuery.columns.indices)
+                        }) { Text("Select all") }
+                        TextButton(onClick = {
+                            if (visibleCols.size > 1) {
+                                val first = visibleCols.first()
+                                visibleCols.clear()
+                                visibleCols.add(first)
+                            }
+                        }) { Text("Clear") }
+                    }
+                    pagedQuery.columns.forEachIndexed { idx, col ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable {
+                                    if (idx in visibleCols && visibleCols.size > 1) visibleCols.remove(idx)
+                                    else if (idx !in visibleCols) visibleCols.add(idx)
+                                }
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = idx in visibleCols,
+                                onCheckedChange = { checked ->
+                                    if (checked) { if (idx !in visibleCols) visibleCols.add(idx) }
+                                    else { if (visibleCols.size > 1) visibleCols.remove(idx) }
+                                },
+                            )
+                            Text(col.name, style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = CodeFontFamily))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showColumnPicker = false }) { Text("Done") }
+            },
+        )
     }
 
     // ── Aggregate dialog ─────────────────────────────────────────────
