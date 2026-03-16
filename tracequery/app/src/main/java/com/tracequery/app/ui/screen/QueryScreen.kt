@@ -199,6 +199,11 @@ fun QueryScreen(
                 QueryMode.EXPLORE -> TableBrowser(
                     tables = uiState.stdlibDocs?.tables ?: emptyList(),
                     onTableSelect = onTableSelect,
+                    onJoinGenerated = { sql ->
+                        onSqlChange(sql)
+                        onModeChange(QueryMode.SQL)
+                        onExecuteQuery(sql)
+                    },
                     modifier = Modifier.fillMaxSize(),
                 )
                 QueryMode.SQL -> {

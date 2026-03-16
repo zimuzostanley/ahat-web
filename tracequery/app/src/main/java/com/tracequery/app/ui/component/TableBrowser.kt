@@ -29,6 +29,10 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -120,26 +124,261 @@ fun TableBrowser(
                     table = table,
                     searchQuery = searchQuery,
                     onClick = { onTableSelect(table) },
+                    onLongClick = if (onJoinGenerated != null) {
+                        { joinSourceTable = table; contextMenuTable = table }
+                    } else null,
+                    showJoinOption = onJoinGenerated != null,
                 )
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                )
+
+                // Context menu for join
+                if (contextMenuTable == table) {
+                    DropdownMenu(
+                        expanded = true,
+                        onDismissRequest = { contextMenuTable = null },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("SELECT * FROM ${table.name}") },
+                            onClick = { onTableSelect(table); contextMenuTable = null },
+                        )
+                        HorizontalDivider()
+                        DropdownMenuItem(
+                            text = { Text("JOIN with another table...") },
+                            leadingIcon = { Icon(Icons.Default.JoinInner, null) },
+                            onClick = { showJoinDialog = true; contextMenuTable = null },
+                        )
+                        // Show interval intersect option if table has ts/dur columns
+                        val hasTsDur = table.columns.any { it.name == "ts" } &&
+                                table.columns.any { it.name == "dur" }
+                        if (hasTsDur) {
+                            DropdownMenuItem(
+                                text = { Text("Interval intersect...") },
+                                onClick = { showJoinDialog = true; contextMenuTable = null },
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
             }
         }
     }
+
+    // ── Join dialog ──────────────────────────────────────────────────────
+    if (showJoinDialog && joinSourceTable != null) {
+        JoinDialog(
+            sourceTable = joinSourceTable!!,
+            allTables = tables,
+            onDismiss = { showJoinDialog = false },
+            onJoinGenerated = { sql ->
+                showJoinDialog = false
+                onJoinGenerated?.invoke(sql)
+            },
+        )
+    }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun JoinDialog(
+    sourceTable: StdlibTable,
+    allTables: List<StdlibTable>,
+    onDismiss: () -> Unit,
+    onJoinGenerated: (String) -> Unit,
+) {
+    var targetSearch by remember { mutableStateOf("") }
+    var targetTable by remember { mutableStateOf<StdlibTable?>(null) }
+    var joinType by remember { mutableStateOf("INNER JOIN") }
+    var joinColumn by remember { mutableStateOf("") }
+    var useIntervalIntersect by remember { mutableStateOf(false) }
+    var partitionColumns by remember { mutableStateOf(setOf<String>()) }
+
+    val sourceHasTsDur = sourceTable.columns.any { it.name == "ts" } &&
+            sourceTable.columns.any { it.name == "dur" }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Join: ${sourceTable.name}") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState())
+                    .heightIn(max = 500.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // Target table search
+                Text("Join with:", style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary)
+                OutlinedTextField(
+                    value = targetSearch,
+                    onValueChange = { targetSearch = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Search table...") },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily),
+                )
+
+                // Filtered target tables
+                val targets = remember(targetSearch, allTables) {
+                    if (targetSearch.isBlank()) allTables.take(10)
+                    else allTables.filter { it.name.contains(targetSearch, true) }.take(20)
+                }
+                targets.filter { it.name != sourceTable.name }.take(8).forEach { t ->
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clickable { targetTable = t; targetSearch = t.name }
+                            .background(
+                                if (targetTable == t) MaterialTheme.colorScheme.secondaryContainer
+                                else MaterialTheme.colorScheme.surface
+                            )
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.TableChart, null, Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.secondary)
+                        Spacer(Modifier.width(8.dp))
+                        Text(t.name, style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = CodeFontFamily))
+                    }
+                }
+
+                if (targetTable != null) {
+                    Spacer(Modifier.height(4.dp))
+
+                    // Check if both have ts/dur for interval intersect
+                    val targetHasTsDur = targetTable!!.columns.any { it.name == "ts" } &&
+                            targetTable!!.columns.any { it.name == "dur" }
+                    val canIntersect = sourceHasTsDur && targetHasTsDur
+
+                    // Join type
+                    Text("Type:", style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary)
+
+                    listOf("INNER JOIN", "LEFT JOIN").forEach { jt ->
+                        Row(Modifier.fillMaxWidth().clickable { joinType = jt; useIntervalIntersect = false },
+                            verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = joinType == jt && !useIntervalIntersect,
+                                onClick = { joinType = jt; useIntervalIntersect = false })
+                            Text(jt, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+
+                    if (canIntersect) {
+                        Row(Modifier.fillMaxWidth().clickable { useIntervalIntersect = true },
+                            verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = useIntervalIntersect,
+                                onClick = { useIntervalIntersect = true })
+                            Text("_interval_intersect", style = MaterialTheme.typography.bodyMedium.copy(
+                                fontFamily = CodeFontFamily))
+                        }
+                    }
+
+                    if (!useIntervalIntersect) {
+                        // Join column picker — show common column names
+                        val srcCols = sourceTable.columns.map { it.name }.toSet()
+                        val tgtCols = targetTable!!.columns.map { it.name }.toSet()
+                        val commonCols = srcCols.intersect(tgtCols).sorted()
+
+                        Text("ON column:", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+
+                        if (commonCols.isNotEmpty()) {
+                            commonCols.forEach { col ->
+                                Row(Modifier.fillMaxWidth().clickable { joinColumn = col },
+                                    verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = joinColumn == col,
+                                        onClick = { joinColumn = col })
+                                    Text(col, style = MaterialTheme.typography.bodySmall.copy(
+                                        fontFamily = CodeFontFamily))
+                                }
+                            }
+                        } else {
+                            Text("No common columns found",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    } else {
+                        // Partition columns for interval intersect
+                        val srcCols = sourceTable.columns.map { it.name }
+                            .filter { it != "ts" && it != "dur" && it != "id" }
+                        val tgtCols = targetTable!!.columns.map { it.name }.toSet()
+                        val commonPartition = srcCols.filter { it in tgtCols }.sorted()
+
+                        if (commonPartition.isNotEmpty()) {
+                            Text("Partition by (optional):", style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary)
+                            commonPartition.forEach { col ->
+                                Row(Modifier.fillMaxWidth().clickable {
+                                    partitionColumns = if (col in partitionColumns)
+                                        partitionColumns - col else partitionColumns + col
+                                }, verticalAlignment = Alignment.CenterVertically) {
+                                    Checkbox(checked = col in partitionColumns,
+                                        onCheckedChange = { checked ->
+                                            partitionColumns = if (checked) partitionColumns + col
+                                            else partitionColumns - col
+                                        })
+                                    Text(col, style = MaterialTheme.typography.bodySmall.copy(
+                                        fontFamily = CodeFontFamily))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val target = targetTable ?: return@TextButton
+                    val sql = generateJoinSql(sourceTable, target, joinType,
+                        joinColumn, useIntervalIntersect, partitionColumns.toList())
+                    onJoinGenerated(sql)
+                },
+                enabled = targetTable != null && (useIntervalIntersect || joinColumn.isNotBlank()),
+            ) { Text("Generate SQL") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+private fun generateJoinSql(
+    source: StdlibTable,
+    target: StdlibTable,
+    joinType: String,
+    joinColumn: String,
+    useIntervalIntersect: Boolean,
+    partitionColumns: List<String>,
+): String {
+    val srcInclude = source.includeStatement.let { if (it.isNotBlank()) "$it\n" else "" }
+    val tgtInclude = target.includeStatement.let { if (it.isNotBlank()) "$it\n" else "" }
+    val includes = (srcInclude + tgtInclude).trim().let { if (it.isNotBlank()) "$it\n" else "" }
+
+    return if (useIntervalIntersect) {
+        val partStr = if (partitionColumns.isNotEmpty())
+            "(${partitionColumns.joinToString(", ")})" else "()"
+        "${includes}SELECT *\nFROM _interval_intersect!(\n  (${source.name}, ${target.name}),\n  $partStr\n);"
+    } else {
+        val a = "a"
+        val b = "b"
+        "${includes}SELECT\n  $a.*,\n  $b.*\nFROM ${source.name} AS $a\n$joinType ${target.name} AS $b\n  ON $a.\"$joinColumn\" = $b.\"$joinColumn\";"
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun TableListItem(
     table: StdlibTable,
     searchQuery: String,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    showJoinOption: Boolean = false,
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick,
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
         // Table name + importance badge
