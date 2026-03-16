@@ -241,9 +241,13 @@ fun QueryScreen(
                         val pq = tab.pagedQuery
                         if (pq != null && !pq.isError) {
                             val fmt = java.text.NumberFormat.getIntegerInstance()
-                            val suffix = if (pq.isComplete) "" else "+"
+                            val rowText = if (pq.knownTotalRows >= 0) {
+                                "${fmt.format(pq.knownTotalRows)} rows"
+                            } else {
+                                "${fmt.format(pq.rowsRead)}${if (pq.isComplete) "" else "+"} rows"
+                            }
                             Text(
-                                "${fmt.format(pq.rowsRead)}$suffix rows \u2022 ${pq.executionTimeMs}ms",
+                                "$rowText \u2022 ${pq.executionTimeMs}ms",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )

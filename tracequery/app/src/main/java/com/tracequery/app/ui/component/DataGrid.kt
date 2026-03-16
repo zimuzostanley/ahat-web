@@ -146,8 +146,9 @@ fun DataGrid(
     val cellText = TextStyle(fontFamily = CodeFontFamily, fontSize = 12.sp, lineHeight = 18.sp)
     val headerText = cellText.copy(fontWeight = FontWeight.SemiBold)
 
-    // Item count: rows read + 1 sentinel if cursor not exhausted (triggers read-ahead)
-    val totalRows = pagedQuery.rowsRead + if (pagedQuery.isComplete) 0 else 1
+    // Total from COUNT(*) if known, else rows read + sentinel for loading
+    val totalRows = if (pagedQuery.knownTotalRows >= 0) pagedQuery.knownTotalRows.toInt()
+                    else pagedQuery.rowsRead + if (pagedQuery.isComplete) 0 else 1
     val displayedColumns = remember(visibleCols.toList(), pagedQuery.columns) {
         visibleCols.map { pagedQuery.columns[it] }
     }

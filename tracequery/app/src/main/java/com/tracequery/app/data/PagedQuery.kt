@@ -22,23 +22,52 @@ class PagedQuery private constructor(
     val sql: String,
     val executionTimeMs: Long,
     val error: String? = null,
+    val knownTotalRows: Long = -1, // -1 = unknown
 ) {
     companion object {
         /** Rows to read ahead of the visible scroll position. */
         const val READ_AHEAD = 2000
 
+        /** Extract INCLUDE statements to top level. */
+        private fun splitIncludes(sql: String): Pair<String, String> {
+            val clean = sql.trimEnd().removeSuffix(";").trim()
+            val includes = mutableListOf<String>()
+            val queryLines = mutableListOf<String>()
+            for (line in clean.lines()) {
+                val t = line.trim()
+                if (t.uppercase().startsWith("INCLUDE PERFETTO MODULE")) {
+                    includes.add(t.removeSuffix(";"))
+                } else if (t.isNotEmpty()) {
+                    queryLines.add(line)
+                }
+            }
+            val prefix = if (includes.isNotEmpty()) includes.joinToString(";\n") + ";\n" else ""
+            return prefix to queryLines.joinToString("\n").trim()
+        }
+
         suspend fun create(session: TraceProcessorSession, sql: String): PagedQuery {
             return withContext(Dispatchers.IO) {
                 val startMs = System.currentTimeMillis()
-                val cursor = TraceProcessorNative.nativeQueryStart(
-                    session.handle, sql
-                )
+                val (includePrefix, selectSql) = splitIncludes(sql)
+
+                // Get total row count first (wraps user query in subquery)
+                var knownTotal = -1L
+                try {
+                    val countSql = "${includePrefix}SELECT COUNT(*) FROM ($selectSql);"
+                    val countResult = session.query(countSql)
+                    if (!countResult.isError && countResult.rows.isNotEmpty()) {
+                        knownTotal = countResult.rows[0].firstOrNull()?.toLongOrNull() ?: -1L
+                    }
+                } catch (_: Exception) {}
+
+                // Open the cursor for iteration
+                val cursor = TraceProcessorNative.nativeQueryStart(session.handle, sql)
 
                 if (cursor == 0L) {
                     return@withContext PagedQuery(
                         columns = emptyList(), cursorHandle = 0L, colCount = 0,
                         sql = sql, executionTimeMs = System.currentTimeMillis() - startMs,
-                        error = "Failed to start query",
+                        error = "Failed to start query", knownTotalRows = 0,
                     )
                 }
 
@@ -55,6 +84,7 @@ class PagedQuery private constructor(
                 val pq = PagedQuery(
                     columns = columns, cursorHandle = cursor, colCount = colCount,
                     sql = sql, executionTimeMs = elapsed,
+                    knownTotalRows = knownTotal,
                 )
                 // Read first batch so UI has data immediately
                 pq.readMore(READ_AHEAD)
@@ -77,12 +107,8 @@ class PagedQuery private constructor(
     val isError: Boolean get() = error != null
     val rowsRead: Int get() = rows.size
 
-    /**
-     * Total rows — unknown until cursor is exhausted.
-     * Returns rows read so far (a lower bound). UI shows this count
-     * and updates as more rows are read.
-     */
-    val totalRows: Long get() = rows.size.toLong()
+    /** Total rows — from COUNT(*) if available, else rows read so far. */
+    val totalRows: Long get() = if (knownTotalRows >= 0) knownTotalRows else rows.size.toLong()
 
     /** Get row at index. Returns null if not yet read (need to readMore). */
     fun getRow(index: Int): List<String>? = rows.getOrNull(index)
