@@ -359,12 +359,15 @@ class MainViewModel(
     fun sortBy(column: String, ascending: Boolean) {
         val tab = _state.value.activeTab ?: return
         val existing = tab.sortColumns.toMutableList()
-        // Remove existing sort on this column, then add at the end
         existing.removeAll { it.first == column }
         existing.add(column to ascending)
         updateActiveTab { it.copy(sortColumns = existing) }
-        // Re-execute with new sort
-        val composed = SqlFormatter.format(tab.copy(sortColumns = existing).composedSql())
+        val newTab = tab.copy(sortColumns = existing)
+        val rawComposed = newTab.composedSql()
+        val composed = SqlFormatter.format(rawComposed)
+        android.util.Log.d("TraceQuery", "sortBy: column=$column asc=$ascending")
+        android.util.Log.d("TraceQuery", "sortBy: raw=$rawComposed")
+        android.util.Log.d("TraceQuery", "sortBy: formatted=$composed")
         executeQuery(composed)
     }
 
