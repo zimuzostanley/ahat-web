@@ -18,6 +18,8 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -108,7 +110,7 @@ private fun estimateWidths(columns: List<com.tracequery.app.data.model.ColumnInf
 
 // ── DataGrid ─────────────────────────────────────────────────────────────────
 
-@OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun DataGrid(
     pagedQuery: PagedQuery,
@@ -175,8 +177,8 @@ fun DataGrid(
     var cellMenuValue by remember { mutableStateOf("") }
     var cellMenuColName by remember { mutableStateOf("") }
     var aggDialogOpen by remember { mutableStateOf(false) }
-    // Per-column function: column → function (null = not a metric)
-    var aggMetrics by remember { mutableStateOf(mapOf<String, String>()) }
+    // Per-column functions: column → set of functions
+    var aggMetrics by remember { mutableStateOf(mapOf<String, Set<String>>()) }
     var aggGroupBy by remember { mutableStateOf(setOf<String>()) }
 
     val headerBg = MaterialTheme.colorScheme.surfaceVariant
@@ -294,7 +296,7 @@ fun DataGrid(
                                     onClick = { onAction?.invoke(GridAction.FilterValues(col.name)); colMenuIdx = -1 })
                             DropdownMenuItem(text = { Text("Aggregate...") },
                                     leadingIcon = { Icon(Icons.Default.Functions, null) },
-                                    onClick = { aggDialogOpen = true; aggMetrics = mapOf(col.name to "SUM"); aggGroupBy = emptySet(); colMenuIdx = -1 })
+                                    onClick = { aggDialogOpen = true; aggMetrics = mapOf(col.name to setOf("SUM")); aggGroupBy = emptySet(); colMenuIdx = -1 })
                             }
                         }
                         Box(Modifier.width(4.dp).background(borderColor)
@@ -464,33 +466,27 @@ fun DataGrid(
             title = { Text("Aggregate") },
             text = {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
-                    Text("Metrics (column + function)", style = MaterialTheme.typography.labelMedium, color = primary)
+                    Text("Metrics", style = MaterialTheme.typography.labelMedium, color = primary)
                     allCols.forEach { col ->
-                        val isMetric = col in aggMetrics
-                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = isMetric, onCheckedChange = { checked ->
-                                aggMetrics = if (checked) aggMetrics + (col to "SUM")
-                                    else aggMetrics - col
-                            })
-                            Text(col, style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily),
-                                modifier = Modifier.weight(1f))
-                            if (isMetric) {
-                                // Function dropdown for this column
-                                var expanded by remember { mutableStateOf(false) }
-                                Box {
-                                    TextButton(onClick = { expanded = true }) {
-                                        Text(aggMetrics[col] ?: "SUM", style = MaterialTheme.typography.labelSmall)
-                                    }
-                                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                        functions.forEach { fn ->
-                                            DropdownMenuItem(
-                                                text = { Text(fn, style = MaterialTheme.typography.bodySmall) },
-                                                onClick = { aggMetrics = aggMetrics + (col to fn); expanded = false },
-                                            )
-                                        }
-                                    }
-                                }
+                        val colFns = aggMetrics[col] ?: emptySet()
+                        // Column name
+                        Text(col, style = MaterialTheme.typography.bodySmall.copy(
+                            fontFamily = CodeFontFamily, fontWeight = FontWeight.SemiBold),
+                            modifier = Modifier.padding(top = 4.dp))
+                        // Function checkboxes in a row
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            functions.forEach { fn ->
+                                val checked = fn in colFns
+                                FilterChip(
+                                    selected = checked,
+                                    onClick = {
+                                        val newFns = if (checked) colFns - fn else colFns + fn
+                                        aggMetrics = if (newFns.isEmpty()) aggMetrics - col
+                                            else aggMetrics + (col to newFns)
+                                    },
+                                    label = { Text(fn, style = MaterialTheme.typography.labelSmall) },
+                                    shape = MaterialTheme.shapes.medium,
+                                )
                             }
                         }
                     }
@@ -512,7 +508,10 @@ fun DataGrid(
                 TextButton(
                     onClick = {
                         if (aggGroupBy.isNotEmpty() && aggMetrics.isNotEmpty()) {
-                            val metrics = aggMetrics.map { (col, fn) -> col to fn }
+                            // Flatten: each column × each function = one metric pair
+                            val metrics = aggMetrics.flatMap { (col, fns) ->
+                                fns.map { fn -> col to fn }
+                            }
                             onAction?.invoke(GridAction.Aggregate(metrics, aggGroupBy.toList()))
                         }
                         aggDialogOpen = false
