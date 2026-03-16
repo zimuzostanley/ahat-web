@@ -24,7 +24,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.heightIn
@@ -124,7 +126,26 @@ fun DataGrid(
     val widths = remember(result) { mutableStateListOf(*estimateWidths(result).toTypedArray()) }
     val hScroll = rememberScrollState()
     var sort by remember { mutableStateOf(SortState()) }
-    val rows by remember(result.rows, sort) { derivedStateOf { sorted(result.rows, sort) } }
+
+    // Column visibility
+    val visibleCols = remember(result) { mutableStateListOf(*result.columns.indices.toList().toTypedArray()) }
+    var showColumnPicker by remember { mutableStateOf(false) }
+
+    val displayedResult = remember(result, visibleCols.toList()) {
+        if (visibleCols.size == result.columns.size) result
+        else QueryResult(
+            columns = visibleCols.map { result.columns[it] },
+            rows = result.rows.map { row -> visibleCols.map { row.getOrElse(it) { "" } } },
+            executionTimeMs = result.executionTimeMs,
+            rowCount = result.rowCount,
+            sql = result.sql,
+            error = result.error,
+            truncated = result.truncated,
+            maxRowsHit = result.maxRowsHit,
+        )
+    }
+
+    val rows by remember(displayedResult.rows, sort) { derivedStateOf { sorted(displayedResult.rows, sort) } }
 
     // Menu state
     var colMenuIdx by remember { mutableIntStateOf(-1) }
@@ -148,17 +169,41 @@ fun DataGrid(
     val headerText = cellText.copy(fontWeight = FontWeight.SemiBold)
 
     Column(modifier) {
+        // ── Column picker chip ───────────────────────────────────────────
+        if (showColumnPicker || visibleCols.size < result.columns.size) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Columns:", style = MaterialTheme.typography.labelSmall, color = onVariant)
+                result.columns.forEachIndexed { idx, col ->
+                    val visible = idx in visibleCols
+                    FilterChip(
+                        selected = visible,
+                        onClick = {
+                            if (visible && visibleCols.size > 1) visibleCols.remove(idx)
+                            else if (!visible) visibleCols.add(idx)
+                        },
+                        label = { Text(col.name, style = MaterialTheme.typography.labelSmall) },
+                        shape = MaterialTheme.shapes.medium,
+                    )
+                }
+            }
+        }
+
         // ── Header ───────────────────────────────────────────────────────
         Row(
             Modifier.fillMaxWidth().horizontalScroll(hScroll).background(headerBg)
         ) {
-            // Row # header
-            Box(Modifier.width(ROW_NUM_W.dp).padding(8.dp), contentAlignment = Alignment.CenterEnd) {
+            // Row # header — tap to toggle column picker
+            Box(Modifier.width(ROW_NUM_W.dp).clickable { showColumnPicker = !showColumnPicker }
+                .padding(8.dp), contentAlignment = Alignment.CenterEnd) {
                 Text("#", style = headerText, color = onVariant)
             }
             Spacer(Modifier.width(1.dp).background(borderColor))
 
-            result.columns.forEachIndexed { idx, col ->
+            displayedResult.columns.forEachIndexed { idx, col ->
                 val active = sort.col == idx
                 val arrow = if (active) (if (sort.asc) " ▲" else " ▼") else ""
 
@@ -248,7 +293,7 @@ fun DataGrid(
                     row.forEachIndexed { ci, cell ->
                         val isNull = cell == "NULL"
                         val isNum = !isNull && (cell.toLongOrNull() != null || cell.toDoubleOrNull() != null)
-                        val colName = result.columns.getOrNull(ci)?.name ?: ""
+                        val colName = displayedResult.columns.getOrNull(ci)?.name ?: ""
 
                         Box(
                             Modifier
@@ -351,8 +396,8 @@ fun DataGrid(
     // ── Aggregate dialog ─────────────────────────────────────────────
     if (aggDialogCol != null) {
         val metricCol = aggDialogCol!!
-        val allCols = result.columns.map { it.name }
-        val functions = listOf("COUNT", "SUM", "AVG", "MIN", "MAX", "COUNT_DISTINCT")
+        val allCols = displayedResult.columns.map { it.name }
+        val functions = listOf("COUNT", "COUNT_DISTINCT", "SUM", "AVG", "MIN", "MAX")
 
         AlertDialog(
             onDismissRequest = { aggDialogCol = null },
@@ -363,9 +408,11 @@ fun DataGrid(
                     Text("Function", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary)
                     functions.forEach { fn ->
-                        val label = if (fn == "COUNT_DISTINCT") "COUNT(DISTINCT $metricCol)"
-                                   else if (fn == "COUNT") "COUNT(*)"
-                                   else "$fn($metricCol)"
+                        val label = when (fn) {
+                        "COUNT" -> "COUNT($metricCol)"
+                        "COUNT_DISTINCT" -> "COUNT(DISTINCT $metricCol)"
+                        else -> "$fn($metricCol)"
+                    }
                         Row(
                             Modifier.fillMaxWidth().clickable { aggFunction = fn }
                                 .padding(vertical = 4.dp),
