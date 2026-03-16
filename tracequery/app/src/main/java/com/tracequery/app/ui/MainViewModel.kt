@@ -48,11 +48,10 @@ sealed class QueryOp {
         }
 
         fun toWhereClause(): String {
-            val qCol = "\"${column.replace("\"", "\"\"")}\""
             return when (op) {
-                "IS NULL" -> "$qCol IS NULL"
-                "IS NOT NULL" -> "$qCol IS NOT NULL"
-                else -> "$qCol $op $value"
+                "IS NULL" -> "$column IS NULL"
+                "IS NOT NULL" -> "$column IS NOT NULL"
+                else -> "$column $op $value"
             }
         }
 
@@ -76,7 +75,7 @@ sealed class QueryOp {
         }
 
         fun wrapSql(innerSql: String): String {
-            fun q(c: String) = "\"${c.replace("\"", "\"\"")}\""
+            fun q(c: String) = c
             val groupCols = groupByColumns.joinToString(", ") { q(it) }
             val fn = function.uppercase()
             val metricExpr = when (fn) {
@@ -149,7 +148,7 @@ data class TabState(
         // Append ORDER BY (sort is not a pipeline op, just appended)
         if (sortColumns.isNotEmpty()) {
             val orderBy = sortColumns.joinToString(", ") { (col, asc) ->
-                "\"${col.replace("\"", "\"\"")}\" ${if (asc) "ASC" else "DESC"}"
+                "$col ${if (asc) "ASC" else "DESC"}"
             }
             sql = "SELECT *\nFROM ($sql)\nORDER BY $orderBy"
         }
