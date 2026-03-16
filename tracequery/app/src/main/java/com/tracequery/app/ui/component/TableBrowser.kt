@@ -1,7 +1,9 @@
 package com.tracequery.app.ui.component
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,10 +18,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 // Uses MaterialTheme.shapes
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.JoinInner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.ViewColumn
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -45,14 +55,21 @@ import com.tracequery.app.ui.theme.CodeFontFamily
  * Searchable table browser for Perfetto SQL stdlib tables.
  * Supports real-time fuzzy search on table names, column names, and descriptions.
  */
-@OptIn(ExperimentalLayoutApi::class)
+/** Callback for join/intersect SQL generation. */
+typealias OnJoinGenerated = (String) -> Unit
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun TableBrowser(
     tables: List<StdlibTable>,
     onTableSelect: (StdlibTable) -> Unit,
+    onJoinGenerated: OnJoinGenerated? = null,
     modifier: Modifier = Modifier,
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var joinSourceTable by remember { mutableStateOf<StdlibTable?>(null) }
+    var showJoinDialog by remember { mutableStateOf(false) }
+    var contextMenuTable by remember { mutableStateOf<StdlibTable?>(null) }
 
     val filtered by remember(searchQuery, tables) {
         derivedStateOf {
