@@ -2,5 +2,9 @@
 <resources>
     <style name="Theme.TraceQuery" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">#FF111318</item>
+        <item name="android:statusBarColor">#FF111318</item>
+        <item name="android:navigationBarColor">#FF111318</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 </resources>

@@ -4,7 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.ui.graphics.luminance
+// Dark detection via direct color comparison with DarkBackground
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -120,10 +120,8 @@ fun SqlEditor(
     modifier: Modifier = Modifier,
     placeholder: String = "Enter SQL query...",
 ) {
-    // Detect dark/light from the actual MaterialTheme, not system setting
-    // (our ThemeMode can override system)
-    val bgLuminance = MaterialTheme.colorScheme.background.luminance()
-    val isDark = bgLuminance < 0.5f
+    // Detect from MaterialTheme — our TraceQueryTheme sets background correctly
+    val isDark = MaterialTheme.colorScheme.background == com.tracequery.app.ui.theme.DarkBackground
     val colors = if (isDark) DarkSet else LightSet
     val rules = remember(isDark) { buildRules(colors) }
     val transformation = remember(isDark) { SqlHighlight(rules) }
