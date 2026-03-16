@@ -178,7 +178,22 @@ fun DataGrid(
         Row(Modifier.fillMaxWidth().horizontalScroll(hScroll).background(headerBg)) {
             Box(
                 Modifier.width(ROW_NUM_W.dp)
-                    .clickable { showColumnPicker = !showColumnPicker }
+                    .combinedClickable(
+                        onClick = { showColumnPicker = true },
+                        onLongClick = {
+                            // Export visible rows as TSV to clipboard
+                            val tsv = buildString {
+                                append(displayedColumns.joinToString("\t") { it.name })
+                                append("\n")
+                                for (i in 0 until pagedQuery.rowsRead) {
+                                    val row = pagedQuery.getRow(i) ?: continue
+                                    append(visibleCols.joinToString("\t") { row.getOrElse(it) { "" } })
+                                    append("\n")
+                                }
+                            }
+                            clipboard.setText(AnnotatedString(tsv))
+                        },
+                    )
                     .padding(8.dp),
                 contentAlignment = Alignment.CenterEnd,
             ) { Text("#", style = headerText, color = onVariant) }

@@ -7,6 +7,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.tracequery.app.data.PagedQuery
 import com.tracequery.app.data.QueryHistory
+import com.tracequery.app.data.SqlFormatter
 import com.tracequery.app.data.TraceProcessorSession
 import com.tracequery.app.data.model.HistoryEntry
 import com.tracequery.app.data.model.QueryResult
@@ -340,7 +341,7 @@ class MainViewModel(
         existing.add(column to ascending)
         updateActiveTab { it.copy(sortColumns = existing) }
         // Re-execute with new sort
-        val composed = tab.copy(sortColumns = existing).composedSql()
+        val composed = SqlFormatter.format(tab.copy(sortColumns = existing).composedSql())
         executeQuery(composed)
     }
 
@@ -357,7 +358,7 @@ class MainViewModel(
         val base = if (tab.ops.isEmpty()) tab.currentSql else tab.baseSql
         val newOps = tab.ops + op
         val newTab = tab.copy(ops = newOps, baseSql = base)
-        val sql = newTab.composedSql()
+        val sql = SqlFormatter.format(newTab.composedSql())
         updateActiveTab { it.copy(ops = newOps, baseSql = base, currentSql = sql) }
         executeQuery(sql)
     }

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -247,6 +248,13 @@ fun QueryScreen(
                             clipboard.setText(AnnotatedString(tab.currentSql))
                         }, modifier = Modifier.size(36.dp)) {
                             Icon(Icons.Default.ContentCopy, "Copy SQL", Modifier.size(16.dp))
+                        }
+
+                        // Format SQL
+                        IconButton(onClick = {
+                            onSqlChange(com.tracequery.app.data.SqlFormatter.format(tab.currentSql))
+                        }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Code, "Format SQL", Modifier.size(16.dp))
                         }
 
                         Spacer(Modifier.weight(1f))
