@@ -13,7 +13,7 @@ import kotlin.coroutines.coroutineContext
  * A session wrapping a single loaded trace. Thread-safe via mutex.
  */
 class TraceProcessorSession private constructor(
-    private val handle: Long,
+    internal val handle: Long,
     val traceFileName: String,
     val tracePath: String,
 ) {

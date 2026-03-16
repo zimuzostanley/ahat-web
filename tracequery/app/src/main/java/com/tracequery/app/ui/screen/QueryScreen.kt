@@ -92,7 +92,7 @@ fun QueryScreen(
     onRemoveOp: (Int) -> Unit,
     onClearOps: () -> Unit,
     onSort: (String, Boolean) -> Unit,
-    onFetchPages: (Int, Int) -> Unit,
+    onEnsureRows: (Int) -> Unit,
     onOpenTrace: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -241,8 +241,9 @@ fun QueryScreen(
                         val pq = tab.pagedQuery
                         if (pq != null && !pq.isError) {
                             val fmt = java.text.NumberFormat.getIntegerInstance()
+                            val suffix = if (pq.isComplete) "" else "+"
                             Text(
-                                "${fmt.format(pq.totalRows)} rows \u2022 ${pq.executionTimeMs}ms",
+                                "${fmt.format(pq.rowsRead)}$suffix rows \u2022 ${pq.executionTimeMs}ms",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -307,7 +308,7 @@ fun QueryScreen(
                                     handleGridAction(action, onAddOp)
                                 }
                             },
-                            onFetchPages = onFetchPages,
+                            onEnsureRows = onEnsureRows,
                             modifier = Modifier.fillMaxWidth().weight(1f),
                         )
                     } else if (!tab.isQuerying && paged == null) {

@@ -261,6 +261,8 @@ class MainViewModel(
         val session = tab.session ?: return
         if (tab.isQuerying) return
 
+        // Close old cursor before starting new query
+        tab.pagedQuery?.close()
         updateActiveTab { it.copy(currentSql = sql, isQuerying = true, error = null, result = null, pagedQuery = null) }
 
         viewModelScope.launch {
@@ -290,17 +292,17 @@ class MainViewModel(
         }
     }
 
-    /** Fetch pages needed for the visible scroll range. Called by DataGrid. */
-    fun fetchPagesForRange(firstVisible: Int, lastVisible: Int) {
+    /** Read ahead to ensure rows are available for the visible range. */
+    fun ensureRowsForScroll(lastVisible: Int) {
         val paged = _state.value.activeTab?.pagedQuery ?: return
-        val needed = paged.neededPages(firstVisible, lastVisible)
-        for (pageNum in needed) {
-            viewModelScope.launch(Dispatchers.IO) {
-                if (paged.fetchPage(pageNum)) {
-                    // Trigger recomposition by bumping a version counter
-                    withContext(Dispatchers.Main) {
-                        updateActiveTab { it.copy(pagedQuery = paged) }
-                    }
+        if (paged.isComplete) return
+        if (lastVisible < paged.rowsRead - PagedQuery.READ_AHEAD) return // already ahead
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val didRead = paged.ensureReadTo(lastVisible)
+            if (didRead) {
+                withContext(Dispatchers.Main) {
+                    updateActiveTab { it.copy(pagedQuery = paged) }
                 }
             }
         }
@@ -400,6 +402,7 @@ class MainViewModel(
     fun closeTab(tabId: Int) {
         viewModelScope.launch {
             val tab = _state.value.tabs.find { it.id == tabId }
+            tab?.pagedQuery?.close()
             tab?.session?.close()
 
             // Clean up cache file
@@ -454,9 +457,8 @@ class MainViewModel(
     }
 
     override fun onCleared() {
-        // Synchronous cleanup: close ALL sessions deterministically.
-        // Cannot use viewModelScope (already cancelled at this point).
         _state.value.tabs.forEach { tab ->
+            tab.pagedQuery?.close()
             tab.session?.let { session ->
                 kotlinx.coroutines.runBlocking {
                     try { session.close() } catch (_: Exception) {}

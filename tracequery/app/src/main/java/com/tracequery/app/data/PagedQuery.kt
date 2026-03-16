@@ -1,148 +1,131 @@
 package com.tracequery.app.data
 
 import com.tracequery.app.data.model.ColumnInfo
-import com.tracequery.app.data.model.QueryResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
- * Scroll-driven LIMIT/OFFSET pagination for large query results.
+ * Scroll-driven query using an open native cursor.
  *
- * Only rows the user scrolls to are fetched from trace_processor.
- * Pages are cached with LRU eviction — bounded memory regardless of table size.
+ * The cursor is opened once. Rows are read forward on demand as the user
+ * scrolls, and cached in an ArrayList. Backward scroll is served from cache.
+ * The producer reads ahead of the scroll position but pauses when far ahead.
  *
- * Usage:
- *   val paged = PagedQuery.create(session, "SELECT * FROM slice")
- *   // paged.totalRows = 5_000_000
- *   // LazyColumn(items = paged.totalRows) { index ->
- *   //   val row = paged.getRow(index) // null if not loaded
- *   //   if (row == null) LaunchedEffect { paged.fetchPage(index / pageSize) }
- *   // }
+ * No LIMIT/OFFSET re-execution. No artificial limits. Query runs once.
+ * Memory = rows the user has scrolled through (cached, not evicted —
+ * forward-only cursor can't re-read evicted rows).
  */
-class PagedQuery(
-    private val session: TraceProcessorSession,
-    private val innerSql: String,  // SQL without LIMIT/OFFSET/semicolons
+class PagedQuery private constructor(
     val columns: List<ColumnInfo>,
-    val totalRows: Long,
-    val pageSize: Int = PAGE_SIZE,
-    val executionTimeMs: Long = 0,
+    private var cursorHandle: Long,
+    private val colCount: Int,
+    val sql: String,
+    val executionTimeMs: Long,
     val error: String? = null,
 ) {
     companion object {
-        const val PAGE_SIZE = 500
-        const val MAX_CACHED_PAGES = 30 // 500 * 30 = 15K rows in memory max
-
-        /** Extract INCLUDE statements (must stay top-level, not in subquery). */
-        private fun splitIncludes(sql: String): Pair<String, String> {
-            val clean = sql.trimEnd().removeSuffix(";").trim()
-            val includes = mutableListOf<String>()
-            val queryLines = mutableListOf<String>()
-            for (line in clean.lines()) {
-                val t = line.trim()
-                if (t.uppercase().startsWith("INCLUDE PERFETTO MODULE")) {
-                    includes.add(t.removeSuffix(";"))
-                } else if (t.isNotEmpty()) {
-                    queryLines.add(line)
-                }
-            }
-            val prefix = if (includes.isNotEmpty()) includes.joinToString(";\n") + ";\n" else ""
-            return prefix to queryLines.joinToString("\n").trim()
-        }
+        /** Rows to read ahead of the visible scroll position. */
+        const val READ_AHEAD = 2000
 
         suspend fun create(session: TraceProcessorSession, sql: String): PagedQuery {
-            val startMs = System.currentTimeMillis()
-            val (includePrefix, selectSql) = splitIncludes(sql)
-
-            // Wrap user's query as subquery — respects any user LIMIT
-            // Get columns from LIMIT 0
-            val metaSql = "${includePrefix}SELECT * FROM ($selectSql) LIMIT 0;"
-            val metaResult = session.query(metaSql)
-            if (metaResult.isError) {
-                return PagedQuery(
-                    session = session, innerSql = selectSql,
-                    columns = emptyList(), totalRows = 0,
-                    executionTimeMs = System.currentTimeMillis() - startMs,
-                    error = metaResult.error,
+            return withContext(Dispatchers.IO) {
+                val startMs = System.currentTimeMillis()
+                val cursor = TraceProcessorNative.nativeQueryStart(
+                    session.handle, sql
                 )
+
+                if (cursor == 0L) {
+                    return@withContext PagedQuery(
+                        columns = emptyList(), cursorHandle = 0L, colCount = 0,
+                        sql = sql, executionTimeMs = System.currentTimeMillis() - startMs,
+                        error = "Failed to start query",
+                    )
+                }
+
+                val colCount = TraceProcessorNative.nativeQueryColumnCount(cursor)
+                val columns = (0 until colCount).map { i ->
+                    ColumnInfo(
+                        name = TraceProcessorNative.nativeQueryColumnName(cursor, i),
+                        index = i,
+                    )
+                }
+
+                val elapsed = System.currentTimeMillis() - startMs
+
+                val pq = PagedQuery(
+                    columns = columns, cursorHandle = cursor, colCount = colCount,
+                    sql = sql, executionTimeMs = elapsed,
+                )
+                // Read first batch so UI has data immediately
+                pq.readMore(READ_AHEAD)
+                pq
             }
-
-            // Count — wraps user query, respects their LIMIT if any
-            val countSql = "${includePrefix}SELECT COUNT(*) FROM ($selectSql);"
-            val countResult = session.query(countSql)
-            val total = if (!countResult.isError && countResult.rows.isNotEmpty()) {
-                countResult.rows[0].firstOrNull()?.toLongOrNull() ?: 0L
-            } else 0L
-
-            val elapsed = System.currentTimeMillis() - startMs
-
-            val pq = PagedQuery(
-                session = session, innerSql = selectSql,
-                columns = metaResult.columns, totalRows = total,
-                executionTimeMs = elapsed,
-            )
-            // Prefetch first page
-            pq.fetchPage(0)
-            return pq
         }
     }
 
-    // LRU page cache: page number → rows
-    private val cache = LinkedHashMap<Int, List<List<String>>>(MAX_CACHED_PAGES + 1, 0.75f, true)
-    @Volatile private var fetchingPages = mutableSetOf<Int>()
+    /** All rows read so far. Grows as user scrolls forward. */
+    private val rows = ArrayList<List<String>>(4096)
 
-    /** Version counter — incremented on every cache change to trigger recomposition. */
+    /** Whether the cursor has been fully consumed. */
+    @Volatile var isComplete = false
+        private set
+
+    /** Version counter — bumped on every read, triggers recomposition. */
     @Volatile var version = 0L
         private set
 
     val isError: Boolean get() = error != null
+    val rowsRead: Int get() = rows.size
 
-    /** Get row at absolute index. Returns null if page not yet loaded. */
-    fun getRow(index: Int): List<String>? {
-        val page = index / pageSize
-        val offset = index % pageSize
-        return cache[page]?.getOrNull(offset)
-    }
+    /**
+     * Total rows — unknown until cursor is exhausted.
+     * Returns rows read so far (a lower bound). UI shows this count
+     * and updates as more rows are read.
+     */
+    val totalRows: Long get() = rows.size.toLong()
 
-    /** Check if a row's page is loaded. */
-    fun isPageLoaded(pageNum: Int): Boolean = cache.containsKey(pageNum)
+    /** Get row at index. Returns null if not yet read (need to readMore). */
+    fun getRow(index: Int): List<String>? = rows.getOrNull(index)
 
-    /** Fetch a page from trace_processor. Thread-safe, idempotent. */
-    suspend fun fetchPage(pageNum: Int): Boolean {
-        if (cache.containsKey(pageNum)) return true
-        synchronized(fetchingPages) {
-            if (fetchingPages.contains(pageNum)) return false
-            fetchingPages.add(pageNum)
-        }
-
-        try {
-            val offset = pageNum.toLong() * pageSize
-            if (offset >= totalRows) return false
-
-            // Note: without ORDER BY, pages may be inconsistent. The user
-            // should sort (click a column header) for stable pagination.
-            // Our sort feature adds ORDER BY to innerSql via composedSql().
-            val sql = "SELECT * FROM ($innerSql) LIMIT $pageSize OFFSET $offset;"
-            val result = session.query(sql)
-
-            if (!result.isError) {
-                synchronized(cache) {
-                    cache[pageNum] = result.rows
-                    while (cache.size > MAX_CACHED_PAGES) {
-                        val oldest = cache.keys.first()
-                        cache.remove(oldest)
-                    }
+    /**
+     * Read up to [count] more rows from the cursor.
+     * Call on Dispatchers.IO. Returns number of new rows read.
+     */
+    fun readMore(count: Int): Int {
+        if (isComplete || cursorHandle == 0L) return 0
+        var read = 0
+        while (read < count) {
+            if (!TraceProcessorNative.nativeQueryNext(cursorHandle)) {
+                isComplete = true
+                val err = TraceProcessorNative.nativeQueryError(cursorHandle)
+                if (err != null) {
+                    android.util.Log.e("PagedQuery", "Cursor error: $err")
                 }
-                version++
-                return true
+                break
             }
-        } finally {
-            synchronized(fetchingPages) { fetchingPages.remove(pageNum) }
+            val buffer = TraceProcessorNative.nativeQueryGetRowBuffer(cursorHandle)
+            if (buffer != null) {
+                rows.add(decodeRowBuffer(buffer, colCount).map { it.toString() })
+                read++
+            }
         }
-        return false
+        if (read > 0) version++
+        return read
     }
 
-    /** Pages needed for a visible range, not yet cached. */
-    fun neededPages(firstVisible: Int, lastVisible: Int): List<Int> {
-        val startPage = maxOf(0, (firstVisible - pageSize)) / pageSize
-        val endPage = minOf(totalRows.toInt() - 1, lastVisible + pageSize) / pageSize
-        return (startPage..endPage).filter { !cache.containsKey(it) }
+    /** Ensure we have at least [targetIndex] + READ_AHEAD rows. */
+    fun ensureReadTo(targetIndex: Int): Boolean {
+        val needed = targetIndex + READ_AHEAD - rows.size
+        if (needed <= 0) return false
+        return readMore(needed) > 0
+    }
+
+    /** Close the cursor. Must be called to prevent leaks. */
+    fun close() {
+        if (cursorHandle != 0L) {
+            TraceProcessorNative.nativeQueryClose(cursorHandle)
+            cursorHandle = 0L
+        }
+        isComplete = true
     }
 }

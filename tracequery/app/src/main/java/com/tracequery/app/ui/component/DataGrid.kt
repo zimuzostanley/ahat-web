@@ -101,7 +101,7 @@ fun DataGrid(
     pagedQuery: PagedQuery,
     sortColumns: List<Pair<String, Boolean>> = emptyList(),
     onAction: ((GridAction) -> Unit)? = null,
-    onFetchPages: ((Int, Int) -> Unit)? = null,
+    onEnsureRows: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     if (pagedQuery.columns.isEmpty()) return
@@ -146,19 +146,19 @@ fun DataGrid(
     val cellText = TextStyle(fontFamily = CodeFontFamily, fontSize = 12.sp, lineHeight = 18.sp)
     val headerText = cellText.copy(fontWeight = FontWeight.SemiBold)
 
-    val totalRows = pagedQuery.totalRows.toInt()
+    // Item count: rows read + 1 sentinel if cursor not exhausted (triggers read-ahead)
+    val totalRows = pagedQuery.rowsRead + if (pagedQuery.isComplete) 0 else 1
     val displayedColumns = remember(visibleCols.toList(), pagedQuery.columns) {
         visibleCols.map { pagedQuery.columns[it] }
     }
 
-    // ── Trigger page fetches based on scroll position ────────────────
-    val firstVisible by derivedStateOf { listState.firstVisibleItemIndex }
-    val visibleCount by derivedStateOf {
-        listState.layoutInfo.visibleItemsInfo.size
+    // ── Trigger cursor read-ahead based on scroll position ──────────
+    val lastVisible by derivedStateOf {
+        val info = listState.layoutInfo.visibleItemsInfo
+        info.lastOrNull()?.index ?: 0
     }
-    LaunchedEffect(firstVisible, visibleCount, pagedQuery.version) {
-        val last = firstVisible + visibleCount + PagedQuery.PAGE_SIZE
-        onFetchPages?.invoke(firstVisible, last)
+    LaunchedEffect(lastVisible, pagedQuery.version) {
+        onEnsureRows?.invoke(lastVisible)
     }
 
     Column(modifier) {
