@@ -300,6 +300,8 @@ fun DataGrid(
             val colWidthSnapshot = remember(widths.toList()) { widths.toList() }
             val paddingPx = 8.dp.value * density.density
             val rowNumWPx = ROW_NUM_W.dp.value * density.density
+            // Total row width in dp for Canvas sizing
+            val totalWidthDp = ROW_NUM_W.dp + visibleCols.sumOf { colWidthSnapshot.getOrElse(it) { 100f }.toDouble() }.toFloat().dp
 
             LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
                 items(count = totalRows, key = { it }) { ri ->
@@ -308,7 +310,7 @@ fun DataGrid(
 
                     Canvas(
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .width(totalWidthDp)
                             .height(rowHeightDp)
                             .background(bgColor)
                             .pointerInput(ri) {
