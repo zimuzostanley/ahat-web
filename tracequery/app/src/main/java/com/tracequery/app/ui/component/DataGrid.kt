@@ -1,7 +1,8 @@
 package com.tracequery.app.ui.component
 
-import android.os.Environment
+import android.content.Intent
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -211,15 +212,16 @@ fun DataGrid(
                             },
                         )
                         DropdownMenuItem(
-                            text = { Text("Save all as TSV") },
+                            text = { Text("Share as TSV") },
                             onClick = {
                                 showExportMenu = false
                                 scope.launch(Dispatchers.IO) {
                                     pagedQuery.readAll()
                                     try {
-                                        val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                                        val dir = File(context.cacheDir, "export")
                                         dir.mkdirs()
-                                        val file = File(dir, "tracequery_${System.currentTimeMillis()}.tsv")
+                                        val fileName = "tracequery_${System.currentTimeMillis()}.tsv"
+                                        val file = File(dir, fileName)
                                         file.bufferedWriter().use { w ->
                                             w.write(displayedColumns.joinToString("\t") { it.name })
                                             w.newLine()
@@ -230,7 +232,20 @@ fun DataGrid(
                                             }
                                         }
                                         kotlinx.coroutines.withContext(Dispatchers.Main) {
-                                            Toast.makeText(context, "Saved: ${file.name}", Toast.LENGTH_SHORT).show()
+                                            // Share via intent — user can save to Downloads, Drive, etc.
+                                            try {
+                                                val uri = androidx.core.content.FileProvider.getUriForFile(
+                                                    context, "${context.packageName}.fileprovider", file)
+                                                val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                                    type = "text/tab-separated-values"
+                                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                }
+                                                context.startActivity(android.content.Intent.createChooser(intent, "Share TSV"))
+                                            } catch (e: Exception) {
+                                                // FileProvider not configured — just show path
+                                                Toast.makeText(context, "Saved: ${file.absolutePath}", Toast.LENGTH_LONG).show()
+                                            }
                                         }
                                     } catch (e: Exception) {
                                         kotlinx.coroutines.withContext(Dispatchers.Main) {
