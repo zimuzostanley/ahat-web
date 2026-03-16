@@ -187,7 +187,8 @@ private fun JoinDialog(
     var targetSearch by remember { mutableStateOf("") }
     var targetTable by remember { mutableStateOf<StdlibTable?>(null) }
     var joinType by remember { mutableStateOf("INNER JOIN") }
-    var joinColumn by remember { mutableStateOf("") }
+    var leftJoinColumn by remember { mutableStateOf("") }
+    var rightJoinColumn by remember { mutableStateOf("") }
     var useIntervalIntersect by remember { mutableStateOf(false) }
     var partitionColumns by remember { mutableStateOf(setOf<String>()) }
 
@@ -200,7 +201,7 @@ private fun JoinDialog(
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState())
-                    .heightIn(max = 500.dp),
+                    .heightIn(max = 600.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 // Target table search
@@ -271,28 +272,52 @@ private fun JoinDialog(
                     }
 
                     if (!useIntervalIntersect) {
-                        // Join column picker — show common column names
-                        val srcCols = sourceTable.columns.map { it.name }.toSet()
-                        val tgtCols = targetTable!!.columns.map { it.name }.toSet()
-                        val commonCols = srcCols.intersect(tgtCols).sorted()
+                        val srcCols = sourceTable.columns.map { it.name }.sorted()
+                        val tgtCols = targetTable!!.columns.map { it.name }.sorted()
+                        val commonCols = srcCols.toSet().intersect(tgtCols.toSet()).sorted()
 
-                        Text("ON column:", style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary)
-
+                        // Common columns — quick pick
                         if (commonCols.isNotEmpty()) {
+                            Text("Common columns:", style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary)
                             commonCols.forEach { col ->
-                                Row(Modifier.fillMaxWidth().clickable { joinColumn = col },
-                                    verticalAlignment = Alignment.CenterVertically) {
-                                    RadioButton(selected = joinColumn == col,
-                                        onClick = { joinColumn = col })
+                                Row(Modifier.fillMaxWidth().clickable {
+                                    leftJoinColumn = col; rightJoinColumn = col
+                                }, verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(
+                                        selected = leftJoinColumn == col && rightJoinColumn == col,
+                                        onClick = { leftJoinColumn = col; rightJoinColumn = col })
                                     Text(col, style = MaterialTheme.typography.bodySmall.copy(
                                         fontFamily = CodeFontFamily))
                                 }
                             }
-                        } else {
-                            Text("No common columns found",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.height(8.dp))
+                        }
+
+                        // Independent left/right column selection
+                        Text("Left (${sourceTable.name}):", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                        srcCols.forEach { col ->
+                            Row(Modifier.fillMaxWidth().clickable { leftJoinColumn = col },
+                                verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = leftJoinColumn == col,
+                                    onClick = { leftJoinColumn = col })
+                                Text(col, style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = CodeFontFamily))
+                            }
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+                        Text("Right (${targetTable!!.name}):", style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary)
+                        tgtCols.forEach { col ->
+                            Row(Modifier.fillMaxWidth().clickable { rightJoinColumn = col },
+                                verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = rightJoinColumn == col,
+                                    onClick = { rightJoinColumn = col })
+                                Text(col, style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = CodeFontFamily))
+                            }
                         }
                     } else {
                         // Partition columns for interval intersect
@@ -328,10 +353,11 @@ private fun JoinDialog(
                 onClick = {
                     val target = targetTable ?: return@TextButton
                     val sql = generateJoinSql(sourceTable, target, joinType,
-                        joinColumn, useIntervalIntersect, partitionColumns.toList())
+                        leftJoinColumn, rightJoinColumn, useIntervalIntersect, partitionColumns.toList())
                     onJoinGenerated(sql)
                 },
-                enabled = targetTable != null && (useIntervalIntersect || joinColumn.isNotBlank()),
+                enabled = targetTable != null && (useIntervalIntersect ||
+                    (leftJoinColumn.isNotBlank() && rightJoinColumn.isNotBlank())),
             ) { Text("Generate SQL") }
         },
         dismissButton = {
@@ -344,7 +370,8 @@ private fun generateJoinSql(
     source: StdlibTable,
     target: StdlibTable,
     joinType: String,
-    joinColumn: String,
+    leftCol: String,
+    rightCol: String,
     useIntervalIntersect: Boolean,
     partitionColumns: List<String>,
 ): String {
@@ -355,11 +382,18 @@ private fun generateJoinSql(
     return if (useIntervalIntersect) {
         val partStr = if (partitionColumns.isNotEmpty())
             "(${partitionColumns.joinToString(", ")})" else "()"
-        "${includes}SELECT *\nFROM _interval_intersect!(\n  (${source.name}, ${target.name}),\n  $partStr\n);"
+        """${includes}SELECT *
+FROM _interval_intersect!(
+  (${source.name}, ${target.name}),
+  $partStr
+);"""
     } else {
-        val a = "a"
-        val b = "b"
-        "${includes}SELECT\n  $a.*,\n  $b.*\nFROM ${source.name} AS $a\n$joinType ${target.name} AS $b\n  ON $a.\"$joinColumn\" = $b.\"$joinColumn\";"
+        """${includes}SELECT
+  a.*,
+  b.*
+FROM ${source.name} AS a
+$joinType ${target.name} AS b
+  ON a."$leftCol" = b."$rightCol";"""
     }
 }
 
