@@ -393,14 +393,15 @@ fun DataGrid(
     // ── Aggregate dialog ─────────────────────────────────────────────
     if (aggDialogCol != null) {
         val metricCol = aggDialogCol!!
-        val allCols = displayedResult.columns.map { it.name }
+        // Use ALL columns from original result, not just visible ones
+        val allCols = result.columns.map { it.name }
         val functions = listOf("COUNT", "COUNT_DISTINCT", "SUM", "AVG", "MIN", "MAX")
 
         AlertDialog(
             onDismissRequest = { aggDialogCol = null },
             title = { Text("Aggregate") },
             text = {
-                Column(Modifier.verticalScroll(rememberVScrollState()).heightIn(max = 400.dp)) {
+                Column(Modifier.verticalScroll(rememberVScrollState())) {
                     // Function picker
                     Text("Function", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary)
