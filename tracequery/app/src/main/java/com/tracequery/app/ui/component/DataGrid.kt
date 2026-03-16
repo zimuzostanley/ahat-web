@@ -291,38 +291,34 @@ fun DataGrid(
                                 )
                                 HorizontalDivider()
                                 fun dismiss() { cellMenuRow = -1; cellMenuCol = -1 }
+                                val fi = @Composable { Icon(Icons.Default.FilterAlt, null) }
                                 if (!isNull) {
-                                    DropdownMenuItem(
-                                        text = { Text("= $cell") },
-                                        leadingIcon = { Icon(Icons.Default.FilterAlt, null) },
-                                        onClick = { onAction?.invoke(GridAction.FilterEquals(colName, cell)); dismiss() },
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("≠ $cell") },
-                                        onClick = { onAction?.invoke(GridAction.FilterNotEquals(colName, cell)); dismiss() },
-                                    )
+                                    DropdownMenuItem(text = { Text("= $cell") }, leadingIcon = fi,
+                                        onClick = { onAction?.invoke(GridAction.FilterEquals(colName, cell)); dismiss() })
+                                    DropdownMenuItem(text = { Text("≠ $cell") }, leadingIcon = fi,
+                                        onClick = { onAction?.invoke(GridAction.FilterNotEquals(colName, cell)); dismiss() })
                                     if (isNum) {
-                                        DropdownMenuItem(text = { Text("> $cell") },
+                                        DropdownMenuItem(text = { Text("> $cell") }, leadingIcon = fi,
                                             onClick = { onAction?.invoke(GridAction.FilterGreaterThan(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("≥ $cell") },
+                                        DropdownMenuItem(text = { Text("≥ $cell") }, leadingIcon = fi,
                                             onClick = { onAction?.invoke(GridAction.FilterGreaterOrEqual(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("< $cell") },
+                                        DropdownMenuItem(text = { Text("< $cell") }, leadingIcon = fi,
                                             onClick = { onAction?.invoke(GridAction.FilterLessThan(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("≤ $cell") },
+                                        DropdownMenuItem(text = { Text("≤ $cell") }, leadingIcon = fi,
                                             onClick = { onAction?.invoke(GridAction.FilterLessOrEqual(colName, cell)); dismiss() })
                                     } else {
-                                        DropdownMenuItem(text = { Text("Contains '$cell'") },
+                                        DropdownMenuItem(text = { Text("Contains") }, leadingIcon = fi,
                                             onClick = { onAction?.invoke(GridAction.FilterContains(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("Not contains '$cell'") },
+                                        DropdownMenuItem(text = { Text("Not contains") }, leadingIcon = fi,
                                             onClick = { onAction?.invoke(GridAction.FilterNotContains(colName, cell)); dismiss() })
-                                        DropdownMenuItem(text = { Text("Glob '*$cell*'") },
+                                        DropdownMenuItem(text = { Text("Glob '*$cell*'") }, leadingIcon = fi,
                                             onClick = { onAction?.invoke(GridAction.FilterGlob(colName, "*$cell*")); dismiss() })
                                     }
                                 }
                                 HorizontalDivider()
-                                DropdownMenuItem(text = { Text("IS NULL") },
+                                DropdownMenuItem(text = { Text("IS NULL") }, leadingIcon = fi,
                                     onClick = { onAction?.invoke(GridAction.FilterIsNull(colName)); dismiss() })
-                                DropdownMenuItem(text = { Text("IS NOT NULL") },
+                                DropdownMenuItem(text = { Text("IS NOT NULL") }, leadingIcon = fi,
                                     onClick = { onAction?.invoke(GridAction.FilterIsNotNull(colName)); dismiss() })
                             }
                         }
