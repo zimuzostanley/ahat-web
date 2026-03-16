@@ -91,7 +91,6 @@ sealed class GridAction {
     data class FilterGlob(val column: String, val value: String) : GridAction()
     data class FilterNotGlob(val column: String, val value: String) : GridAction()
     data class Aggregate(val function: String, val metricColumn: String, val groupByColumns: List<String>) : GridAction()
-    data class ChartColumn(val column: String) : GridAction()
 }
 
 private const val ROW_NUM_W = 48
@@ -291,9 +290,6 @@ fun DataGrid(
                                 DropdownMenuItem(text = { Text("Aggregate...") },
                                     leadingIcon = { Icon(Icons.Default.Functions, null) },
                                     onClick = { aggDialogCol = col.name; aggFunction = "COUNT"; aggGroupBy = emptySet(); colMenuIdx = -1 })
-                            HorizontalDivider()
-                            DropdownMenuItem(text = { Text("Chart this column") },
-                                    onClick = { onAction?.invoke(GridAction.ChartColumn(col.name)); colMenuIdx = -1 })
                             }
                         }
                         Box(Modifier.width(4.dp).background(borderColor)

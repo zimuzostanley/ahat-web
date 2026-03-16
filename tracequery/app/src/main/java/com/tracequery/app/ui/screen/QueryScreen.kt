@@ -33,7 +33,6 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -74,10 +73,8 @@ import com.tracequery.app.data.model.HistoryEntry
 import com.tracequery.app.ui.MainUiState
 import com.tracequery.app.ui.QueryMode
 import com.tracequery.app.ui.QueryOp
-import com.tracequery.app.ui.component.ChartData
 import com.tracequery.app.ui.component.DataGrid
 import com.tracequery.app.ui.component.GridAction
-import com.tracequery.app.ui.component.LineChart
 import com.tracequery.app.ui.component.SqlEditor
 import com.tracequery.app.ui.component.TableBrowser
 import com.tracequery.app.ui.theme.CodeFontFamily
@@ -99,9 +96,6 @@ fun QueryScreen(
     onClearOps: () -> Unit,
     onSort: (String, Boolean) -> Unit,
     onEnsureRows: (Int) -> Unit,
-    onAddChart: (String, String) -> Unit,
-    onRemoveChartLine: (Int, String) -> Unit,
-    onRemoveChart: (Int) -> Unit,
     onOpenTrace: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -110,7 +104,6 @@ fun QueryScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var showHistory by remember { mutableStateOf(false) }
-    var chartYCol by remember { mutableStateOf<String?>(null) } // pending chart Y column, needs X picker
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -327,33 +320,17 @@ fun QueryScreen(
                         }
                     }
 
+                    // Grid (paged or legacy)
                     val paged = tab.pagedQuery
-
-                    // Charts
-                    if (paged != null && tab.charts.isNotEmpty()) {
-                        tab.charts.forEachIndexed { ci, chartConfig ->
-                            val chartData = remember(chartConfig, paged.version) {
-                                ChartData.create(paged, chartConfig.xColumn, chartConfig.yColumns)
-                            }
-                            LineChart(
-                                chart = chartData,
-                                onRemoveLine = { yCol -> onRemoveChartLine(ci, yCol) },
-                                onRemoveChart = { onRemoveChart(ci) },
-                            )
-                            HorizontalDivider()
-                        }
-                    }
-
-                    // Grid
                     if (paged != null && !paged.isError) {
                         DataGrid(
                             pagedQuery = paged,
                             sortColumns = tab.sortColumns,
                             onAction = { action ->
-                                when (action) {
-                                    is GridAction.SortColumn -> onSort(action.column, action.ascending)
-                                    is GridAction.ChartColumn -> chartYCol = action.column
-                                    else -> handleGridAction(action, onAddOp)
+                                if (action is GridAction.SortColumn) {
+                                    onSort(action.column, action.ascending)
+                                } else {
+                                    handleGridAction(action, onAddOp)
                                 }
                             },
                             onEnsureRows = onEnsureRows,
@@ -411,34 +388,6 @@ fun QueryScreen(
             Spacer(Modifier.height(32.dp))
         }
     }
-
-    // X axis picker for charts
-    if (chartYCol != null && tab.pagedQuery != null) {
-        val cols = tab.pagedQuery!!.columns.map { it.name }
-        AlertDialog(
-            onDismissRequest = { chartYCol = null },
-            title = { Text("Chart: ${chartYCol}") },
-            text = {
-                Column {
-                    Text("Select X axis:", style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary)
-                    cols.forEach { col ->
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable { onAddChart(col, chartYCol!!); chartYCol = null }
-                                .padding(vertical = 6.dp, horizontal = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(col, style = MaterialTheme.typography.bodyMedium.copy(
-                                fontFamily = CodeFontFamily))
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { chartYCol = null }) { Text("Cancel") } },
-        )
-    }
 }
 
 private fun handleGridAction(
@@ -467,6 +416,5 @@ private fun handleGridAction(
         is GridAction.FilterGlob -> f(action.column, "GLOB", "'${esc(action.value)}'")
         is GridAction.FilterNotGlob -> f(action.column, "NOT GLOB", "'${esc(action.value)}'")
         is GridAction.Aggregate -> onAddOp(QueryOp.Aggregate(action.function, action.metricColumn, action.groupByColumns))
-        is GridAction.ChartColumn -> {} // handled in QueryScreen directly
     }
 }

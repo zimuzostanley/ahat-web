@@ -102,7 +102,6 @@ data class TabState(
     val sortColumns: List<Pair<String, Boolean>> = emptyList(),
     val result: QueryResult? = null,
     val pagedQuery: PagedQuery? = null,
-    val charts: List<ChartConfig> = emptyList(),
     val isQuerying: Boolean = false,
     val isLoading: Boolean = false,
     val loadProgress: String = "",
@@ -160,11 +159,6 @@ data class TabState(
 }
 
 enum class QueryMode { SQL, EXPLORE }
-
-data class ChartConfig(
-    val xColumn: String,
-    val yColumns: List<String>,
-)
 
 // ── Main UI state ────────────────────────────────────────────────────────────
 
@@ -335,37 +329,6 @@ class MainViewModel(
                 }
             }
         }
-    }
-
-    // ── Charts ────────────────────────────────────────────────────
-
-    fun addChart(xColumn: String, yColumn: String) {
-        val tab = _state.value.activeTab ?: return
-        // Add to existing chart with same X axis, or create new
-        val existing = tab.charts.indexOfFirst { it.xColumn == xColumn }
-        if (existing >= 0) {
-            val chart = tab.charts[existing]
-            if (yColumn in chart.yColumns) return // already there
-            val updated = chart.copy(yColumns = chart.yColumns + yColumn)
-            updateActiveTab { it.copy(charts = it.charts.toMutableList().apply { set(existing, updated) }) }
-        } else {
-            updateActiveTab { it.copy(charts = it.charts + ChartConfig(xColumn, listOf(yColumn))) }
-        }
-    }
-
-    fun removeChartLine(chartIndex: Int, yColumn: String) {
-        val tab = _state.value.activeTab ?: return
-        val chart = tab.charts.getOrNull(chartIndex) ?: return
-        val newYCols = chart.yColumns - yColumn
-        if (newYCols.isEmpty()) {
-            updateActiveTab { it.copy(charts = it.charts.toMutableList().apply { removeAt(chartIndex) }) }
-        } else {
-            updateActiveTab { it.copy(charts = it.charts.toMutableList().apply { set(chartIndex, chart.copy(yColumns = newYCols)) }) }
-        }
-    }
-
-    fun removeChart(index: Int) {
-        updateActiveTab { it.copy(charts = it.charts.toMutableList().apply { removeAt(index) }) }
     }
 
     fun setSql(sql: String) {
