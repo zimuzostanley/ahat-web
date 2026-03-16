@@ -33,9 +33,15 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -96,6 +102,7 @@ fun QueryScreen(
     onClearOps: () -> Unit,
     onSort: (String, Boolean) -> Unit,
     onEnsureRows: (Int) -> Unit,
+    onGetDistinctValues: (String, (List<String>) -> Unit) -> Unit,
     onOpenTrace: (() -> Unit)? = null,
     onOpenSettings: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -104,6 +111,12 @@ fun QueryScreen(
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var showHistory by remember { mutableStateOf(false) }
+    // Distinct value filter state
+    var filterValuesCol by remember { mutableStateOf<String?>(null) }
+    var filterValuesData by remember { mutableStateOf<List<String>>(emptyList()) }
+    var filterValuesLoading by remember { mutableStateOf(false) }
+    var filterValuesSearch by remember { mutableStateOf("") }
+    var filterValuesSelected by remember { mutableStateOf(setOf<String>()) }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
@@ -327,10 +340,20 @@ fun QueryScreen(
                             pagedQuery = paged,
                             sortColumns = tab.sortColumns,
                             onAction = { action ->
-                                if (action is GridAction.SortColumn) {
-                                    onSort(action.column, action.ascending)
-                                } else {
-                                    handleGridAction(action, onAddOp)
+                                when (action) {
+                                    is GridAction.SortColumn -> onSort(action.column, action.ascending)
+                                    is GridAction.FilterValues -> {
+                                        filterValuesCol = action.column
+                                        filterValuesData = emptyList()
+                                        filterValuesLoading = true
+                                        filterValuesSearch = ""
+                                        filterValuesSelected = emptySet()
+                                        onGetDistinctValues(action.column) { values ->
+                                            filterValuesData = values
+                                            filterValuesLoading = false
+                                        }
+                                    }
+                                    else -> handleGridAction(action, onAddOp)
                                 }
                             },
                             onEnsureRows = onEnsureRows,
@@ -388,6 +411,85 @@ fun QueryScreen(
             Spacer(Modifier.height(32.dp))
         }
     }
+    // Distinct values filter dialog
+    if (filterValuesCol != null) {
+        val col = filterValuesCol!!
+        val filtered = if (filterValuesSearch.isBlank()) filterValuesData
+            else filterValuesData.filter { it.contains(filterValuesSearch, ignoreCase = true) }
+
+        AlertDialog(
+            onDismissRequest = { filterValuesCol = null },
+            title = { Text("Filter: $col") },
+            text = {
+                Column {
+                    // Search bar
+                    OutlinedTextField(
+                        value = filterValuesSearch,
+                        onValueChange = { filterValuesSearch = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Search values...") },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily),
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+
+                    if (filterValuesLoading) {
+                        CircularProgressIndicator(Modifier.size(24.dp).align(Alignment.CenterHorizontally))
+                    } else if (filtered.isEmpty()) {
+                        Text("No values found", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Text("${filtered.size} values (select to include):",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(4.dp))
+
+                        // Scrollable checkbox list
+                        Column(Modifier.verticalScroll(rememberScrollState()).heightIn(max = 300.dp)) {
+                            filtered.forEach { value ->
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .clickable {
+                                            filterValuesSelected = if (value in filterValuesSelected)
+                                                filterValuesSelected - value else filterValuesSelected + value
+                                        }
+                                        .padding(vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Checkbox(
+                                        checked = value in filterValuesSelected,
+                                        onCheckedChange = { checked ->
+                                            filterValuesSelected = if (checked) filterValuesSelected + value
+                                                else filterValuesSelected - value
+                                        },
+                                    )
+                                    Text(value, style = MaterialTheme.typography.bodySmall.copy(
+                                        fontFamily = CodeFontFamily), maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (filterValuesSelected.isNotEmpty()) {
+                            val inList = filterValuesSelected.joinToString(", ") { "'${it.replace("'", "''")}'" }
+                            onAddOp(QueryOp.Filter(col, "IN", "($inList)"))
+                        }
+                        filterValuesCol = null
+                    },
+                    enabled = filterValuesSelected.isNotEmpty(),
+                ) { Text("Apply (${filterValuesSelected.size})") }
+            },
+            dismissButton = {
+                TextButton(onClick = { filterValuesCol = null }) { Text("Cancel") }
+            },
+        )
+    }
 }
 
 private fun handleGridAction(
@@ -416,5 +518,6 @@ private fun handleGridAction(
         is GridAction.FilterGlob -> f(action.column, "GLOB", "'${esc(action.value)}'")
         is GridAction.FilterNotGlob -> f(action.column, "NOT GLOB", "'${esc(action.value)}'")
         is GridAction.Aggregate -> onAddOp(QueryOp.Aggregate(action.function, action.metricColumn, action.groupByColumns))
+        is GridAction.FilterValues -> {} // handled in QueryScreen directly
     }
 }

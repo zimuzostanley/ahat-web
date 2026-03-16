@@ -91,6 +91,7 @@ sealed class GridAction {
     data class FilterGlob(val column: String, val value: String) : GridAction()
     data class FilterNotGlob(val column: String, val value: String) : GridAction()
     data class Aggregate(val function: String, val metricColumn: String, val groupByColumns: List<String>) : GridAction()
+    data class FilterValues(val column: String) : GridAction()
 }
 
 private const val ROW_NUM_W = 48
@@ -287,7 +288,10 @@ fun DataGrid(
                                 DropdownMenuItem(text = { Text("Sort descending") },
                                     onClick = { onAction?.invoke(GridAction.SortColumn(col.name, false)); colMenuIdx = -1 })
                                 HorizontalDivider()
-                                DropdownMenuItem(text = { Text("Aggregate...") },
+                                DropdownMenuItem(text = { Text("Filter values...") },
+                                    leadingIcon = { Icon(Icons.Default.FilterAlt, null) },
+                                    onClick = { onAction?.invoke(GridAction.FilterValues(col.name)); colMenuIdx = -1 })
+                            DropdownMenuItem(text = { Text("Aggregate...") },
                                     leadingIcon = { Icon(Icons.Default.Functions, null) },
                                     onClick = { aggDialogCol = col.name; aggFunction = "COUNT"; aggGroupBy = emptySet(); colMenuIdx = -1 })
                             }

@@ -94,6 +94,7 @@ class MainActivity : AppCompatActivity() {
                             onClearOps = vm::clearOps,
                             onSort = vm::sortBy,
                             onEnsureRows = vm::ensureRowsForScroll,
+                            onGetDistinctValues = vm::getDistinctValues,
                             onOpenTrace = { filePicker.launch(arrayOf("*/*")) },
                             onOpenSettings = { showSettings = true },
                             modifier = Modifier.fillMaxSize(),

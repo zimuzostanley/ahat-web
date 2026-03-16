@@ -331,6 +331,23 @@ class MainViewModel(
         }
     }
 
+    /** Get distinct values for a column. Returns via callback (runs async). */
+    fun getDistinctValues(column: String, callback: (List<String>) -> Unit) {
+        val tab = _state.value.activeTab ?: return
+        val session = tab.session ?: return
+        val baseSql = tab.baseSql.ifBlank { tab.currentSql }.trimEnd().removeSuffix(";").trim()
+
+        viewModelScope.launch {
+            val sql = "SELECT DISTINCT $column FROM ($baseSql) WHERE $column IS NOT NULL ORDER BY $column LIMIT 500;"
+            val result = session.query(sql)
+            if (!result.isError) {
+                callback(result.rows.mapNotNull { it.firstOrNull() })
+            } else {
+                callback(emptyList())
+            }
+        }
+    }
+
     fun setSql(sql: String) {
         updateActiveTab { it.copy(currentSql = sql) }
     }
