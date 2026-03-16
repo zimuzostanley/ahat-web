@@ -2,6 +2,7 @@ package com.tracequery.app.ui.screen
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -254,12 +255,14 @@ fun QueryScreen(
                         }
                     }
 
-                    // Error
+                    // Error (selectable/copyable)
                     if (tab.error != null) {
                         Surface(color = MaterialTheme.colorScheme.errorContainer) {
-                            Text(tab.error!!, Modifier.fillMaxWidth().padding(12.dp),
-                                color = MaterialTheme.colorScheme.onErrorContainer,
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily))
+                            SelectionContainer {
+                                Text(tab.error!!, Modifier.fillMaxWidth().padding(12.dp),
+                                    color = MaterialTheme.colorScheme.onErrorContainer,
+                                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = CodeFontFamily))
+                            }
                         }
                     }
 

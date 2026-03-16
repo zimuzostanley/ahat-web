@@ -61,12 +61,30 @@ data class TabState(
     val mode: QueryMode = QueryMode.SQL,
     val error: String? = null,
 ) {
-    /** Compose the full SQL from base + filters. */
+    /** Compose the full SQL from base + filters.
+     *  INCLUDE PERFETTO MODULE statements are extracted to the top —
+     *  they cannot be inside a subquery. */
     fun composedSql(): String {
         if (filters.isEmpty()) return currentSql
-        val base = baseSql.ifBlank { currentSql }.trimEnd().removeSuffix(";").trim()
+        val raw = baseSql.ifBlank { currentSql }.trimEnd().removeSuffix(";").trim()
+
+        // Extract INCLUDE statements (must be top-level, not in subquery)
+        val lines = raw.lines()
+        val includes = mutableListOf<String>()
+        val queryParts = mutableListOf<String>()
+        for (line in lines) {
+            val trimmed = line.trim()
+            if (trimmed.uppercase().startsWith("INCLUDE PERFETTO MODULE")) {
+                includes.add(trimmed.removeSuffix(";"))
+            } else if (trimmed.isNotEmpty()) {
+                queryParts.add(line)
+            }
+        }
+
+        val selectSql = queryParts.joinToString("\n").trim().removeSuffix(";")
         val whereClauses = filters.joinToString(" AND ") { it.toSqlClause() }
-        return "SELECT * FROM ($base) WHERE $whereClauses;"
+        val prefix = if (includes.isNotEmpty()) includes.joinToString(";\n") + ";\n" else ""
+        return "${prefix}SELECT * FROM ($selectSql) WHERE $whereClauses;"
     }
 }
 
@@ -260,12 +278,29 @@ class MainViewModel(
 
     fun addAggregate(function: String, column: String) {
         val tab = _state.value.activeTab ?: return
-        val base = tab.currentSql.trimEnd().removeSuffix(";").trim()
+        val raw = tab.currentSql.trimEnd().removeSuffix(";").trim()
+
+        // Extract INCLUDE statements
+        val lines = raw.lines()
+        val includes = mutableListOf<String>()
+        val queryParts = mutableListOf<String>()
+        for (line in lines) {
+            val trimmed = line.trim()
+            if (trimmed.uppercase().startsWith("INCLUDE PERFETTO MODULE")) {
+                includes.add(trimmed.removeSuffix(";"))
+            } else if (trimmed.isNotEmpty()) {
+                queryParts.add(line)
+            }
+        }
+
+        val selectSql = queryParts.joinToString("\n").trim().removeSuffix(";")
         val qCol = "\"${column.replace("\"", "\"\"")}\""
+        val prefix = if (includes.isNotEmpty()) includes.joinToString(";\n") + ";\n" else ""
+
         val sql = if (function == "COUNT_DISTINCT") {
-            "SELECT $qCol, COUNT(*) as count FROM ($base) GROUP BY $qCol ORDER BY count DESC;"
+            "${prefix}SELECT $qCol, COUNT(*) as count FROM ($selectSql) GROUP BY $qCol ORDER BY count DESC;"
         } else {
-            "SELECT $qCol, $function(*) as ${function.lowercase()} FROM ($base) GROUP BY $qCol ORDER BY ${function.lowercase()} DESC;"
+            "${prefix}SELECT $qCol, $function(*) as ${function.lowercase()} FROM ($selectSql) GROUP BY $qCol ORDER BY ${function.lowercase()} DESC;"
         }
         updateActiveTab { it.copy(currentSql = sql, filters = emptyList(), baseSql = "") }
         executeQuery(sql)
