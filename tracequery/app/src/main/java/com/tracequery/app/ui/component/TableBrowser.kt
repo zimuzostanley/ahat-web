@@ -144,19 +144,10 @@ fun TableBrowser(
                         )
                         HorizontalDivider()
                         DropdownMenuItem(
-                            text = { Text("JOIN with another table...") },
+                            text = { Text("JOIN / Intersect...") },
                             leadingIcon = { Icon(Icons.Default.JoinInner, null) },
                             onClick = { showJoinDialog = true; contextMenuTable = null },
                         )
-                        // Show interval intersect option if table has ts/dur columns
-                        val hasTsDur = table.columns.any { it.name == "ts" } &&
-                                table.columns.any { it.name == "dur" }
-                        if (hasTsDur) {
-                            DropdownMenuItem(
-                                text = { Text("Interval intersect...") },
-                                onClick = { showJoinDialog = true; contextMenuTable = null },
-                            )
-                        }
                     }
                 }
 
@@ -387,7 +378,8 @@ private fun generateJoinSql(
     return if (useIntervalIntersect) {
         val partStr = if (partitionColumns.isNotEmpty())
             "(${partitionColumns.joinToString(", ")})" else "()"
-        """${includes}SELECT *
+        """INCLUDE PERFETTO MODULE intervals.intersect;
+${includes}SELECT *
 FROM _interval_intersect!(
   (${source.name}, ${target.name}),
   $partStr
