@@ -430,6 +430,8 @@ private fun StateRow(
             "$count",
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.width(36.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
         )
         Icon(
             if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,

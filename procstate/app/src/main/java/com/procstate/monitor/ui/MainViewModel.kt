@@ -58,10 +58,13 @@ enum class CaptureInterval(val label: String, val seconds: Int) {
 @Immutable
 enum class StopAfter(val label: String, val minutes: Int) {
     NEVER("Never", 0),
+    MIN_1("1m", 1),
+    MIN_2("2m", 2),
     MIN_5("5m", 5),
     MIN_15("15m", 15),
     MIN_30("30m", 30),
     HOUR_1("1h", 60),
+    HOUR_2("2h", 120),
     HOUR_6("6h", 360),
     HOUR_24("24h", 1440),
 }
@@ -236,6 +239,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeTrackedProcess(name: String) {
         _trackedProcesses.value = _trackedProcesses.value - name
+        saveTrackedProcesses()
+    }
+
+    fun clearAllTrackedProcesses() {
+        _trackedProcesses.value = emptyList()
         saveTrackedProcesses()
     }
 

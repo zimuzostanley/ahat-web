@@ -158,20 +158,16 @@ private fun ProcStateApp(vm: MainViewModel) {
                             Spacer(Modifier.width(8.dp))
                             PulsingDot()
                             Spacer(Modifier.width(6.dp))
-                            Column {
-                                Text(
-                                    "REC ${captureInterval.label}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.error,
-                                )
-                                if (stopAfter != StopAfter.NEVER) {
-                                    Text(
-                                        "stop in ${stopAfter.label}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
+                            Text(
+                                buildString {
+                                    append("REC ${captureInterval.label}")
+                                    if (stopAfter != StopAfter.NEVER) {
+                                        append(" \u00b7 ${stopAfter.label}")
+                                    }
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
                         }
                     }
                 },
@@ -187,8 +183,14 @@ private fun ProcStateApp(vm: MainViewModel) {
                             Icon(Icons.Default.PlayArrow, "Record")
                         }
                     }
-                    // Add process (only on By Process tab)
+                    // Process tab actions
                     if (selectedTab == 1) {
+                        if (trackedProcesses.isNotEmpty()) {
+                            IconButton(onClick = vm::clearAllTrackedProcesses) {
+                                Icon(Icons.Default.Close, "Unpin all",
+                                    modifier = Modifier.size(20.dp))
+                            }
+                        }
                         IconButton(onClick = { showProcessPicker = !showProcessPicker }) {
                             Icon(
                                 if (showProcessPicker) Icons.Default.Close else Icons.Default.Add,
