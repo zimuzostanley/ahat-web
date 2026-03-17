@@ -89,6 +89,20 @@ interface SnapshotDao {
     """)
     fun getSnapshotTimestamps(start: Long): Flow<List<Long>>
 
+    /** All entries for export — no process filter, just time range. */
+    @Query("""
+        SELECT s.timestamp, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
+        FROM snapshots s
+        JOIN process_entries pe ON s.id = pe.snapshotId
+        WHERE s.timestamp >= :start
+        ORDER BY pe.name, pe.uid, s.timestamp
+    """)
+    suspend fun getAllEntriesForExport(start: Long): List<ProcessTimelineRow>
+
+    /** All snapshot timestamps for export. */
+    @Query("SELECT timestamp FROM snapshots WHERE timestamp >= :start ORDER BY timestamp")
+    suspend fun getAllTimestampsForExport(start: Long): List<Long>
+
     @Query("SELECT COUNT(*) FROM snapshots")
     fun getSnapshotCount(): Flow<Int>
 

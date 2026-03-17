@@ -1,5 +1,6 @@
 package com.procstate.monitor.ui
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -7,11 +8,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -29,9 +35,11 @@ import com.procstate.monitor.ui.theme.ThemeMode
 fun SettingsSheet(
     themeMode: ThemeMode,
     snapshotCount: Int,
+    isExporting: Boolean,
     onSetTheme: (ThemeMode) -> Unit,
     onClearAll: () -> Unit,
     onPrune: (Long) -> Unit,
+    onExport: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
@@ -76,6 +84,60 @@ fun SettingsSheet(
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
         Spacer(Modifier.height(16.dp))
 
+        // Export
+        Text("Export", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Export to Perfetto trace format (Chrome JSON)",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        var exportRange by remember { mutableStateOf(0L) } // 0 = all
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            for ((label, millis) in listOf(
+                "All" to 0L,
+                "5m" to 5 * 60_000L,
+                "30m" to 30 * 60_000L,
+                "1h" to 60 * 60_000L,
+                "6h" to 6 * 60 * 60_000L,
+                "24h" to 24 * 60 * 60_000L,
+                "7d" to 7 * 24 * 60 * 60_000L,
+            )) {
+                FilterChip(
+                    selected = exportRange == millis,
+                    onClick = { exportRange = millis },
+                    label = { Text(label) },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedButton(
+            onClick = { onExport(exportRange) },
+            enabled = hasData && !isExporting,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (isExporting) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.size(8.dp))
+                Text("Exporting...")
+            } else {
+                Text("Export to Perfetto")
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        Spacer(Modifier.height(16.dp))
+
         // Data management
         Text("Data", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
@@ -87,16 +149,10 @@ fun SettingsSheet(
         Spacer(Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(
-                onClick = { confirmPrune = 7 * 24 * 60 * 60_000L },
-                enabled = hasData,
-            ) {
+            TextButton(onClick = { confirmPrune = 7 * 24 * 60 * 60_000L }, enabled = hasData) {
                 Text("Prune older than 7d")
             }
-            TextButton(
-                onClick = { confirmPrune = 24 * 60 * 60_000L },
-                enabled = hasData,
-            ) {
+            TextButton(onClick = { confirmPrune = 24 * 60 * 60_000L }, enabled = hasData) {
                 Text("Prune older than 24h")
             }
         }
@@ -106,9 +162,7 @@ fun SettingsSheet(
         Button(
             onClick = { confirmClear = true },
             enabled = hasData,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.error,
-            ),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
         ) {
             Text("Clear all data")
         }
@@ -124,16 +178,14 @@ fun SettingsSheet(
         AlertDialog(
             onDismissRequest = { confirmClear = false },
             title = { Text("Clear all data?") },
-            text = { Text("This will permanently delete all $snapshotCount snapshots. This cannot be undone.") },
+            text = { Text("This will permanently delete all $snapshotCount snapshots.") },
             confirmButton = {
                 Button(
                     onClick = { onClearAll(); confirmClear = false },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 ) { Text("Clear") }
             },
-            dismissButton = {
-                TextButton(onClick = { confirmClear = false }) { Text("Cancel") }
-            },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
         )
     }
 
@@ -146,9 +198,7 @@ fun SettingsSheet(
             confirmButton = {
                 Button(onClick = { onPrune(millis); confirmPrune = null }) { Text("Prune") }
             },
-            dismissButton = {
-                TextButton(onClick = { confirmPrune = null }) { Text("Cancel") }
-            },
+            dismissButton = { TextButton(onClick = { confirmPrune = null }) { Text("Cancel") } },
         )
     }
 }

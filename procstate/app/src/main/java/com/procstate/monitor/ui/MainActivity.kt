@@ -104,6 +104,22 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission(),
     ) {}
 
+    // For Perfetto export
+    var pendingExportRange = 0L
+    var pendingVm: MainViewModel? = null
+
+    val exportFileLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        val vm = pendingVm ?: return@registerForActivityResult
+        if (uri == null) return@registerForActivityResult
+        vm.exportTrace(pendingExportRange) { json ->
+            contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(json.toByteArray())
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -365,12 +381,21 @@ private fun ProcStateApp(vm: MainViewModel) {
             onDismissRequest = { showSettings = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
+            val activity = LocalContext.current as MainActivity
+            val isExporting by vm.isExporting.collectAsState()
             SettingsSheet(
                 themeMode = themeMode,
                 snapshotCount = snapshotCount,
+                isExporting = isExporting,
                 onSetTheme = vm::setTheme,
                 onClearAll = vm::clearAllData,
                 onPrune = vm::pruneOlderThan,
+                onExport = { rangeMs ->
+                    activity.pendingExportRange = rangeMs
+                    activity.pendingVm = vm
+                    val filename = "procstate_${System.currentTimeMillis()}.json"
+                    activity.exportFileLauncher.launch(filename)
+                },
                 onDismiss = { showSettings = false },
             )
         }

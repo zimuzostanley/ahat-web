@@ -12,6 +12,7 @@ import com.procstate.monitor.data.AppDatabase
 import com.procstate.monitor.data.ProcessEntryEntity
 import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.ShellHelper
+import com.procstate.monitor.data.TraceExporter
 import com.procstate.monitor.data.SnapshotEntity
 import com.procstate.monitor.data.SnapshotWithCounts
 import com.procstate.monitor.service.CaptureService
@@ -329,6 +330,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val snapshotCount: StateFlow<Int> =
         dao.getSnapshotCount()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    // ── Export ────────────────────────────────────────────────────────────────
+
+    private val _isExporting = MutableStateFlow(false)
+    val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
+
+    /**
+     * Export timeline data to Chrome Trace Event Format (Perfetto-compatible).
+     * @param rangeMillis How far back to export (0 = all data).
+     * @param writeOutput Callback that receives the JSON string to write to a file.
+     */
+    fun exportTrace(rangeMillis: Long, writeOutput: suspend (String) -> Unit) {
+        if (_isExporting.value) return
+        viewModelScope.launch {
+            _isExporting.value = true
+            try {
+                val json = withContext(Dispatchers.IO) {
+                    val startMs = if (rangeMillis > 0) {
+                        System.currentTimeMillis() - rangeMillis
+                    } else 0L
+                    val entries = dao.getAllEntriesForExport(startMs)
+                    val timestamps = dao.getAllTimestampsForExport(startMs)
+                    val exportEntries = entries.map { row ->
+                        TraceExporter.Entry(
+                            timestampMs = row.timestamp,
+                            name = row.name,
+                            uid = row.uid,
+                            pid = row.pid,
+                            procState = row.procState,
+                            frozen = row.frozen,
+                        )
+                    }
+                    TraceExporter.export(exportEntries, ::getAppLabel, timestamps)
+                }
+                writeOutput(json)
+            } catch (e: Exception) {
+                Log.e("MainVM", "Export failed", e)
+                _captureError.value = "Export failed: ${e.message}"
+            } finally {
+                _isExporting.value = false
+            }
+        }
+    }
 
     // ── Data management ─────────────────────────────────────────────────────
 
