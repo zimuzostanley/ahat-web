@@ -4,11 +4,9 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import com.procstate.monitor.ui.theme.LocalIsDarkTheme
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -159,6 +157,8 @@ private fun SnapshotRow(
     onClick: () -> Unit,
 ) {
     val timeStr = remember(snapshot.timestamp) { formatTimestamp(snapshot.timestamp) }
+    val fullTimeStr = remember(snapshot.timestamp) { formatTimestampFull(snapshot.timestamp) }
+    val context = LocalContext.current
 
     Column(
         modifier = Modifier
@@ -176,6 +176,9 @@ private fun SnapshotRow(
                 timeStr,
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.clickable {
+                    Toast.makeText(context, fullTimeStr, Toast.LENGTH_SHORT).show()
+                },
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -201,12 +204,11 @@ private fun SnapshotRow(
 private fun StackedBar(stateCounts: Map<String, Int>, total: Int, isDark: Boolean) {
     if (total == 0) return
 
+    // Sort by count descending (biggest segments first)
     val sorted = remember(stateCounts) {
-        val ordered = ProcStateColors.order
-            .filter { it in stateCounts }
-            .map { it to stateCounts[it]!! }
-        val known = ordered.map { it.first }.toSet()
-        ordered + stateCounts.filter { it.key !in known }.toList()
+        stateCounts.entries
+            .sortedByDescending { it.value }
+            .map { it.key to it.value }
     }
 
     // Draw using Canvas for segment separators and adaptive text
@@ -275,11 +277,9 @@ private fun SnapshotBreakdown(
     onAddTrackedProcess: (String) -> Unit,
 ) {
     val sorted = remember(snapshot.stateCounts) {
-        val ordered = ProcStateColors.order
-            .filter { it in snapshot.stateCounts }
-            .map { it to snapshot.stateCounts[it]!! }
-        val known = ordered.map { it.first }.toSet()
-        ordered + snapshot.stateCounts.filter { it.key !in known }.toList()
+        snapshot.stateCounts.entries
+            .sortedByDescending { it.value }
+            .map { it.key to it.value }
     }
 
     Column(
@@ -390,7 +390,6 @@ private fun StateRow(
 
 // ── Process list within a state ─────────────────────────────────────────────
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProcessList(
     entries: List<ProcessEntryEntity>,
@@ -444,14 +443,11 @@ private fun ProcessList(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .combinedClickable(
-                        onClick = {},
-                        onLongClick = {
-                            Toast
-                                .makeText(context, "${entry.name} (PID ${entry.pid})", Toast.LENGTH_SHORT)
-                                .show()
-                        },
-                    )
+                    .clickable {
+                        Toast
+                            .makeText(context, "${entry.name} (PID ${entry.pid})", Toast.LENGTH_SHORT)
+                            .show()
+                    }
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -536,6 +532,9 @@ private val timeFormat = object : ThreadLocal<SimpleDateFormat>() {
 private val dateTimeFormat = object : ThreadLocal<SimpleDateFormat>() {
     override fun initialValue() = SimpleDateFormat("MMM dd HH:mm", Locale.US)
 }
+private val fullDateTimeFormat = object : ThreadLocal<SimpleDateFormat>() {
+    override fun initialValue() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+}
 
 fun formatTimestamp(millis: Long): String {
     val now = System.currentTimeMillis()
@@ -544,3 +543,6 @@ fun formatTimestamp(millis: Long): String {
         else -> dateTimeFormat.get()!!.format(Date(millis))
     }
 }
+
+fun formatTimestampFull(millis: Long): String =
+    fullDateTimeFormat.get()!!.format(Date(millis))

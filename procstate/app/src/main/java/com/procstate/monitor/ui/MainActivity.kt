@@ -36,6 +36,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -350,11 +352,14 @@ private fun CaptureControls(
     onStop: () -> Unit,
     onCaptureOnce: () -> Unit,
 ) {
+    var expanded by remember { mutableStateOf(false) }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
+        // Main row: Record/Stop + Snapshot + expand arrow
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -390,42 +395,62 @@ private fun CaptureControls(
                     Icon(Icons.Default.CameraAlt, null, Modifier.size(16.dp))
                 }
                 Spacer(Modifier.width(4.dp))
-                Text("Snap")
+                Text("Snapshot")
+            }
+
+            // Expand/collapse arrow
+            IconButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.size(32.dp),
+            ) {
+                Icon(
+                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = "Recording options",
+                    modifier = Modifier.size(20.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
-        Spacer(Modifier.height(6.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        // Collapsible details
+        androidx.compose.animation.AnimatedVisibility(
+            visible = expanded,
+            enter = androidx.compose.animation.expandVertically(),
+            exit = androidx.compose.animation.shrinkVertically(),
         ) {
-            Text(
-                "Every:",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            DropdownSelector(
-                selected = captureInterval,
-                options = CaptureInterval.entries,
-                label = { it.label },
-                onSelect = onIntervalChange,
-                enabled = !isCapturing,
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Stop after:",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            DropdownSelector(
-                selected = stopAfter,
-                options = StopAfter.entries,
-                label = { it.label },
-                onSelect = onStopAfterChange,
-                enabled = !isCapturing,
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Every:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                DropdownSelector(
+                    selected = captureInterval,
+                    options = CaptureInterval.entries,
+                    label = { it.label },
+                    onSelect = onIntervalChange,
+                    enabled = !isCapturing,
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "Stop after:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                DropdownSelector(
+                    selected = stopAfter,
+                    options = StopAfter.entries,
+                    label = { it.label },
+                    onSelect = onStopAfterChange,
+                    enabled = !isCapturing,
+                )
+            }
         }
     }
 }

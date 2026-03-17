@@ -4,21 +4,17 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import com.procstate.monitor.ui.theme.LocalIsDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -74,7 +70,7 @@ private val TrackColors = listOf(
     TrackColor(Color(0xFF0891B2), Color(0xFF22D3EE)),
 )
 
-private const val COL_WIDTH_DP = 64
+private const val COL_WIDTH_DP = 80
 
 @Composable
 fun ProcessTab(
@@ -206,7 +202,6 @@ fun ProcessTab(
 
 // ── Timeline row with colored dots ──────────────────────────────────────────
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TimelineRow(
     timestamp: Long,
@@ -216,6 +211,7 @@ private fun TimelineRow(
     scrollState: androidx.compose.foundation.ScrollState,
 ) {
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
+    val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
     val context = LocalContext.current
 
     Row(
@@ -230,7 +226,10 @@ private fun TimelineRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .width(72.dp)
-                .padding(start = 12.dp),
+                .padding(start = 12.dp)
+                .clickable {
+                    Toast.makeText(context, fullTimeStr, Toast.LENGTH_SHORT).show()
+                },
         )
 
         Row(
@@ -253,14 +252,11 @@ private fun TimelineRow(
                                 .clip(CircleShape)
                                 .background(dotColor)
                                 .border(1.5.dp, dotColor.copy(alpha = 0.3f), CircleShape)
-                                .combinedClickable(
-                                    onClick = {},
-                                    onLongClick = {
-                                        Toast
-                                            .makeText(context, "$name: $state", Toast.LENGTH_SHORT)
-                                            .show()
-                                    },
-                                ),
+                                .clickable {
+                                    Toast
+                                        .makeText(context, "$name: $state", Toast.LENGTH_SHORT)
+                                        .show()
+                                },
                         )
                     } else {
                         Box(
@@ -281,7 +277,6 @@ private fun TimelineRow(
 
 // ── Tracked process chips (horizontally scrollable) ─────────────────────────
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrackedChipsRow(
     trackedProcesses: List<String>,
@@ -305,7 +300,6 @@ private fun TrackedChipsRow(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ProcessChip(name: String, color: Color, onRemove: () -> Unit) {
     val context = LocalContext.current
@@ -314,10 +308,7 @@ private fun ProcessChip(name: String, color: Color, onRemove: () -> Unit) {
             .clip(RoundedCornerShape(14.dp))
             .background(color.copy(alpha = 0.1f))
             .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
-            .combinedClickable(
-                onClick = {},
-                onLongClick = { Toast.makeText(context, name, Toast.LENGTH_SHORT).show() },
-            )
+            .clickable { Toast.makeText(context, name, Toast.LENGTH_SHORT).show() }
             .padding(start = 8.dp, end = 4.dp, top = 3.dp, bottom = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
