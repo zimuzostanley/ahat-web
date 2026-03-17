@@ -562,11 +562,19 @@ private fun ProcessPickerSheet(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Pin Process", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
-            Text(
-                "${filtered.size} available",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            if (filtered.isNotEmpty()) {
+                androidx.compose.material3.TextButton(
+                    onClick = { filtered.forEach { onSelect(it) } },
+                ) {
+                    Text("Pin all ${filtered.size}")
+                }
+            } else {
+                Text(
+                    "0 available",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Spacer(Modifier.height(12.dp))
 
