@@ -133,9 +133,9 @@ class CaptureService : Service() {
                     }
                     dao.insertSnapshotWithEntries(snapshot, entries)
 
-                    // Auto memory dump for pinned processes
+                    // Auto memory dump for pinned processes (reads live list)
                     if (autoMemoryEnabled && autoMemoryNames.isNotEmpty()) {
-                        for ((mName, mUid) in autoMemoryNames) {
+                        for ((mName, mUid) in autoMemoryNames.toList()) {
                             val proc = processes.find { it.name == mName && it.uid == mUid }
                             if (proc != null) {
                                 try {

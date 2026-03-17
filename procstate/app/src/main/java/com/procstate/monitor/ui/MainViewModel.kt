@@ -95,6 +95,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _autoMemoryDump.value = enabled
         ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
             .putBoolean("auto_memory_dump", enabled).apply()
+        syncAutoMemoryList()
     }
 
     /**
@@ -338,16 +339,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (key in current) return
         _pinnedProcesses.value = current + key
         savePinnedProcesses()
+        syncAutoMemoryList()
     }
 
     fun unpinProcess(key: ProcessKey) {
         _pinnedProcesses.value = _pinnedProcesses.value - key
         savePinnedProcesses()
+        syncAutoMemoryList()
     }
 
     fun clearAllPinnedProcesses() {
         _pinnedProcesses.value = emptyList()
         savePinnedProcesses()
+        syncAutoMemoryList()
+    }
+
+    /** Keep the service's auto-dump list in sync with current pins + toggle. */
+    private fun syncAutoMemoryList() {
+        CaptureService.autoMemoryEnabled = _autoMemoryDump.value
+        CaptureService.autoMemoryNames = if (_autoMemoryDump.value) {
+            _pinnedProcesses.value.map { it.name to it.uid }
+        } else emptyList()
     }
 
     /** Timeline rows, filtered by pinned names then by uid in Kotlin. */

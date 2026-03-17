@@ -938,6 +938,8 @@ fun ProcessDetailSheet(
                     // Memory summary stats
                     if (memoryStats != null && memoryStats.count > 1) {
                         Spacer(Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                        Spacer(Modifier.height(12.dp))
                         Text(
                             "Memory history (${memoryStats.count} samples)",
                             style = MaterialTheme.typography.titleSmall,
@@ -946,7 +948,7 @@ fun ProcessDetailSheet(
                         Spacer(Modifier.height(4.dp))
                         // Header
                         Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            Text("", Modifier.width(100.dp), style = MaterialTheme.typography.labelSmall)
+                            Text("", Modifier.width(80.dp), style = MaterialTheme.typography.labelSmall)
                             Text("Min", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
                                 textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("Avg", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
@@ -991,27 +993,18 @@ fun ProcessDetailSheet(
 @Composable
 private fun MemoryRow(label: String, kb: Long) {
     if (kb <= 0) return
-    Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(80.dp),
-        )
-        Text(
-            formatKb(kb),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(label, Modifier.width(80.dp), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(formatKb(kb), style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface)
     }
 }
 
 @Composable
 private fun MemoryStatRow(label: String, minKb: Long, avgKb: Double, maxKb: Long) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(label, Modifier.width(80.dp), style = MaterialTheme.typography.titleSmall,
+        Text(label, Modifier.width(80.dp), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(formatKb(minKb), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.End)
