@@ -37,6 +37,31 @@ data class ProcessEntryEntity(
     val frozen: Boolean = false,
 )
 
+@Entity(
+    tableName = "memory_snapshots",
+    indices = [
+        Index("name", "uid"),
+        Index("timestamp"),
+        Index("pid"),
+    ],
+)
+data class MemorySnapshotEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val timestamp: Long,
+    val pid: Int,
+    val name: String,
+    val uid: String = "",
+    val totalPssKb: Long = 0,
+    val totalRssKb: Long = 0,
+    val javaHeapKb: Long = 0,
+    val nativeHeapKb: Long = 0,
+    val codeKb: Long = 0,
+    val stackKb: Long = 0,
+    val graphicsKb: Long = 0,
+    val systemKb: Long = 0,
+    val totalSwapKb: Long = 0,
+)
+
 /** Row from the snapshot+state-count JOIN query. */
 data class SnapshotStateRow(
     val id: Long,
@@ -48,6 +73,7 @@ data class SnapshotStateRow(
 /** Row from the process timeline query. */
 data class ProcessTimelineRow(
     val timestamp: Long,
+    val snapshotId: Long = 0,
     val name: String,
     val pid: Int = 0,
     val uid: String = "",
@@ -61,13 +87,8 @@ data class SnapshotFrozenRow(
     val frozenCount: Int,
 )
 
-/**
- * Composite key for pinning: identifies a unique process across restarts.
- * Serialized as "name|uid" for persistence.
- */
 @Immutable
 data class ProcessKey(val name: String, val uid: String) {
-    /** Short display name (last component of package). */
     val shortName: String get() = name.substringAfterLast('.')
 
     fun serialize(): String = "$name|$uid"
@@ -80,7 +101,6 @@ data class ProcessKey(val name: String, val uid: String) {
     }
 }
 
-/** Grouped snapshot with its state counts (built in ViewModel from SnapshotStateRow). */
 @Immutable
 data class SnapshotWithCounts(
     val id: Long,
@@ -90,3 +110,22 @@ data class SnapshotWithCounts(
 ) {
     val totalProcesses: Int get() = stateCounts.values.sum()
 }
+
+data class MemoryDotKey(
+    val timestamp: Long,
+    val name: String,
+    val uid: String,
+)
+
+data class MemoryStatsAggregate(
+    val count: Int,
+    val minPss: Long, val maxPss: Long, val avgPss: Double,
+    val minRss: Long, val maxRss: Long, val avgRss: Double,
+    val minJavaHeap: Long, val maxJavaHeap: Long, val avgJavaHeap: Double,
+    val minNativeHeap: Long, val maxNativeHeap: Long, val avgNativeHeap: Double,
+    val minCode: Long, val maxCode: Long, val avgCode: Double,
+    val minStack: Long, val maxStack: Long, val avgStack: Double,
+    val minGraphics: Long, val maxGraphics: Long, val avgGraphics: Double,
+    val minSystem: Long, val maxSystem: Long, val avgSystem: Double,
+    val minSwap: Long, val maxSwap: Long, val avgSwap: Double,
+)

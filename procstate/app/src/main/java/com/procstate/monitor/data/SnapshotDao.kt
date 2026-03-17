@@ -23,75 +23,58 @@ interface SnapshotDao {
         return id
     }
 
-    /** Snapshots with per-state counts. Limited to 500 most recent. */
     @Query("""
         SELECT s.id, s.timestamp, pe.procState, COUNT(*) as count
         FROM snapshots s
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE s.id IN (
-            SELECT id FROM snapshots
-            WHERE timestamp >= :start
-            ORDER BY timestamp DESC
-            LIMIT 500
+            SELECT id FROM snapshots WHERE timestamp >= :start
+            ORDER BY timestamp DESC LIMIT 500
         )
         GROUP BY s.id, pe.procState
         ORDER BY s.timestamp DESC
     """)
     fun getSnapshotStateCounts(start: Long): Flow<List<SnapshotStateRow>>
 
-    /** Frozen count per snapshot. */
     @Query("""
         SELECT s.id, COUNT(*) as frozenCount
         FROM snapshots s
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE pe.frozen = 1 AND s.id IN (
-            SELECT id FROM snapshots
-            WHERE timestamp >= :start
-            ORDER BY timestamp DESC
-            LIMIT 500
+            SELECT id FROM snapshots WHERE timestamp >= :start
+            ORDER BY timestamp DESC LIMIT 500
         )
         GROUP BY s.id
     """)
     fun getSnapshotFrozenCounts(start: Long): Flow<List<SnapshotFrozenRow>>
 
-    /** All process entries for a single snapshot. */
     @Query("SELECT * FROM process_entries WHERE snapshotId = :snapshotId ORDER BY procState, name")
     suspend fun getEntriesForSnapshot(snapshotId: Long): List<ProcessEntryEntity>
 
-    /**
-     * Process state timeline filtered by names. UID filtering done in Kotlin
-     * since Room doesn't support composite IN clauses.
-     */
+    /** Process timeline with snapshotId for memory enrichment. */
     @Query("""
-        SELECT s.timestamp, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
+        SELECT s.timestamp, s.id as snapshotId, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
         FROM snapshots s
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE pe.name IN (:names) AND s.id IN (
-            SELECT id FROM snapshots
-            WHERE timestamp >= :start
-            ORDER BY timestamp DESC
-            LIMIT 500
+            SELECT id FROM snapshots WHERE timestamp >= :start
+            ORDER BY timestamp DESC LIMIT 500
         )
         ORDER BY s.timestamp ASC
     """)
     fun getProcessTimeline(names: List<String>, start: Long): Flow<List<ProcessTimelineRow>>
 
-    /** All distinct process name+uid pairs ever seen. */
     @Query("SELECT DISTINCT name, uid FROM process_entries ORDER BY name")
     fun getDistinctProcessKeys(): Flow<List<ProcessKeyRow>>
 
-    /** All snapshot timestamps in range (for ensuring empty rows show in process timeline). */
     @Query("""
-        SELECT timestamp FROM snapshots
-        WHERE timestamp >= :start
-        ORDER BY timestamp DESC
-        LIMIT 500
+        SELECT timestamp FROM snapshots WHERE timestamp >= :start
+        ORDER BY timestamp DESC LIMIT 500
     """)
     fun getSnapshotTimestamps(start: Long): Flow<List<Long>>
 
-    /** All entries for export — no process filter, just time range. */
     @Query("""
-        SELECT s.timestamp, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
+        SELECT s.timestamp, 0 as snapshotId, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
         FROM snapshots s
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE s.timestamp >= :start
@@ -99,7 +82,6 @@ interface SnapshotDao {
     """)
     suspend fun getAllEntriesForExport(start: Long): List<ProcessTimelineRow>
 
-    /** All snapshot timestamps for export. */
     @Query("SELECT timestamp FROM snapshots WHERE timestamp >= :start ORDER BY timestamp")
     suspend fun getAllTimestampsForExport(start: Long): List<Long>
 
@@ -111,7 +93,53 @@ interface SnapshotDao {
 
     @Query("DELETE FROM snapshots")
     suspend fun deleteAll()
+
+    // ── Memory snapshots ────────────────────────────────────────────────────
+
+    @Insert
+    suspend fun insertMemorySnapshot(snapshot: MemorySnapshotEntity): Long
+
+    /** Get memory for a specific process at a timestamp (closest match). */
+    @Query("""
+        SELECT * FROM memory_snapshots
+        WHERE name = :name AND uid = :uid AND pid = :pid
+        ORDER BY ABS(timestamp - :timestamp)
+        LIMIT 1
+    """)
+    suspend fun getMemoryForDot(name: String, uid: String, pid: Int, timestamp: Long): MemorySnapshotEntity?
+
+    /** Timestamps+name+uid that have memory data (for dot border rendering). */
+    @Query("""
+        SELECT DISTINCT timestamp, name, uid FROM memory_snapshots
+        WHERE timestamp >= :start
+    """)
+    fun getMemoryEnrichedDots(start: Long): Flow<List<MemoryDotKey>>
+
+    /** Memory summary stats for a process in a time range. */
+    @Query("""
+        SELECT
+            COUNT(*) as count,
+            MIN(totalPssKb) as minPss, MAX(totalPssKb) as maxPss, AVG(totalPssKb) as avgPss,
+            MIN(totalRssKb) as minRss, MAX(totalRssKb) as maxRss, AVG(totalRssKb) as avgRss,
+            MIN(javaHeapKb) as minJavaHeap, MAX(javaHeapKb) as maxJavaHeap, AVG(javaHeapKb) as avgJavaHeap,
+            MIN(nativeHeapKb) as minNativeHeap, MAX(nativeHeapKb) as maxNativeHeap, AVG(nativeHeapKb) as avgNativeHeap,
+            MIN(codeKb) as minCode, MAX(codeKb) as maxCode, AVG(codeKb) as avgCode,
+            MIN(stackKb) as minStack, MAX(stackKb) as maxStack, AVG(stackKb) as avgStack,
+            MIN(graphicsKb) as minGraphics, MAX(graphicsKb) as maxGraphics, AVG(graphicsKb) as avgGraphics,
+            MIN(systemKb) as minSystem, MAX(systemKb) as maxSystem, AVG(systemKb) as avgSystem,
+            MIN(totalSwapKb) as minSwap, MAX(totalSwapKb) as maxSwap, AVG(totalSwapKb) as avgSwap
+        FROM memory_snapshots
+        WHERE name = :name AND uid = :uid AND timestamp >= :start
+    """)
+    suspend fun getMemoryStats(name: String, uid: String, start: Long): MemoryStatsAggregate?
+
+    /** All memory snapshots for export. */
+    @Query("""
+        SELECT * FROM memory_snapshots
+        WHERE timestamp >= :start
+        ORDER BY name, uid, timestamp
+    """)
+    suspend fun getAllMemoryForExport(start: Long): List<MemorySnapshotEntity>
 }
 
-/** Raw row from getDistinctProcessKeys. */
 data class ProcessKeyRow(val name: String, val uid: String)

@@ -9,6 +9,9 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.procstate.monitor.data.AppDatabase
+import com.procstate.monitor.data.MemoryDotKey
+import com.procstate.monitor.data.MemorySnapshotEntity
+import com.procstate.monitor.data.MemoryStatsAggregate
 import com.procstate.monitor.data.ProcessEntryEntity
 import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.ShellHelper
@@ -331,16 +334,86 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         dao.getSnapshotCount()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    // ── Memory dump ────────────────────────────────────────────────────────
+
+    private val _memoryDumpProgress = MutableStateFlow<String?>(null)
+    val memoryDumpProgress: StateFlow<String?> = _memoryDumpProgress.asStateFlow()
+
+    /**
+     * Capture a fresh snapshot, then dump meminfo for a specific process.
+     * Stores the memory data linked to the snapshot timestamp.
+     */
+    fun dumpMemory(pid: Int, name: String, uid: String, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            _memoryDumpProgress.value = "Capturing snapshot..."
+            try {
+                // 1. Capture a fresh snapshot first
+                val snapshotTs = withContext(Dispatchers.IO) {
+                    val processes = ShellHelper.getProcessList()
+                    val frozenPids = ShellHelper.getFrozenPids()
+                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis())
+                    val entries = processes.map { p ->
+                        ProcessEntryEntity(
+                            snapshotId = 0,
+                            pid = p.pid, name = p.name, uid = p.uid,
+                            procState = p.procState,
+                            frozen = p.pid in frozenPids,
+                        )
+                    }
+                    dao.insertSnapshotWithEntries(snapshot, entries)
+                    snapshot.timestamp
+                }
+
+                // 2. Dump meminfo for the specific PID
+                _memoryDumpProgress.value = "Dumping meminfo PID $pid..."
+                val memInfo = withContext(Dispatchers.IO) { ShellHelper.getMemInfo(pid) }
+
+                // 3. Store memory snapshot
+                withContext(Dispatchers.IO) {
+                    dao.insertMemorySnapshot(MemorySnapshotEntity(
+                        timestamp = snapshotTs,
+                        pid = pid, name = name, uid = uid,
+                        totalPssKb = memInfo.totalPssKb,
+                        totalRssKb = memInfo.totalRssKb,
+                        javaHeapKb = memInfo.javaHeapKb,
+                        nativeHeapKb = memInfo.nativeHeapKb,
+                        codeKb = memInfo.codeKb,
+                        stackKb = memInfo.stackKb,
+                        graphicsKb = memInfo.graphicsKb,
+                        systemKb = memInfo.systemKb,
+                        totalSwapKb = memInfo.totalSwapKb,
+                    ))
+                }
+                _memoryDumpProgress.value = null
+                onDone()
+            } catch (e: Exception) {
+                Log.e("MainVM", "Memory dump failed", e)
+                _captureError.value = "Memory dump failed: ${e.message}"
+                _memoryDumpProgress.value = null
+            }
+        }
+    }
+
+    suspend fun getMemoryForDot(name: String, uid: String, pid: Int, timestamp: Long): MemorySnapshotEntity? =
+        dao.getMemoryForDot(name, uid, pid, timestamp)
+
+    suspend fun getMemoryStats(name: String, uid: String): MemoryStatsAggregate? {
+        val start = System.currentTimeMillis() - _timeRange.value.millis
+        return dao.getMemoryStats(name, uid, start)
+    }
+
+    /** Set of (timestamp, name, uid) for dots with memory data. */
+    val memoryEnrichedDots: StateFlow<Set<MemoryDotKey>> =
+        combine(_timeRange, _ticker) { range, tick -> tick - range.millis }
+            .flatMapLatest { start -> dao.getMemoryEnrichedDots(start) }
+            .map { rows -> rows.toSet() }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
     // ── Export ────────────────────────────────────────────────────────────────
 
     private val _isExporting = MutableStateFlow(false)
     val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
 
-    /**
-     * Export timeline data to Chrome Trace Event Format (Perfetto-compatible).
-     * @param rangeMillis How far back to export (0 = all data).
-     * @param writeOutput Callback that receives the JSON string to write to a file.
-     */
     fun exportTrace(rangeMillis: Long, writeOutput: suspend (String) -> Unit) {
         if (_isExporting.value) return
         viewModelScope.launch {
@@ -352,6 +425,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     } else 0L
                     val entries = dao.getAllEntriesForExport(startMs)
                     val timestamps = dao.getAllTimestampsForExport(startMs)
+                    val memSnapshots = dao.getAllMemoryForExport(startMs)
                     val exportEntries = entries.map { row ->
                         TraceExporter.Entry(
                             timestampMs = row.timestamp,
@@ -362,7 +436,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             frozen = row.frozen,
                         )
                     }
-                    TraceExporter.export(exportEntries, ::getAppLabel, timestamps)
+                    val memEntries = memSnapshots.map { m ->
+                        TraceExporter.MemoryEntry(
+                            timestampMs = m.timestamp,
+                            name = m.name, uid = m.uid, pid = m.pid,
+                            totalPssKb = m.totalPssKb, totalRssKb = m.totalRssKb,
+                            javaHeapKb = m.javaHeapKb, nativeHeapKb = m.nativeHeapKb,
+                            codeKb = m.codeKb, stackKb = m.stackKb,
+                            graphicsKb = m.graphicsKb, systemKb = m.systemKb,
+                            totalSwapKb = m.totalSwapKb,
+                        )
+                    }
+                    TraceExporter.export(exportEntries, ::getAppLabel, timestamps, memEntries)
                 }
                 writeOutput(json)
             } catch (e: Exception) {

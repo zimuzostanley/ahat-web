@@ -212,4 +212,76 @@ object ShellHelper {
         Log.d(TAG, "Total: ${list.size} processes")
         return list
     }
+
+    // ── Memory info ─────────────────────────────────────────────────────────
+
+    data class MemInfo(
+        val totalPssKb: Long = 0,
+        val totalRssKb: Long = 0,
+        val javaHeapKb: Long = 0,
+        val nativeHeapKb: Long = 0,
+        val codeKb: Long = 0,
+        val stackKb: Long = 0,
+        val graphicsKb: Long = 0,
+        val systemKb: Long = 0,
+        val totalSwapKb: Long = 0,
+    )
+
+    // Parse the "App Summary" section which has the correct breakdown.
+    // Lines look like: "           Java Heap:    12345"
+    private val SUMMARY_LINE = Regex(
+        """^\s*(Java Heap|Native Heap|Code|Stack|Graphics|System):\s+(\d+)"""
+    )
+    private val TOTAL_PSS = Regex("""TOTAL PSS:\s+(\d+)""")
+    private val TOTAL_RSS = Regex("""TOTAL RSS:\s+(\d+)""")
+    private val TOTAL_SWAP = Regex("""TOTAL SWAP.*?:\s+(\d+)""")
+
+    fun parseMemInfoOutput(output: String): MemInfo {
+        var totalPss = 0L; var totalRss = 0L; var totalSwap = 0L
+        var javaHeap = 0L; var nativeHeap = 0L; var code = 0L
+        var stack = 0L; var graphics = 0L; var system = 0L
+
+        // Parse all category lines — later ones (from App Summary) override earlier ones
+        for (line in output.lines()) {
+            SUMMARY_LINE.find(line)?.let { m ->
+                val kb = m.groupValues[2].toLong()
+                when (m.groupValues[1]) {
+                    "Java Heap" -> javaHeap = kb
+                    "Native Heap" -> nativeHeap = kb
+                    "Code" -> code = kb
+                    "Stack" -> stack = kb
+                    "Graphics" -> graphics = kb
+                    "System" -> system = kb
+                }
+            }
+
+            TOTAL_PSS.find(line)?.let { totalPss = it.groupValues[1].toLong() }
+            TOTAL_RSS.find(line)?.let { totalRss = it.groupValues[1].toLong() }
+            TOTAL_SWAP.find(line)?.let { totalSwap = it.groupValues[1].toLong() }
+        }
+
+        // Fallback: TOTAL row from detail table
+        if (totalPss == 0L) {
+            for (line in output.lines()) {
+                if (line.trimStart().startsWith("TOTAL") && !line.contains("PSS") && !line.contains("RSS") && !line.contains("SWAP")) {
+                    val parts = line.trim().split(Regex("\\s+"))
+                    if (parts.size >= 2) {
+                        totalPss = parts[1].toLongOrNull() ?: 0
+                        if (totalPss > 0) break
+                    }
+                }
+            }
+        }
+
+        return MemInfo(totalPss, totalRss, javaHeap, nativeHeap, code, stack, graphics, system, totalSwap)
+    }
+
+    fun getMemInfo(pid: Int): MemInfo {
+        val output = exec("dumpsys meminfo $pid")
+        val info = parseMemInfoOutput(output)
+        Log.d(TAG, "MemInfo PID $pid: PSS=${info.totalPssKb} RSS=${info.totalRssKb} " +
+            "Java=${info.javaHeapKb} Native=${info.nativeHeapKb} " +
+            "Code=${info.codeKb} Gfx=${info.graphicsKb}")
+        return info
+    }
 }

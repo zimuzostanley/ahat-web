@@ -46,10 +46,27 @@ object TraceExporter {
      * @param allTimestampsMs All snapshot timestamps in range (for determining slice end times).
      * @return JSON string in Chrome Trace Event Object Format.
      */
+    data class MemoryEntry(
+        val timestampMs: Long,
+        val name: String,
+        val uid: String,
+        val pid: Int,
+        val totalPssKb: Long,
+        val totalRssKb: Long,
+        val javaHeapKb: Long,
+        val nativeHeapKb: Long,
+        val codeKb: Long,
+        val stackKb: Long,
+        val graphicsKb: Long,
+        val systemKb: Long,
+        val totalSwapKb: Long,
+    )
+
     fun export(
         entries: List<Entry>,
         getAppLabel: (String) -> String,
         allTimestampsMs: List<Long>,
+        memoryEntries: List<MemoryEntry> = emptyList(),
     ): String {
         val events = JSONArray()
         val sortedTimestamps = allTimestampsMs.sorted()
@@ -147,6 +164,35 @@ object TraceExporter {
                     tsUs = instant.tsUs,
                     args = instant.args,
                 ))
+            }
+
+            // Track 4: Memory counters (if any memory data exists)
+            val memForProcess = memoryEntries
+                .filter { it.name == name && it.uid == uid }
+                .sortedBy { it.timestampMs }
+            if (memForProcess.isNotEmpty()) {
+                events.put(metadataEvent("thread_name", tracePid, 4, "Memory"))
+                for (mem in memForProcess) {
+                    events.put(JSONObject().apply {
+                        put("ph", "C")
+                        put("name", "memory")
+                        put("cat", "memory")
+                        put("pid", tracePid)
+                        put("tid", 4)
+                        put("ts", mem.timestampMs * 1000)
+                        put("args", JSONObject().apply {
+                            put("Total PSS (KB)", mem.totalPssKb)
+                            put("Total RSS (KB)", mem.totalRssKb)
+                            put("Java Heap (KB)", mem.javaHeapKb)
+                            put("Native Heap (KB)", mem.nativeHeapKb)
+                            put("Code (KB)", mem.codeKb)
+                            put("Stack (KB)", mem.stackKb)
+                            put("Graphics (KB)", mem.graphicsKb)
+                            put("System (KB)", mem.systemKb)
+                            if (mem.totalSwapKb > 0) put("Swap (KB)", mem.totalSwapKb)
+                        })
+                    })
+                }
             }
         }
 
