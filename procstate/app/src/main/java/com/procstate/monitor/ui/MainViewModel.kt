@@ -92,7 +92,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val ai = pm.getApplicationInfo(packageName, 0)
                 pm.getApplicationLabel(ai).toString()
             } catch (_: Exception) {
-                processName.substringAfterLast('.')
+                processName
             }
         }
     }
