@@ -100,6 +100,8 @@ data class DotDetail(
     val frozen: Boolean,
     val started: Boolean,
     val timestamp: String,
+    /** State counts up to this point in time: state -> count, sorted by count desc. */
+    val stateHistory: List<Pair<String, Int>> = emptyList(),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -300,6 +302,7 @@ fun ProcessTab(
                         isDark = isDark,
                         scrollState = scrollState,
                         selectedDotId = selectedDotId,
+                        allTimelineRows = timelineRows,
                         onShowDetail = { detail, name, ts ->
                             dotDetail = detail
                             selectedDotId = name to ts
@@ -338,6 +341,7 @@ private fun TimelineRow(
     isDark: Boolean,
     scrollState: androidx.compose.foundation.ScrollState,
     selectedDotId: Pair<String, Long>?,
+    allTimelineRows: List<ProcessTimelineRow>,
     onShowDetail: (DotDetail, String, Long) -> Unit,
 ) {
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
@@ -390,6 +394,12 @@ private fun TimelineRow(
                         )
                         val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
                         val onTap: () -> Unit = {
+                            // Compute state history up to this timestamp
+                            val history = allTimelineRows
+                                .filter { it.name == key.name && it.uid == key.uid && it.timestamp <= timestamp }
+                                .groupBy { it.procState }
+                                .map { (state, rows) -> state to rows.size }
+                                .sortedByDescending { it.second }
                             onShowDetail(DotDetail(
                                 name = key.name,
                                 uid = dot.uid,
@@ -399,6 +409,7 @@ private fun TimelineRow(
                                 frozen = dot.frozen,
                                 started = dot.marker == Marker.STARTED,
                                 timestamp = fullTimeStr,
+                                stateHistory = history,
                             ), key.name, timestamp)
                         }
 
@@ -695,6 +706,70 @@ fun ProcessDetailSheet(
             }
             if (detail.started) {
                 DetailRow("Event", "Process start")
+            }
+
+            // State history mini bars
+            if (detail.stateHistory.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                Spacer(Modifier.height(12.dp))
+
+                val total = detail.stateHistory.sumOf { it.second }
+                Text(
+                    "State history ($total snapshots)",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+
+                // Stacked bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(20.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                ) {
+                    for ((state, count) in detail.stateHistory) {
+                        val color = ProcStateColors.get(state, isDark)
+                        Box(
+                            modifier = Modifier
+                                .weight(count.toFloat())
+                                .fillMaxHeight()
+                                .background(color),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                // Breakdown rows
+                for ((state, count) in detail.stateHistory) {
+                    val color = ProcStateColors.get(state, isDark)
+                    val pct = (count * 100f / total).let { "%.0f".format(it) }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(color),
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            ProcStateColors.label(state),
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "$count ($pct%)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
         }
     }
