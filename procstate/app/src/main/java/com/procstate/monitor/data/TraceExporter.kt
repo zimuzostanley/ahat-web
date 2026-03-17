@@ -175,8 +175,8 @@ object TraceExporter {
                 for (mem in memForProcess) {
                     events.put(JSONObject().apply {
                         put("ph", "C")
-                        put("name", "memory")
-                        put("cat", "memory")
+                        put("name", "Memory")
+                        put("cat", "Memory")
                         put("pid", tracePid)
                         put("tid", 4)
                         put("ts", mem.timestampMs * 1000)
