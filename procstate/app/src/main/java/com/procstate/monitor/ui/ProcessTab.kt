@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -90,7 +91,7 @@ fun ProcessTab(
     if (showPicker) {
         ModalBottomSheet(
             onDismissRequest = onDismissPicker,
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
             ProcessPickerSheet(
                 allNames = allProcessNames,
@@ -416,6 +417,7 @@ private fun ProcessPickerSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .fillMaxHeight(0.8f)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(

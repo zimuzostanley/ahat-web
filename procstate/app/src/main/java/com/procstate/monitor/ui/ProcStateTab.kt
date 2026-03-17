@@ -580,7 +580,7 @@ private val dateTimeFormat = object : ThreadLocal<SimpleDateFormat>() {
     override fun initialValue() = SimpleDateFormat("MMM dd HH:mm", Locale.US)
 }
 private val fullDateTimeFormat = object : ThreadLocal<SimpleDateFormat>() {
-    override fun initialValue() = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+    override fun initialValue() = SimpleDateFormat("EEE, yyyy-MM-dd HH:mm:ss", Locale.US)
 }
 
 fun formatTimestamp(millis: Long): String {
