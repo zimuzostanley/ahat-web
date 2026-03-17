@@ -133,6 +133,8 @@ fun ProcessTab(
 ) {
     val isDark = LocalIsDarkTheme.current
     var dotDetail by remember { mutableStateOf<DotDetail?>(null) }
+    val timelineListState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
     // Track which dot is selected (name, timestamp, pid) for enlarged state
     var selectedDotId by remember { mutableStateOf<Triple<String, Long, Int>?>(null) }
 
@@ -164,9 +166,10 @@ fun ProcessTab(
             memoryDumpProgress = memoryDumpProgress,
             onDumpMemory = if (onDumpMemory != null) { pid, name, uid ->
                 onDumpMemory(pid, name, uid) {
-                    // On done: close drawer, it will reopen with fresh data on next tap
                     dotDetail = null
                     selectedDotId = null
+                    // Scroll to top to show the new snapshot with memory data
+                    coroutineScope.launch { timelineListState.animateScrollToItem(0) }
                 }
             } else null,
         )
@@ -320,21 +323,12 @@ fun ProcessTab(
             }
         }
 
-        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
-        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val listState = timelineListState
+        val scope = coroutineScope
         val totalItems = timelineByTimestamp.size
-        val scrolledFromTop by remember {
+        val showFab by remember {
             androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 3 }
         }
-        val atBottom by remember {
-            androidx.compose.runtime.derivedStateOf {
-                val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
-                last != null && last.index >= totalItems - 2
-            }
-        }
-        val showFab = scrolledFromTop || atBottom
-        // Up arrow to jump to newest (top), down arrow to jump to oldest (bottom)
-        val goUp = scrolledFromTop
 
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -369,18 +363,12 @@ fun ProcessTab(
                 exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
             ) {
                 androidx.compose.material3.SmallFloatingActionButton(
-                    onClick = {
-                        scope.launch {
-                            if (goUp) listState.animateScrollToItem(0)
-                            else listState.animateScrollToItem(totalItems - 1)
-                        }
-                    },
+                    onClick = { scope.launch { listState.animateScrollToItem(0) } },
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ) {
                     Icon(
-                        if (goUp) Icons.Default.KeyboardArrowUp
-                        else Icons.Default.KeyboardArrowDown,
+                        Icons.Default.KeyboardArrowUp,
                         "Scroll",
                         Modifier.size(20.dp),
                     )
