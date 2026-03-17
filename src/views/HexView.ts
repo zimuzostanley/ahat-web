@@ -17,7 +17,7 @@ export interface ExtractedDuplicate {
   totalBytes: number;
 }
 
-type DupSortField = "count" | "totalBytes";
+type DupSortField = "count" | "totalBytes" | "value";
 
 export function computeExtractedDuplicates(strings: { offset: number; str: string }[]): ExtractedDuplicate[] {
   const groups = new Map<string, { count: number; totalBytes: number }>();
@@ -307,6 +307,8 @@ function HexView(): m.Component<HexViewAttrs> {
   let showDuplicates = false;
   let dupSortField: DupSortField = "totalBytes";
   let dupSortAsc = false;
+  let dupFilter = "";
+  let dupShowCount = MAX_DISPLAYED_STRINGS;
 
   // Cached expensive computations with dependency tracking
   let cachedBuffer: ArrayBuffer | undefined;
@@ -565,12 +567,20 @@ function HexView(): m.Component<HexViewAttrs> {
       installKeyHandler(diffBaseline, diffRows);
 
       const duplicates = showDuplicates ? getDuplicates(strings) : [];
+      const filteredDups = showDuplicates && dupFilter
+        ? duplicates.filter(d => d.value.toLowerCase().includes(dupFilter.toLowerCase()))
+        : duplicates;
       const sortedDups = showDuplicates
-        ? [...duplicates].sort((a, b) => {
+        ? [...filteredDups].sort((a, b) => {
+            if (dupSortField === "value") {
+              const cmp = a.value.localeCompare(b.value);
+              return dupSortAsc ? cmp : -cmp;
+            }
             const cmp = a[dupSortField] - b[dupSortField];
             return dupSortAsc ? cmp : -cmp;
           })
         : [];
+      const displayDups = sortedDups.slice(0, dupShowCount);
 
       const filteredStrings = stringFilter
         ? strings.filter(s => s.str.toLowerCase().includes(stringFilter.toLowerCase()))
@@ -752,23 +762,40 @@ function HexView(): m.Component<HexViewAttrs> {
                     onclick: () => { showDuplicates = true; },
                   }, `Duplicates${duplicates.length > 0 || showDuplicates ? ` (${getDuplicates(strings).length.toLocaleString()})` : ""}`),
                 ),
-                !showDuplicates && m("input", {
-                  className: "ah-hex-strings__input",
-                  placeholder: "Filter strings\u2026",
-                  value: stringFilter,
-                  oninput: (e: Event) => { stringFilter = (e.target as HTMLInputElement).value; },
-                  oncreate: (vn: m.VnodeDOM) => { (vn.dom as HTMLInputElement).focus(); },
-                }),
-                !showDuplicates && m("div", { className: "ah-hex-strings__count" },
-                  filteredStrings.length === strings.length
-                    ? `${strings.length.toLocaleString()} strings`
-                    : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`,
-                  ` (\u2265${MIN_STRING_LEN} chars)`)
+                showDuplicates
+                  ? m(Fragment, null,
+                      m("input", {
+                        className: "ah-hex-strings__input",
+                        placeholder: "Filter duplicates\u2026",
+                        value: dupFilter,
+                        oninput: (e: Event) => { dupFilter = (e.target as HTMLInputElement).value; dupShowCount = MAX_DISPLAYED_STRINGS; },
+                        oncreate: (vn: m.VnodeDOM) => { (vn.dom as HTMLInputElement).focus(); },
+                      }),
+                      m("div", { className: "ah-hex-strings__count" },
+                        filteredDups.length === duplicates.length
+                          ? `${duplicates.length.toLocaleString()} duplicate groups`
+                          : `${filteredDups.length.toLocaleString()} / ${duplicates.length.toLocaleString()}`)
+                    )
+                  : m(Fragment, null,
+                      m("input", {
+                        className: "ah-hex-strings__input",
+                        placeholder: "Filter strings\u2026",
+                        value: stringFilter,
+                        oninput: (e: Event) => { stringFilter = (e.target as HTMLInputElement).value; },
+                        oncreate: (vn: m.VnodeDOM) => { (vn.dom as HTMLInputElement).focus(); },
+                      }),
+                      m("div", { className: "ah-hex-strings__count" },
+                        filteredStrings.length === strings.length
+                          ? `${strings.length.toLocaleString()} strings`
+                          : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`,
+                        ` (\u2265${MIN_STRING_LEN} chars)`)
+                    )
               ),
               showDuplicates
                 ? m("div", { className: "ah-hex-strings__list" },
                     sortedDups.length === 0
-                      ? m("div", { style: { padding: "1rem", color: "var(--ah-text-faint)", textAlign: "center", fontSize: "0.75rem" } }, "No duplicate strings found")
+                      ? m("div", { style: { padding: "1rem", color: "var(--ah-text-faint)", textAlign: "center", fontSize: "0.75rem" } },
+                          dupFilter ? "No matching duplicates" : "No duplicate strings found")
                       : m(Fragment, null,
                           m("div", { className: "ah-hex-strings__dup-header" },
                             m("span", {
@@ -779,9 +806,12 @@ function HexView(): m.Component<HexViewAttrs> {
                               className: "ah-hex-strings__dup-col ah-hex-strings__dup-col--sortable",
                               onclick: () => toggleDupSort("count"),
                             }, `Count ${dupSortField === "count" ? (dupSortAsc ? "\u25B2" : "\u25BC") : ""}`),
-                            m("span", { className: "ah-hex-strings__dup-col ah-hex-strings__dup-col--value" }, "String"),
+                            m("span", {
+                              className: "ah-hex-strings__dup-col ah-hex-strings__dup-col--value ah-hex-strings__dup-col--sortable",
+                              onclick: () => toggleDupSort("value"),
+                            }, `String ${dupSortField === "value" ? (dupSortAsc ? "\u25B2" : "\u25BC") : ""}`),
                           ),
-                          sortedDups.map((d, i) =>
+                          displayDups.map((d, i) =>
                             m("div", {
                               key: i,
                               className: "ah-hex-strings__row",
@@ -792,6 +822,14 @@ function HexView(): m.Component<HexViewAttrs> {
                               m("span", { className: "ah-hex-strings__dup-col" }, d.count.toLocaleString()),
                               m("span", { className: "ah-hex-strings__dup-col ah-hex-strings__dup-col--value" }, d.value),
                             )
+                          ),
+                          sortedDups.length > dupShowCount && (
+                            m("div", { style: { padding: "0.5rem", fontSize: "10px", color: "var(--ah-text-faint)", textAlign: "center" } },
+                              "Showing ", dupShowCount.toLocaleString(), " of ", sortedDups.length.toLocaleString(),
+                              " \u2014 ",
+                              m("button", { className: "ah-more-link", onclick: () => { dupShowCount = Math.min(dupShowCount + 5_000, sortedDups.length); } }, "show more"),
+                              " ",
+                              m("button", { className: "ah-more-link", onclick: () => { dupShowCount = sortedDups.length; } }, "show all"))
                           ),
                         )
                   )
