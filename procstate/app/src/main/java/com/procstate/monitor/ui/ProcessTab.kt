@@ -686,12 +686,10 @@ fun ProcessDetailSheet(
 
             // Details
             DetailRow("Package", detail.name.substringBefore(':'))
-            if (detail.name.contains(':')) {
-                DetailRow("Process", detail.name)
-            }
+            DetailRow("Process", detail.name)
             DetailRow("UID", detail.uid)
             if (detail.pid > 0) DetailRow("PID", detail.pid.toString())
-            DetailRow("OOM Adj", "${ProcStateColors.label(detail.state)} (${detail.state})")
+            DetailRow("State", "${ProcStateColors.label(detail.state)} (${detail.state})")
             if (detail.frozen) {
                 DetailRow("Frozen", "Yes")
             }
