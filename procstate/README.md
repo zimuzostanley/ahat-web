@@ -12,6 +12,8 @@ adb install procstate-debug.apk
 
 ## Grant permissions
 
+These are development-only permissions that can't be requested at runtime — they must be granted via ADB. `DUMP` is required to run `dumpsys activity lru` which provides the process state list. `PACKAGE_USAGE_STATS` enables frozen process detection.
+
 ```bash
 adb shell pm grant com.procstate.monitor android.permission.DUMP
 adb shell pm grant com.procstate.monitor android.permission.PACKAGE_USAGE_STATS
