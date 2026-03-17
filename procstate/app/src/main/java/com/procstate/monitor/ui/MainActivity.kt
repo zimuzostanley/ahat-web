@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -45,6 +46,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
@@ -80,10 +84,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.material.ExperimentalMaterialApi
-import androidx.compose.material.pullrefresh.PullRefreshIndicator
-import androidx.compose.material.pullrefresh.pullRefresh
-import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import com.procstate.monitor.data.ShellHelper
 import com.procstate.monitor.service.CaptureService
 import com.procstate.monitor.ui.theme.ProcStateTheme
@@ -92,7 +92,7 @@ class MainActivity : ComponentActivity() {
 
     private val notifPermLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { /* best effort */ }
+    ) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -104,9 +104,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: MainViewModel = viewModel()
             val themeMode by vm.themeMode.collectAsState()
-            ProcStateTheme(themeMode = themeMode) {
-                ProcStateApp(vm)
-            }
+            ProcStateTheme(themeMode = themeMode) { ProcStateApp(vm) }
         }
     }
 }
@@ -118,9 +116,7 @@ private fun ProcStateApp(vm: MainViewModel) {
 
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
-            override fun onReceive(ctx: Context?, intent: Intent?) {
-                vm.refreshCaptureStatus()
-            }
+            override fun onReceive(ctx: Context?, intent: Intent?) { vm.refreshCaptureStatus() }
         }
         val filter = IntentFilter(CaptureService.ACTION_SNAPSHOT_SAVED)
         if (Build.VERSION.SDK_INT >= 33) {
@@ -134,6 +130,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     var selectedTab by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
     var showProcessPicker by remember { mutableStateOf(false) }
+    var showRecordSheet by remember { mutableStateOf(false) }
 
     val isCapturing by vm.isCapturing.collectAsState()
     val isRefreshing by vm.isRefreshing.collectAsState()
@@ -161,15 +158,36 @@ private fun ProcStateApp(vm: MainViewModel) {
                             Spacer(Modifier.width(8.dp))
                             PulsingDot()
                             Spacer(Modifier.width(6.dp))
-                            Text(
-                                "REC",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
-                            )
+                            Column {
+                                Text(
+                                    "REC ${captureInterval.label}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
+                                if (stopAfter != StopAfter.NEVER) {
+                                    Text(
+                                        "stop in ${stopAfter.label}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         }
                     }
                 },
                 actions = {
+                    // Record / Stop button in top bar
+                    if (isCapturing) {
+                        IconButton(onClick = vm::stopCapture) {
+                            Icon(Icons.Default.Stop, "Stop recording",
+                                tint = MaterialTheme.colorScheme.error)
+                        }
+                    } else {
+                        IconButton(onClick = { showRecordSheet = true }) {
+                            Icon(Icons.Default.PlayArrow, "Record")
+                        }
+                    }
+                    // Add process (only on By Process tab)
                     if (selectedTab == 1) {
                         IconButton(onClick = { showProcessPicker = !showProcessPicker }) {
                             Icon(
@@ -198,17 +216,6 @@ private fun ProcStateApp(vm: MainViewModel) {
             if (!permState.canCapture) {
                 PermissionBanner(permState)
             }
-
-            // Capture controls
-            CaptureControls(
-                isCapturing = isCapturing,
-                captureInterval = captureInterval,
-                stopAfter = stopAfter,
-                onIntervalChange = vm::setCaptureInterval,
-                onStopAfterChange = vm::setStopAfter,
-                onStart = vm::startCapture,
-                onStop = vm::stopCapture,
-            )
 
             // Error banner
             AnimatedVisibility(
@@ -290,6 +297,26 @@ private fun ProcStateApp(vm: MainViewModel) {
         }
     }
 
+    // Record bottom sheet
+    if (showRecordSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showRecordSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            RecordSheet(
+                captureInterval = captureInterval,
+                stopAfter = stopAfter,
+                onIntervalChange = vm::setCaptureInterval,
+                onStopAfterChange = vm::setStopAfter,
+                onStart = {
+                    vm.startCapture()
+                    showRecordSheet = false
+                },
+            )
+        }
+    }
+
+    // Settings bottom sheet
     if (showSettings) {
         ModalBottomSheet(
             onDismissRequest = { showSettings = false },
@@ -304,6 +331,75 @@ private fun ProcStateApp(vm: MainViewModel) {
                 onDismiss = { showSettings = false },
             )
         }
+    }
+}
+
+// ── Record sheet ────────────────────────────────────────────────────────────
+
+@Composable
+private fun RecordSheet(
+    captureInterval: CaptureInterval,
+    stopAfter: StopAfter,
+    onIntervalChange: (CaptureInterval) -> Unit,
+    onStopAfterChange: (StopAfter) -> Unit,
+    onStart: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+    ) {
+        Text("Record", style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.size(16.dp))
+
+        Text("Capture every", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.size(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for (interval in CaptureInterval.entries) {
+                FilterChip(
+                    selected = captureInterval == interval,
+                    onClick = { onIntervalChange(interval) },
+                    label = { Text(interval.label) },
+                )
+            }
+        }
+
+        Spacer(Modifier.size(16.dp))
+
+        Text("Stop after", style = MaterialTheme.typography.bodyMedium)
+        Spacer(Modifier.size(8.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            for (stop in StopAfter.entries) {
+                FilterChip(
+                    selected = stopAfter == stop,
+                    onClick = { onStopAfterChange(stop) },
+                    label = { Text(stop.label) },
+                )
+            }
+        }
+
+        Spacer(Modifier.size(24.dp))
+
+        Button(
+            onClick = onStart,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text("Start Recording")
+        }
+
+        Spacer(Modifier.size(16.dp))
     }
 }
 
@@ -357,158 +453,6 @@ private fun PulsingDot() {
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.error),
     )
-}
-
-// ── Capture controls (collapsible) ──────────────────────────────────────────
-
-@Composable
-private fun CaptureControls(
-    isCapturing: Boolean,
-    captureInterval: CaptureInterval,
-    stopAfter: StopAfter,
-    onIntervalChange: (CaptureInterval) -> Unit,
-    onStopAfterChange: (StopAfter) -> Unit,
-    onStart: () -> Unit,
-    onStop: () -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-    ) {
-        // Main row: Record/Stop + expand arrow
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (isCapturing) {
-                Button(
-                    onClick = onStop,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error,
-                    ),
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Icon(Icons.Default.Stop, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Stop")
-                }
-            } else {
-                Button(onClick = onStart, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Record")
-                }
-            }
-
-            // Current settings summary
-            Text(
-                "${captureInterval.label}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            if (stopAfter != StopAfter.NEVER) {
-                Text(
-                    "for ${stopAfter.label}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-
-            // Expand arrow
-            val arrowRotation by animateFloatAsState(
-                targetValue = if (expanded) 180f else 0f,
-                animationSpec = tween(300),
-                label = "arrowRotation",
-            )
-            IconButton(
-                onClick = { expanded = !expanded },
-                modifier = Modifier.size(32.dp),
-            ) {
-                Icon(
-                    Icons.Default.KeyboardArrowDown,
-                    contentDescription = "Recording options",
-                    modifier = Modifier
-                        .size(20.dp)
-                        .graphicsLayer { rotationZ = arrowRotation },
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        // Collapsible: interval + stop-after selectors
-        AnimatedVisibility(
-            visible = expanded,
-            enter = fadeIn() + expandVertically(),
-            exit = fadeOut() + shrinkVertically(),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Every",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                DropdownSelector(
-                    selected = captureInterval,
-                    options = CaptureInterval.entries,
-                    label = { it.label },
-                    onSelect = onIntervalChange,
-                    enabled = !isCapturing,
-                )
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "Stop after",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                DropdownSelector(
-                    selected = stopAfter,
-                    options = StopAfter.entries,
-                    label = { it.label },
-                    onSelect = onStopAfterChange,
-                    enabled = !isCapturing,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun <T> DropdownSelector(
-    selected: T,
-    options: List<T>,
-    label: (T) -> String,
-    onSelect: (T) -> Unit,
-    enabled: Boolean = true,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        FilledTonalButton(
-            onClick = { if (enabled) expanded = true },
-            enabled = enabled,
-            contentPadding = ButtonDefaults.TextButtonContentPadding,
-            shape = RoundedCornerShape(4.dp),
-        ) {
-            Text(label(selected), style = MaterialTheme.typography.bodySmall)
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            for (option in options) {
-                DropdownMenuItem(
-                    text = { Text(label(option), style = MaterialTheme.typography.bodySmall) },
-                    onClick = { onSelect(option); expanded = false },
-                )
-            }
-        }
-    }
 }
 
 // ── Time range chips ────────────────────────────────────────────────────────

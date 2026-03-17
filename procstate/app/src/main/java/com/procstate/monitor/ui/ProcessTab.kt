@@ -110,24 +110,31 @@ fun ProcessTab(
         }
 
         if (trackedProcesses.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "No processes tracked",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Add from the By State tab or tap below",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    OutlinedButton(onClick = onOpenPicker) {
-                        Icon(Icons.Default.Add, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Add Process")
+            // LazyColumn so pull-to-refresh works on empty state
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                item {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            "No processes pinned",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Pull down to capture, or pin from the By State tab",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        OutlinedButton(onClick = onOpenPicker) {
+                            Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Add Process")
+                        }
                     }
                 }
             }
@@ -135,12 +142,18 @@ fun ProcessTab(
         }
 
         if (timelineRows.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    "No data for tracked processes in this time range",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                item {
+                    Text(
+                        "No data for pinned processes in this time range",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             return
         }

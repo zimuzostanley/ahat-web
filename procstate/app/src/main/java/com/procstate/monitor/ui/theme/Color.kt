@@ -40,31 +40,32 @@ object ProcStateColors {
 
     data class DualColor(val light: Color, val dark: Color)
 
-    // Tableau 10-inspired maximally distinct palette with dark mode variants.
+    // Vega-Lite "category20" scheme — 20 maximally distinct hues, extended to 23.
+    // Light: full saturation for white bg. Dark: lightened for #111318 bg.
     val palette = linkedMapOf(
-        "System" to DualColor(Color(0xFF4E79A7), Color(0xFF7AADDE)),  // steel blue
-        "Persistent" to DualColor(Color(0xFF59A14F), Color(0xFF8CD17D)), // green
-        "Top" to DualColor(Color(0xFFE15759), Color(0xFFFF9D9A)),     // red
-        "Foreground" to DualColor(Color(0xFF76B7B2), Color(0xFFA0DAD6)), // teal
-        "Visible" to DualColor(Color(0xFFF28E2B), Color(0xFFFFBE7D)),  // orange
-        "FG Service" to DualColor(Color(0xFFEDC948), Color(0xFFF1DE82)), // gold
-        "Bound FG" to DualColor(Color(0xFFB07AA1), Color(0xFFD4A6C8)),  // mauve
-        "Bound Top" to DualColor(Color(0xFF9C755F), Color(0xFFC9A78C)),  // brown
-        "Perceptible" to DualColor(Color(0xFFFF9DA7), Color(0xFFFFCCD2)), // pink
-        "Imp FG" to DualColor(Color(0xFFBAB0AC), Color(0xFFD7CEC7)),    // warm gray
-        "Imp BG" to DualColor(Color(0xFFD97706), Color(0xFFFBBF24)),    // amber
-        "Previous" to DualColor(Color(0xFF499894), Color(0xFF86BCB6)),   // sage
-        "Home" to DualColor(Color(0xFF86BCB6), Color(0xFFB4D9D2)),      // mint
-        "Service" to DualColor(Color(0xFFCF4E50), Color(0xFFF19092)),    // coral
-        "Service B" to DualColor(Color(0xFFA0CBE8), Color(0xFFC6DFEF)),  // sky
-        "Svc Restart" to DualColor(Color(0xFFD4A6C8), Color(0xFFE8C8DE)), // lavender
-        "Receiver" to DualColor(Color(0xFF8CD17D), Color(0xFFB6E1A6)),   // lime
-        "Backup" to DualColor(Color(0xFFB6992D), Color(0xFFDCC651)),     // olive
-        "Heavy" to DualColor(Color(0xFFD32F2F), Color(0xFFEF5350)),     // strong red
-        "Last Activity" to DualColor(Color(0xFF8D6E63), Color(0xFFBCAAA4)), // taupe
-        "Cached" to DualColor(Color(0xFF78909C), Color(0xFFB0BEC5)),    // blue gray
-        "Frozen" to DualColor(Color(0xFF00ACC1), Color(0xFF4DD0E1)),    // cyan
-        "Native" to DualColor(Color(0xFF7B1FA2), Color(0xFFBA68C8)),    // purple
+        "System" to DualColor(Color(0xFF1F77B4), Color(0xFF6BAED6)),  // blue
+        "Persistent" to DualColor(Color(0xFFFF7F0E), Color(0xFFFFA84D)), // orange
+        "Top" to DualColor(Color(0xFF2CA02C), Color(0xFF5FD35F)),     // green
+        "Foreground" to DualColor(Color(0xFFD62728), Color(0xFFFF6B6B)), // red
+        "Visible" to DualColor(Color(0xFF9467BD), Color(0xFFBB8FDD)),  // purple
+        "FG Service" to DualColor(Color(0xFF8C564B), Color(0xFFBD8B7D)), // brown
+        "Bound FG" to DualColor(Color(0xFFE377C2), Color(0xFFF0A4D8)),  // pink
+        "Bound Top" to DualColor(Color(0xFF7F7F7F), Color(0xFFB0B0B0)), // gray
+        "Perceptible" to DualColor(Color(0xFFBCBD22), Color(0xFFDBDB57)), // yellow-green
+        "Imp FG" to DualColor(Color(0xFF17BECF), Color(0xFF56D4E1)),    // cyan
+        "Imp BG" to DualColor(Color(0xFFAEC7E8), Color(0xFFC8D9EE)),   // light blue
+        "Previous" to DualColor(Color(0xFFFFBB78), Color(0xFFFFD1A3)),  // light orange
+        "Home" to DualColor(Color(0xFF98DF8A), Color(0xFFB8EBAB)),     // light green
+        "Service" to DualColor(Color(0xFFFF9896), Color(0xFFFFBBBA)),   // light red
+        "Service B" to DualColor(Color(0xFFC5B0D5), Color(0xFFDACAE5)), // light purple
+        "Svc Restart" to DualColor(Color(0xFFC49C94), Color(0xFFDDBFB8)), // light brown
+        "Receiver" to DualColor(Color(0xFFF7B6D2), Color(0xFFFAD0E3)),  // light pink
+        "Backup" to DualColor(Color(0xFFC7C7C7), Color(0xFFDDDDDD)),   // light gray
+        "Heavy" to DualColor(Color(0xFFDBDB8D), Color(0xFFE8E8AE)),    // light yellow-green
+        "Last Activity" to DualColor(Color(0xFF9EDAE5), Color(0xFFBEE7EF)), // light cyan
+        "Cached" to DualColor(Color(0xFF636363), Color(0xFF969696)),    // dark gray
+        "Frozen" to DualColor(Color(0xFF3182BD), Color(0xFF80C9E8)),    // medium blue
+        "Native" to DualColor(Color(0xFFE6550D), Color(0xFFFF8C42)),    // dark orange
     )
 
     /** Canonical ordering for consistent bar chart segment order. */
