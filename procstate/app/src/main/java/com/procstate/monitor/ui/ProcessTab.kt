@@ -102,6 +102,7 @@ data class DotDetail(
     val timestamp: String,
     /** State counts up to this point in time: state -> count, sorted by count desc. */
     val stateHistory: List<Pair<String, Int>> = emptyList(),
+    val frozenCount: Int = 0,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -394,12 +395,13 @@ private fun TimelineRow(
                         )
                         val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
                         val onTap: () -> Unit = {
-                            // Compute state history up to this timestamp
-                            val history = allTimelineRows
+                            val relevant = allTimelineRows
                                 .filter { it.name == key.name && it.uid == key.uid && it.timestamp <= timestamp }
+                            val history = relevant
                                 .groupBy { it.procState }
                                 .map { (state, rows) -> state to rows.size }
                                 .sortedByDescending { it.second }
+                            val frozen = relevant.count { it.frozen }
                             onShowDetail(DotDetail(
                                 name = key.name,
                                 uid = dot.uid,
@@ -410,6 +412,7 @@ private fun TimelineRow(
                                 started = dot.marker == Marker.STARTED,
                                 timestamp = fullTimeStr,
                                 stateHistory = history,
+                                frozenCount = frozen,
                             ), key.name, timestamp)
                         }
 
@@ -765,6 +768,29 @@ fun ProcessDetailSheet(
                         )
                         Text(
                             "$count ($pct%)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                // Frozen count
+                if (detail.frozenCount > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Frozen",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "${detail.frozenCount}/$total",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
