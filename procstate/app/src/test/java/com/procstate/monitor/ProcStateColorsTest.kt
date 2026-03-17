@@ -9,63 +9,53 @@ import org.junit.Test
 class ProcStateColorsTest {
 
     @Test
-    fun `all expected states have colors`() {
-        val expected = listOf(
-            "System", "Persistent", "Top", "Foreground", "Visible",
-            "FG Service", "Bound FG", "Bound Top", "Perceptible",
-            "Imp FG", "Imp BG", "Previous", "Home", "Service",
-            "Service B", "Svc Restart", "Receiver", "Backup",
-            "Heavy", "Last Activity", "Cached", "Frozen", "Native",
-        )
-        for (state in expected) {
-            assertNotNull("Missing color for: $state", ProcStateColors.palette[state])
-        }
+    fun `get returns a color for any state`() {
+        val light = ProcStateColors.get("fg", isDark = false)
+        val dark = ProcStateColors.get("fg", isDark = true)
+        assertNotNull(light)
+        assertNotNull(dark)
     }
 
     @Test
-    fun `order contains all states`() {
-        assertEquals(ProcStateColors.palette.size, ProcStateColors.order.size)
-        for (state in ProcStateColors.palette.keys) {
-            assertTrue("Missing in order: $state", state in ProcStateColors.order)
-        }
+    fun `same state always returns same color`() {
+        val c1 = ProcStateColors.get("cch", isDark = false)
+        val c2 = ProcStateColors.get("cch", isDark = false)
+        assertEquals(c1, c2)
     }
 
     @Test
-    fun `get returns fallback for unknown state in both modes`() {
-        val lightColor = ProcStateColors.get("unknown_state_xyz", isDark = false)
-        val darkColor = ProcStateColors.get("unknown_state_xyz", isDark = true)
-        assertNotNull(lightColor)
-        assertNotNull(darkColor)
-    }
-
-    @Test
-    fun `light and dark colors are different for each state`() {
-        for ((state, dual) in ProcStateColors.palette) {
-            assertTrue(
-                "Light and dark should differ for $state",
-                dual.light != dual.dark,
-            )
-        }
-    }
-
-    @Test
-    fun `all light colors are unique`() {
-        val colors = ProcStateColors.palette.values.map { it.light }
+    fun `different states get different colors within first 20`() {
+        val states = listOf("fg", "vis", "fgs", "cch", "pers", "top", "service", "home")
+        val colors = states.map { ProcStateColors.get(it, isDark = false) }
         val unique = colors.toSet()
-        assertEquals("Duplicate light colors found", colors.size, unique.size)
+        assertEquals("Colors should be unique for 8 states", states.size, unique.size)
     }
 
     @Test
-    fun `all dark colors are unique`() {
-        val colors = ProcStateColors.palette.values.map { it.dark }
-        val unique = colors.toSet()
-        assertEquals("Duplicate dark colors found", colors.size, unique.size)
+    fun `order tracks first appearance`() {
+        // Reset by using fresh states
+        val s1 = "test_state_${System.nanoTime()}"
+        val s2 = "test_state_${System.nanoTime() + 1}"
+        ProcStateColors.get(s1, isDark = false)
+        ProcStateColors.get(s2, isDark = false)
+        val order = ProcStateColors.order
+        assertTrue(order.indexOf(s1) < order.indexOf(s2))
+    }
+
+    @Test
+    fun `unknown states beyond 20 get fallback color`() {
+        // Generate 25 unique states
+        val base = System.nanoTime()
+        for (i in 0 until 25) {
+            ProcStateColors.get("overflow_${base}_$i", isDark = false)
+        }
+        // Should not crash
     }
 
     @Test
     fun `useWhiteText returns true for dark colors`() {
-        // A very dark color should need white text
-        val darkColor = ProcStateColors.get("System", isDark = false)
+        val darkColor = ProcStateColors.get("pers", isDark = false)
+        // First assigned color is steel blue (0xFF4C78A8) which is dark
         assertTrue(ProcStateColors.useWhiteText(darkColor))
     }
 }

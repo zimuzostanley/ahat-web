@@ -22,36 +22,9 @@ object ShellHelper {
     // Groups: 1=oomState, 2=PID, 3=name, 4=UID (optional)
     private val LRU_LINE = Regex("""^\s*#\d+:\s+(\S+)\s+.*?\s(\d+):([^\s/]+)(?:/(\S+))?""")
 
-    private val OOM_LABEL_MAP = mapOf(
-        "pers" to "Persistent",
-        "top" to "Top",
-        "bfgs" to "Bound FG",
-        "btop" to "Bound Top",
-        "fgs" to "FG Service",
-        "fg" to "Foreground",
-        "impfg" to "Imp FG",
-        "impbg" to "Imp BG",
-        "backup" to "Backup",
-        "service" to "Service",
-        "service-rs" to "Svc Restart",
-        "receiver" to "Receiver",
-        "heavy" to "Heavy",
-        "home" to "Home",
-        "lastact" to "Last Activity",
-        "cached" to "Cached",
-        "cch" to "Cached",
-        "frzn" to "Frozen",
-        "native" to "Native",
-        "sys" to "System",
-        "fore" to "Foreground",
-        "vis" to "Visible",
-        "percep" to "Perceptible",
-        "perceptible" to "Perceptible",
-        "svcb" to "Service B",
-        "svcrst" to "Svc Restart",
-        "prev" to "Previous",
-        "lstact" to "Last Activity",
-    )
+    // No label mapping — use raw state strings from the device as-is.
+    // This ensures all states (including device-specific ones like psvc, prcl)
+    // show correctly in the UI and legend.
 
     // ── Permission state ────────────────────────────────────────────────────
 
@@ -162,11 +135,6 @@ object ShellHelper {
 
     // ── LRU process parsing ─────────────────────────────────────────────────
 
-    private fun mapOomLabel(raw: String): String {
-        val base = raw.replace(Regex("""\+\d+$"""), "").replace(Regex("""\d+$"""), "")
-        return OOM_LABEL_MAP[base] ?: raw
-    }
-
     data class ProcessEntry(val pid: Int, val name: String, val procState: String, val uid: String = "")
 
     fun parseLruOutput(output: String): List<ProcessEntry> {
@@ -176,9 +144,10 @@ object ShellHelper {
             val m = LRU_LINE.find(line) ?: continue
             val pid = m.groupValues[2].toIntOrNull() ?: continue
             if (!seen.add(pid)) continue
-            val oomRaw = m.groupValues[1].replace(Regex("""\+\d+$"""), "")
+            // Strip +N suffix (e.g. "cch+1" -> "cch") but keep the raw label
+            val state = m.groupValues[1].replace(Regex("""\+\d+$"""), "")
             val uid = m.groupValues.getOrElse(4) { "" }
-            results.add(ProcessEntry(pid, m.groupValues[3], mapOomLabel(oomRaw), uid))
+            results.add(ProcessEntry(pid, m.groupValues[3], state, uid))
         }
         return results
     }

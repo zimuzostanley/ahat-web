@@ -1,6 +1,5 @@
 package com.procstate.monitor.ui.theme
 
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -32,48 +31,52 @@ val DarkOutline = Color(0xFF363840)
 val DarkError = Color(0xFFF87171)
 
 // ── Proc state colors ───────────────────────────────────────────────────────
-// Tableau-inspired palette with dual light/dark variants.
-// Light: saturated on white backgrounds. Dark: desaturated/brighter on #111318.
 
+/**
+ * Dynamic color assignment using the Tableau 20 palette from Vega-Lite.
+ * States are assigned colors as they're first encountered — no static mapping.
+ * This means every raw device state (fg, cch, psvc, prcl, etc.) gets a color.
+ */
 @Stable
 object ProcStateColors {
 
     data class DualColor(val light: Color, val dark: Color)
 
-    // Tableau 20 from Vega-Lite (exact hex values from vega.github.io/vega/docs/schemes)
-    // 10 saturated + 10 light pairs. Extended to 23 with 3 extra distinct colors.
-    // Dark mode: uses the lighter pair from each Tableau 20 duo.
-    val palette = linkedMapOf(
-        "System" to DualColor(Color(0xFF4C78A8), Color(0xFF9ECAE9)),       // 1. steel blue / light blue
-        "Persistent" to DualColor(Color(0xFFF58518), Color(0xFFFFBF79)),   // 2. orange / light orange
-        "Top" to DualColor(Color(0xFF54A24B), Color(0xFF88D27A)),          // 3. green / light green
-        "Foreground" to DualColor(Color(0xFFE45756), Color(0xFFFF9D98)),   // 4. red / light red
-        "Visible" to DualColor(Color(0xFF4399D2), Color(0xFF83BCB6)),      // 5. teal-blue / light teal
-        "FG Service" to DualColor(Color(0xFFB07AA1), Color(0xFFD6A5C9)),   // 6. mauve / light mauve
-        "Bound FG" to DualColor(Color(0xFF9E765F), Color(0xFFD8B5A5)),     // 7. brown / light brown
-        "Bound Top" to DualColor(Color(0xFFD67195), Color(0xFFFCBFD2)),    // 8. pink / light pink
-        "Perceptible" to DualColor(Color(0xFFB9A20F), Color(0xFFF2CF5B)),  // 9. olive / light olive
-        "Imp FG" to DualColor(Color(0xFF43989D), Color(0xFF7EC8C2)),       // 10. teal / light teal (shifted)
-        "Imp BG" to DualColor(Color(0xFF79706E), Color(0xFFBAB0AC)),       // 11. gray / light gray
-        "Previous" to DualColor(Color(0xFF9ECAE9), Color(0xFFC0DAEE)),     // 12. light steel blue
-        "Home" to DualColor(Color(0xFFFFBF79), Color(0xFFFFD9AD)),         // 13. light orange
-        "Service" to DualColor(Color(0xFF88D27A), Color(0xFFB2E2A4)),      // 14. light green
-        "Service B" to DualColor(Color(0xFFFF9D98), Color(0xFFFFBFBC)),    // 15. light red
-        "Svc Restart" to DualColor(Color(0xFFB279A2), Color(0xFFCE9DBE)),  // 16. mauve variant (shifted)
-        "Receiver" to DualColor(Color(0xFFD8B5A5), Color(0xFFE8CFC2)),     // 17. light brown
-        "Backup" to DualColor(Color(0xFFFCBFD2), Color(0xFFFDD8E4)),       // 18. light pink
-        "Heavy" to DualColor(Color(0xFFF2CF5B), Color(0xFFF7E28C)),        // 19. light olive
-        "Last Activity" to DualColor(Color(0xFF83BCB6), Color(0xFFADD4CF)), // 20. light teal
-        "Cached" to DualColor(Color(0xFFBAB0AC), Color(0xFFD0C9C5)),       // gray (Tableau 20 pair 11 light)
-        "Frozen" to DualColor(Color(0xFF72A9D4), Color(0xFFA3C9E8)),       // blue variant
-        "Native" to DualColor(Color(0xFFE89744), Color(0xFFFFC98A)),       // orange variant (shifted)
+    // Tableau 20 exact hex values from vega.github.io/vega/docs/schemes/#tableau20
+    private val TABLEAU_20 = listOf(
+        DualColor(Color(0xFF4C78A8), Color(0xFF9ECAE9)),  // 1  steel blue
+        DualColor(Color(0xFFF58518), Color(0xFFFFBF79)),  // 2  orange
+        DualColor(Color(0xFF54A24B), Color(0xFF88D27A)),  // 3  green
+        DualColor(Color(0xFFE45756), Color(0xFFFF9D98)),  // 4  red
+        DualColor(Color(0xFF79706E), Color(0xFFBAB0AC)),  // 5  gray
+        DualColor(Color(0xFF43989D), Color(0xFF83BCB6)),  // 6  teal
+        DualColor(Color(0xFFB07AA1), Color(0xFFD6A5C9)),  // 7  mauve
+        DualColor(Color(0xFF9E765F), Color(0xFFD8B5A5)),  // 8  brown
+        DualColor(Color(0xFFD67195), Color(0xFFFCBFD2)),  // 9  pink
+        DualColor(Color(0xFFB9A20F), Color(0xFFF2CF5B)),  // 10 olive
+        DualColor(Color(0xFF9ECAE9), Color(0xFFC0DAEE)),  // 11 light steel blue
+        DualColor(Color(0xFFFFBF79), Color(0xFFFFD9AD)),  // 12 light orange
+        DualColor(Color(0xFF88D27A), Color(0xFFB2E2A4)),  // 13 light green
+        DualColor(Color(0xFFFF9D98), Color(0xFFFFBFBC)),  // 14 light red
+        DualColor(Color(0xFFBAB0AC), Color(0xFFD0C9C5)),  // 15 light gray
+        DualColor(Color(0xFF83BCB6), Color(0xFFADD4CF)),  // 16 light teal
+        DualColor(Color(0xFFD6A5C9), Color(0xFFE8C8DE)),  // 17 light mauve
+        DualColor(Color(0xFFD8B5A5), Color(0xFFE8CFC2)),  // 18 light brown
+        DualColor(Color(0xFFFCBFD2), Color(0xFFFDD8E4)),  // 19 light pink
+        DualColor(Color(0xFFF2CF5B), Color(0xFFF7E28C)),  // 20 light olive
     )
 
-    /** Canonical ordering for consistent bar chart segment order. */
-    val order: List<String> = palette.keys.toList()
+    private val fallback = DualColor(Color(0xFF636363), Color(0xFF969696))
+
+    // Dynamic assignment: state string -> index into TABLEAU_20
+    private val stateIndex = LinkedHashMap<String, Int>()
+
+    /** All states seen so far, in order of first appearance. */
+    val order: List<String> get() = stateIndex.keys.toList()
 
     fun get(state: String, isDark: Boolean): Color {
-        val dual = palette[state] ?: return if (isDark) Color(0xFF9CA3AF) else Color(0xFF6B7280)
+        val idx = stateIndex.getOrPut(state) { stateIndex.size }
+        val dual = if (idx < TABLEAU_20.size) TABLEAU_20[idx] else fallback
         return if (isDark) dual.dark else dual.light
     }
 
