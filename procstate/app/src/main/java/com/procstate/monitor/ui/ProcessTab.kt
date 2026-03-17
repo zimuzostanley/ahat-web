@@ -628,44 +628,52 @@ fun ProcessDetailSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 40.dp),
         ) {
-            // Header: state color dot + app label + state
+            // Header
             val stateColor = ProcStateColors.get(detail.state, isDark)
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 20.dp),
+            ) {
                 Box(
                     Modifier
-                        .size(12.dp)
+                        .size(16.dp)
                         .clip(CircleShape)
                         .background(stateColor),
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(12.dp))
                 Column {
                     Text(
                         appLabel,
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.titleLarge,
                     )
                     Text(
                         ProcStateColors.label(detail.state),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = stateColor,
                     )
                 }
             }
 
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
             Spacer(Modifier.height(16.dp))
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
-            Spacer(Modifier.height(12.dp))
 
-            // Key-value rows
+            // Details
             DetailRow("Process", detail.name)
             DetailRow("UID", detail.uid)
             if (detail.pid > 0) DetailRow("PID", detail.pid.toString())
             DetailRow("State", "${ProcStateColors.label(detail.state)} (${detail.state})")
-            if (detail.frozen) DetailRow("Frozen", "Yes")
-            if (detail.started) DetailRow("Event", "Process start")
-            DetailRow("Time", detail.timestamp)
+            if (detail.frozen) {
+                DetailRow("Frozen", "Yes")
+            }
+            if (detail.started) {
+                DetailRow("Event", "Process start")
+            }
+            if (detail.timestamp.isNotEmpty()) {
+                DetailRow("Time", detail.timestamp)
+            }
         }
     }
 }
@@ -676,17 +684,17 @@ private fun DetailRow(label: String, value: String) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 6.dp),
     ) {
         Text(
             label,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(72.dp),
+            modifier = Modifier.width(80.dp),
         )
         Text(
             value,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurface,
         )
     }
