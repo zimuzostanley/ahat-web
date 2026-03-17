@@ -577,9 +577,9 @@ private fun ProcessList(
                     .fillMaxWidth()
                     .clickable {
                         val details = buildString {
-                            append("${entry.name}\n")
-                            append("UID: ${entry.uid}  PID: ${entry.pid}")
-                            if (entry.frozen) append("\nFrozen")
+                            append(entry.procState)
+                            if (entry.frozen) append(" (frozen)")
+                            append("\n${entry.name.substringAfterLast('.')} ${entry.uid} pid:${entry.pid}")
                         }
                         Toast.makeText(context, details, Toast.LENGTH_SHORT).show()
                     }
@@ -669,7 +669,7 @@ private val dateTimeFormat = object : ThreadLocal<SimpleDateFormat>() {
     override fun initialValue() = SimpleDateFormat("MMM dd HH:mm", Locale.US)
 }
 private val fullDateTimeFormat = object : ThreadLocal<SimpleDateFormat>() {
-    override fun initialValue() = SimpleDateFormat("EEE, yyyy-MM-dd HH:mm:ss", Locale.US)
+    override fun initialValue() = SimpleDateFormat("EEEE, MMMM d, HH:mm:ss", Locale.US)
 }
 
 fun formatTimestamp(millis: Long): String {

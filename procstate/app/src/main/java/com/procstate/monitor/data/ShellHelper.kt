@@ -195,11 +195,13 @@ object ShellHelper {
 
     fun getFrozenPids(): Set<Int> {
         return try {
-            // Try multiple sources — different Android versions put it in different places
-            val output = try {
-                exec("dumpsys activity processes | grep -A 500 'Apps frozen:'")
-            } catch (_: Exception) {
-                try { exec("dumpsys activity | grep -A 500 'Apps frozen:'") } catch (_: Exception) { "" }
+            // Use execRaw directly to avoid the Permission Denial check
+            // (dumpsys output may contain that string in unrelated sections)
+            val cmd = "dumpsys activity | grep -A 180 'Apps frozen:'"
+            val output = if (hasRoot == true && suPath != null) {
+                execRaw("sh", "-c", "$suPath -c '${cmd.replace("'", "'\\''")}'")
+            } else {
+                execRaw("sh", "-c", cmd)
             }
             val pids = mutableSetOf<Int>()
             var inSection = false
