@@ -76,6 +76,7 @@ fun ProcStateTab(
     onUnpinProcess: (ProcessKey) -> Unit,
     onLoadEntries: suspend (Long) -> List<ProcessEntryEntity>,
     isRefreshing: Boolean = false,
+    getAppLabel: (String) -> String = { it.substringAfterLast('.') },
 ) {
     if (snapshots.isEmpty()) {
         // Use LazyColumn so pull-to-refresh overscroll detection works
@@ -114,6 +115,17 @@ fun ProcStateTab(
     val expandedStates = remember { mutableStateMapOf<Long, String>() }
     val scope = rememberCoroutineScope()
     val isDark = LocalIsDarkTheme.current
+    var processDetail by remember { mutableStateOf<DotDetail?>(null) }
+
+    // Process detail drawer
+    processDetail?.let { detail ->
+        ProcessDetailSheet(
+            detail = detail,
+            isDark = isDark,
+            appLabel = getAppLabel(detail.name),
+            onDismiss = { processDetail = null },
+        )
+    }
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
     // Auto-scroll to top after pull-to-refresh (not during recording)
@@ -177,6 +189,7 @@ fun ProcStateTab(
                     },
                     onPinProcess = onPinProcess,
                     onUnpinProcess = onUnpinProcess,
+                    onShowDetail = { processDetail = it },
                 )
             }
         }
@@ -337,6 +350,7 @@ private fun SnapshotBreakdown(
     onToggleState: (String) -> Unit,
     onPinProcess: (ProcessKey) -> Unit,
     onUnpinProcess: (ProcessKey) -> Unit,
+    onShowDetail: (DotDetail) -> Unit,
 ) {
     val sorted = remember(snapshot.stateCounts) {
         snapshot.stateCounts.entries
@@ -375,6 +389,7 @@ private fun SnapshotBreakdown(
                     pinnedProcesses = pinnedProcesses,
                     onPinProcess = onPinProcess,
                     onUnpinProcess = onUnpinProcess,
+                    onShowDetail = onShowDetail,
                 )
             }
 
@@ -534,6 +549,7 @@ private fun ProcessList(
     pinnedProcesses: List<ProcessKey>,
     onPinProcess: (ProcessKey) -> Unit,
     onUnpinProcess: (ProcessKey) -> Unit,
+    onShowDetail: (DotDetail) -> Unit = {},
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val filtered = remember(entries, searchQuery) {
@@ -566,7 +582,6 @@ private fun ProcessList(
             Spacer(Modifier.height(4.dp))
         }
 
-        val context = LocalContext.current
         val pinnedKeys = remember(pinnedProcesses) { pinnedProcesses.toSet() }
         for (entry in filtered) {
             val key = ProcessKey(entry.name, entry.uid)
@@ -576,12 +591,16 @@ private fun ProcessList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
-                        val details = buildString {
-                            append(entry.procState)
-                            if (entry.frozen) append(" (frozen)")
-                            append("\n${entry.name} ${entry.uid} pid:${entry.pid}")
-                        }
-                        Toast.makeText(context, details, Toast.LENGTH_SHORT).show()
+                        onShowDetail(DotDetail(
+                            name = entry.name,
+                            uid = entry.uid,
+                            pid = entry.pid,
+                            state = entry.procState,
+                            stateLabel = ProcStateColors.label(entry.procState),
+                            frozen = entry.frozen,
+                            started = false,
+                            timestamp = "",
+                        ))
                     }
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,

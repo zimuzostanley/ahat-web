@@ -91,7 +91,7 @@ private data class ProcessDot(
     val marker: Marker,
 )
 
-private data class DotDetail(
+data class DotDetail(
     val name: String,
     val uid: String,
     val pid: Int,
@@ -121,31 +121,12 @@ fun ProcessTab(
 
     // Detail drawer
     dotDetail?.let { detail ->
-        ModalBottomSheet(
-            onDismissRequest = { dotDetail = null },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-            ) {
-                Text(
-                    getAppLabel(detail.name),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Spacer(Modifier.height(12.dp))
-                DetailRow("App", getAppLabel(detail.name))
-                DetailRow("Process", detail.name)
-                DetailRow("UID", detail.uid)
-                DetailRow("PID", detail.pid.toString())
-                DetailRow("State", "${ProcStateColors.label(detail.state)} (${detail.state})")
-                if (detail.frozen) DetailRow("Frozen", "Yes")
-                if (detail.started) DetailRow("Event", "Process start")
-                DetailRow("Time", detail.timestamp)
-                Spacer(Modifier.height(24.dp))
-            }
-        }
+        ProcessDetailSheet(
+            detail = detail,
+            isDark = isDark,
+            appLabel = getAppLabel(detail.name),
+            onDismiss = { dotDetail = null },
+        )
     }
 
     if (showPicker) {
@@ -355,8 +336,6 @@ private fun TimelineRow(
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
     val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
     val context = LocalContext.current
-    val lineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
-
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -380,12 +359,6 @@ private fun TimelineRow(
                     // Horizontal connector
                     val y = size.height / 2
                     drawLine(hLineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
-                    // Vertical column lines — full height so they connect across rows
-                    val colW = COL_WIDTH_DP.dp.toPx()
-                    for (i in pinnedProcesses.indices) {
-                        val cx = colW * i + colW / 2
-                        drawLine(lineColor, Offset(cx, 0f), Offset(cx, size.height), strokeWidth = 0.5.dp.toPx())
-                    }
                 },
         ) {
             for (key in pinnedProcesses) {
@@ -526,7 +499,7 @@ private fun ProcessChip(label: String, key: ProcessKey, color: Color, onRemove: 
             .clip(RoundedCornerShape(14.dp))
             .background(color.copy(alpha = 0.1f))
             .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
-            .clickable { Toast.makeText(context, "${key.name} / ${key.uid}", Toast.LENGTH_SHORT).show() }
+            .clickable { /* tap chip for full name */ }
             .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -638,25 +611,82 @@ private fun ProcessPickerSheet(
     }
 }
 
-// ── Detail dialog row ───────────────────────────────────────────────────────
+// ── Process detail sheet (shared) ────────────────────────────────────────────
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProcessDetailSheet(
+    detail: DotDetail,
+    isDark: Boolean,
+    appLabel: String,
+    onDismiss: () -> Unit,
+) {
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 32.dp),
+        ) {
+            // Header: state color dot + app label + state
+            val stateColor = ProcStateColors.get(detail.state, isDark)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(stateColor),
+                )
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        appLabel,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Text(
+                        ProcStateColors.label(detail.state),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+            Spacer(Modifier.height(12.dp))
+
+            // Key-value rows
+            DetailRow("Process", detail.name)
+            DetailRow("UID", detail.uid)
+            if (detail.pid > 0) DetailRow("PID", detail.pid.toString())
+            DetailRow("State", "${ProcStateColors.label(detail.state)} (${detail.state})")
+            if (detail.frozen) DetailRow("Frozen", "Yes")
+            if (detail.started) DetailRow("Event", "Process start")
+            DetailRow("Time", detail.timestamp)
+        }
+    }
+}
 
 @Composable
 private fun DetailRow(label: String, value: String) {
-    if (value.isEmpty() || value == "0") return
+    if (value.isEmpty()) return
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 2.dp),
+            .padding(vertical = 4.dp),
     ) {
         Text(
             label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(80.dp),
+            modifier = Modifier.width(72.dp),
         )
         Text(
             value,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )
     }

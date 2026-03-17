@@ -276,6 +276,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         onUnpinProcess = vm::unpinProcess,
                         onLoadEntries = vm::getSnapshotEntries,
                         isRefreshing = isRefreshing,
+                        getAppLabel = vm::getAppLabel,
                     )
                     1 -> ProcessTab(
                         getAppLabel = vm::getAppLabel,
