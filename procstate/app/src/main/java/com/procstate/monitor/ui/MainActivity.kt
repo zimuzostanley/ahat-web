@@ -141,6 +141,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     val themeMode by vm.themeMode.collectAsState()
     val captureError by vm.captureError.collectAsState()
     val permState by vm.permissionState.collectAsState()
+    val captureStartMs by vm.captureStartMs.collectAsState()
 
     val snapshots by vm.snapshotsWithCounts.collectAsState()
     val trackedProcesses by vm.trackedProcesses.collectAsState()
@@ -158,15 +159,10 @@ private fun ProcStateApp(vm: MainViewModel) {
                             Spacer(Modifier.width(8.dp))
                             PulsingDot()
                             Spacer(Modifier.width(6.dp))
-                            Text(
-                                buildString {
-                                    append("REC ${captureInterval.label}")
-                                    if (stopAfter != StopAfter.NEVER) {
-                                        append(" \u00b7 ${stopAfter.label}")
-                                    }
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.error,
+                            RecordingStatus(
+                                intervalLabel = captureInterval.label,
+                                stopAfterMinutes = stopAfter.minutes,
+                                startMs = captureStartMs,
                             )
                         }
                     }
@@ -333,6 +329,63 @@ private fun ProcStateApp(vm: MainViewModel) {
                 onDismiss = { showSettings = false },
             )
         }
+    }
+}
+
+// ── Recording status with live countdown ────────────────────────────────────
+
+@Composable
+private fun RecordingStatus(intervalLabel: String, stopAfterMinutes: Int, startMs: Long) {
+    if (stopAfterMinutes > 0 && startMs > 0) {
+        val endMs = startMs + stopAfterMinutes * 60_000L
+        var now by remember { mutableStateOf(System.currentTimeMillis()) }
+
+        // Tick every second
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                now = System.currentTimeMillis()
+            }
+        }
+
+        val remainingMs = (endMs - now).coerceAtLeast(0)
+        val elapsedMs = (now - startMs).coerceAtLeast(0)
+        val totalMs = stopAfterMinutes * 60_000L
+
+        Text(
+            "REC $intervalLabel \u00b7 ${formatDuration(elapsedMs)}/${formatDuration(totalMs)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    } else {
+        // No stop-after: just show elapsed time
+        var now by remember { mutableStateOf(System.currentTimeMillis()) }
+
+        androidx.compose.runtime.LaunchedEffect(Unit) {
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                now = System.currentTimeMillis()
+            }
+        }
+
+        val elapsedMs = if (startMs > 0) (now - startMs).coerceAtLeast(0) else 0L
+
+        Text(
+            "REC $intervalLabel \u00b7 ${formatDuration(elapsedMs)}",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+}
+
+private fun formatDuration(ms: Long): String {
+    val totalSec = ms / 1000
+    val h = totalSec / 3600
+    val m = (totalSec % 3600) / 60
+    val s = totalSec % 60
+    return when {
+        h > 0 -> "%d:%02d:%02d".format(h, m, s)
+        else -> "%d:%02d".format(m, s)
     }
 }
 

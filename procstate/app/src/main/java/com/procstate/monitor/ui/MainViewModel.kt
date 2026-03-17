@@ -114,6 +114,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _isCapturing = MutableStateFlow(CaptureService.running)
     val isCapturing: StateFlow<Boolean> = _isCapturing.asStateFlow()
 
+    private val _captureStartMs = MutableStateFlow(0L)
+    val captureStartMs: StateFlow<Long> = _captureStartMs.asStateFlow()
+
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
@@ -139,6 +142,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             ctx.startService(intent)
         }
         _isCapturing.value = true
+        _captureStartMs.value = System.currentTimeMillis()
     }
 
     fun stopCapture() {
