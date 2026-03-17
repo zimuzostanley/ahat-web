@@ -195,9 +195,12 @@ object ShellHelper {
 
     fun getFrozenPids(): Set<Int> {
         return try {
-            // Use a bounded grep — full `dumpsys activity` is huge and can timeout.
-            // 500 lines is enough for ~500 frozen processes.
-            val output = exec("dumpsys activity processes | grep -A 500 'Apps frozen:'")
+            // Try multiple sources — different Android versions put it in different places
+            val output = try {
+                exec("dumpsys activity processes | grep -A 500 'Apps frozen:'")
+            } catch (_: Exception) {
+                try { exec("dumpsys activity | grep -A 500 'Apps frozen:'") } catch (_: Exception) { "" }
+            }
             val pids = mutableSetOf<Int>()
             var inSection = false
             for (line in output.lines()) {

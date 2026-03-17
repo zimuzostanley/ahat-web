@@ -179,27 +179,30 @@ fun ProcessTab(
 
         // Detect process starts and merge all snapshot timestamps
         val timelineByTimestamp = remember(timelineRows, allSnapshotTimestamps, pinnedProcesses) {
-            // Marker detection
-            val markerMap = mutableMapOf<Pair<String, Long>, Marker>()
-            val byName = timelineRows.groupBy { it.name }
-            for ((_, rows) in byName) {
+            // Marker detection by ProcessKey (name+uid), not just name
+            val markerMap = mutableMapOf<Pair<ProcessKey, Long>, Marker>()
+            val byKey = timelineRows.groupBy { ProcessKey(it.name, it.uid) }
+            for ((pk, rows) in byKey) {
                 val sorted = rows.sortedBy { it.timestamp }
                 for (i in 1 until sorted.size) {
-                    if (sorted[i].pid != sorted[i - 1].pid) {
-                        markerMap[sorted[i].name to sorted[i].timestamp] = Marker.STARTED
+                    val prev = sorted[i - 1]
+                    val curr = sorted[i]
+                    if (curr.pid != prev.pid && prev.pid != 0 && curr.pid != 0) {
+                        markerMap[pk to curr.timestamp] = Marker.STARTED
                     }
                 }
             }
-            // Build dot map per timestamp
+            // Build dot map per timestamp, keyed by ProcessKey
             val dotsByTs = timelineRows.groupBy { it.timestamp }
                 .mapValues { (ts, rows) ->
                     rows.associate { row ->
-                        row.name to ProcessDot(
+                        val pk = ProcessKey(row.name, row.uid)
+                        pk to ProcessDot(
                             procState = row.procState,
                             frozen = row.frozen,
                             pid = row.pid,
                             uid = row.uid,
-                            marker = markerMap[row.name to ts] ?: Marker.NORMAL,
+                            marker = markerMap[pk to ts] ?: Marker.NORMAL,
                         )
                     }
                 }
@@ -300,19 +303,17 @@ fun ProcessTab(
 private fun TimelineRow(
     timestamp: Long,
     pinnedProcesses: List<ProcessKey>,
-    stateMap: Map<String, ProcessDot>,
+    stateMap: Map<ProcessKey, ProcessDot>,
     isDark: Boolean,
     scrollState: androidx.compose.foundation.ScrollState,
 ) {
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
     val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
     val context = LocalContext.current
-    val lineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.06f)
+    val lineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
 
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -321,7 +322,7 @@ private fun TimelineRow(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .width(72.dp)
-                .padding(start = 12.dp)
+                .padding(start = 12.dp, top = 6.dp, bottom = 6.dp)
                 .clickable { Toast.makeText(context, fullTimeStr, Toast.LENGTH_SHORT).show() },
         )
 
@@ -331,10 +332,10 @@ private fun TimelineRow(
                 .weight(1f)
                 .horizontalScroll(scrollState)
                 .drawBehind {
-                    // Horizontal connector line
+                    // Horizontal connector
                     val y = size.height / 2
                     drawLine(hLineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
-                    // Thin vertical column lines
+                    // Vertical column lines — full height so they connect across rows
                     val colW = COL_WIDTH_DP.dp.toPx()
                     for (i in pinnedProcesses.indices) {
                         val cx = colW * i + colW / 2
@@ -343,10 +344,12 @@ private fun TimelineRow(
                 },
         ) {
             for (key in pinnedProcesses) {
-                val dot = stateMap[key.name]
+                val dot = stateMap[key]
 
                 Box(
-                    modifier = Modifier.width(COL_WIDTH_DP.dp),
+                    modifier = Modifier
+                        .width(COL_WIDTH_DP.dp)
+                        .padding(vertical = 6.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (dot != null) {
