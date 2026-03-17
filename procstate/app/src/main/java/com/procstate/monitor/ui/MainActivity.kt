@@ -147,6 +147,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     val snapshots by vm.snapshotsWithCounts.collectAsState()
     val pinnedProcesses by vm.pinnedProcesses.collectAsState()
     val timelineRows by vm.processTimeline.collectAsState()
+    val snapshotTimestamps by vm.snapshotTimestamps.collectAsState()
     val allProcessKeys by vm.allProcessKeys.collectAsState()
     val visibleStates by vm.visibleStates.collectAsState()
 
@@ -279,6 +280,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     1 -> ProcessTab(
                         pinnedProcesses = pinnedProcesses,
                         timelineRows = timelineRows,
+                        allSnapshotTimestamps = snapshotTimestamps,
                         allProcessKeys = allProcessKeys,
                         onPinProcess = vm::pinProcess,
                         onUnpinProcess = vm::unpinProcess,

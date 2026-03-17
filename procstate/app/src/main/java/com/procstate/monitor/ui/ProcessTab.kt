@@ -96,6 +96,7 @@ private data class ProcessDot(
 fun ProcessTab(
     pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
+    allSnapshotTimestamps: List<Long>,
     allProcessKeys: List<ProcessKey>,
     onPinProcess: (ProcessKey) -> Unit,
     onUnpinProcess: (ProcessKey) -> Unit,
@@ -159,7 +160,7 @@ fun ProcessTab(
             return
         }
 
-        if (timelineRows.isEmpty()) {
+        if (allSnapshotTimestamps.isEmpty()) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -167,7 +168,7 @@ fun ProcessTab(
             ) {
                 item {
                     Text(
-                        "No data for pinned processes in this time range",
+                        "No snapshots in this time range",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -176,24 +177,23 @@ fun ProcessTab(
             return
         }
 
-        // Detect process starts (PID changes for same key)
-        val timelineByTimestamp = remember(timelineRows, pinnedProcesses) {
+        // Detect process starts and merge all snapshot timestamps
+        val timelineByTimestamp = remember(timelineRows, allSnapshotTimestamps, pinnedProcesses) {
+            // Marker detection
             val markerMap = mutableMapOf<Pair<String, Long>, Marker>()
             val byName = timelineRows.groupBy { it.name }
             for ((_, rows) in byName) {
                 val sorted = rows.sortedBy { it.timestamp }
                 for (i in 1 until sorted.size) {
                     if (sorted[i].pid != sorted[i - 1].pid) {
-                        // PID changed = process restarted. Mark new as STARTED.
-                        // Old one just disappears (no node = died).
                         markerMap[sorted[i].name to sorted[i].timestamp] = Marker.STARTED
                     }
                 }
             }
-            timelineRows.groupBy { it.timestamp }
-                .toSortedMap(compareByDescending { it })
-                .map { (ts, rows) ->
-                    ts to rows.associate { row ->
+            // Build dot map per timestamp
+            val dotsByTs = timelineRows.groupBy { it.timestamp }
+                .mapValues { (ts, rows) ->
+                    rows.associate { row ->
                         row.name to ProcessDot(
                             procState = row.procState,
                             frozen = row.frozen,
@@ -203,6 +203,11 @@ fun ProcessTab(
                         )
                     }
                 }
+            // Merge all snapshot timestamps so empty rows show even when all pinned are dead
+            val allTs = (dotsByTs.keys + allSnapshotTimestamps).distinct()
+            allTs.sortedDescending().map { ts ->
+                ts to (dotsByTs[ts] ?: emptyMap())
+            }
         }
 
         val scrollState = rememberScrollState()
@@ -408,7 +413,7 @@ private fun TimelineRow(
                             }
                         }
                     } else {
-                        // Not present in this snapshot (gap = process not running)
+                        // Not present = process not running
                         Box(
                             modifier = Modifier
                                 .size(10.dp)
@@ -416,7 +421,14 @@ private fun TimelineRow(
                                     1.dp,
                                     MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                                     CircleShape,
-                                ),
+                                )
+                                .clickable {
+                                    Toast.makeText(
+                                        context,
+                                        "${key.name}\nNot running",
+                                        Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
                         )
                     }
                 }

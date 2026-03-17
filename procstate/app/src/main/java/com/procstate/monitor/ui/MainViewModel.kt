@@ -265,6 +265,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** All snapshot timestamps in range (ensures process tab shows rows even when all pinned are dead). */
+    val snapshotTimestamps: StateFlow<List<Long>> =
+        combine(_timeRange, _ticker) { range, tick -> tick - range.millis }
+            .flatMapLatest { start -> dao.getSnapshotTimestamps(start) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     /** All distinct process keys for the picker. */
     val allProcessKeys: StateFlow<List<ProcessKey>> =
         dao.getDistinctProcessKeys().map { rows ->

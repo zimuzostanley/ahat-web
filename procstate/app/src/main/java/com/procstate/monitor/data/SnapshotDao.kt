@@ -80,6 +80,15 @@ interface SnapshotDao {
     @Query("SELECT DISTINCT name, uid FROM process_entries ORDER BY name")
     fun getDistinctProcessKeys(): Flow<List<ProcessKeyRow>>
 
+    /** All snapshot timestamps in range (for ensuring empty rows show in process timeline). */
+    @Query("""
+        SELECT timestamp FROM snapshots
+        WHERE timestamp >= :start
+        ORDER BY timestamp DESC
+        LIMIT 500
+    """)
+    fun getSnapshotTimestamps(start: Long): Flow<List<Long>>
+
     @Query("SELECT COUNT(*) FROM snapshots")
     fun getSnapshotCount(): Flow<Int>
 
