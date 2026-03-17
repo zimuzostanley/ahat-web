@@ -89,10 +89,28 @@ interface SnapshotDao {
     fun getSnapshotCount(): Flow<Int>
 
     @Query("DELETE FROM snapshots WHERE timestamp < :cutoff")
-    suspend fun deleteOlderThan(cutoff: Long)
+    suspend fun deleteSnapshotsOlderThan(cutoff: Long)
+
+    @Query("DELETE FROM memory_snapshots WHERE timestamp < :cutoff")
+    suspend fun deleteMemoryOlderThan(cutoff: Long)
+
+    @Transaction
+    suspend fun deleteOlderThan(cutoff: Long) {
+        deleteMemoryOlderThan(cutoff)
+        deleteSnapshotsOlderThan(cutoff)
+    }
 
     @Query("DELETE FROM snapshots")
-    suspend fun deleteAll()
+    suspend fun deleteAllSnapshots()
+
+    @Query("DELETE FROM memory_snapshots")
+    suspend fun deleteAllMemory()
+
+    @Transaction
+    suspend fun deleteAll() {
+        deleteAllMemory()
+        deleteAllSnapshots()
+    }
 
     // ── Memory snapshots ────────────────────────────────────────────────────
 

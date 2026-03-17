@@ -103,6 +103,34 @@ class MemInfoParseTest {
     }
 
     @Test
+    fun `parseMemInfoOutput real device output with Graphics`() {
+        val output = """ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:   128116                         158040
+         Native Heap:    97252                         106732
+                Code:    16264                         186504
+               Stack:     2892                           3020
+            Graphics:    99256                          99256
+       Private Other:    30272
+              System:    84015
+             Unknown:                                   29472
+
+           TOTAL PSS:   458067            TOTAL RSS:   583024       TOTAL SWAP PSS:    61829"""
+
+        val info = ShellHelper.parseMemInfoOutput(output)
+        assertEquals(99256, info.graphicsKb)
+        assertEquals(128116, info.javaHeapKb)
+        assertEquals(97252, info.nativeHeapKb)
+        assertEquals(16264, info.codeKb)
+        assertEquals(2892, info.stackKb)
+        assertEquals(84015, info.systemKb)
+        assertEquals(458067, info.totalPssKb)
+        assertEquals(583024, info.totalRssKb)
+        assertEquals(61829, info.totalSwapKb)
+    }
+
+    @Test
     fun `parseMemInfoOutput all categories from App Summary`() {
         val output = """
              App Summary

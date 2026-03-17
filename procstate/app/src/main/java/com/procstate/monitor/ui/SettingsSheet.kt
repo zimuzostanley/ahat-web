@@ -86,6 +86,32 @@ fun SettingsSheet(
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
         Spacer(Modifier.height(16.dp))
 
+        // Memory
+        Text("Memory", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Auto-dump pinned processes", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Captures meminfo for each pinned process on every snapshot. Significantly slows recording.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.size(8.dp))
+            androidx.compose.material3.Switch(
+                checked = autoMemoryDump,
+                onCheckedChange = onSetAutoMemoryDump,
+            )
+        }
+
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        Spacer(Modifier.height(16.dp))
+
         // Export
         Text("Export", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
@@ -96,8 +122,7 @@ fun SettingsSheet(
         )
         Spacer(Modifier.height(8.dp))
 
-        var exportRange by remember { mutableStateOf(0L) } // 0 = all
-
+        var exportRange by remember { mutableStateOf(0L) }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -134,32 +159,6 @@ fun SettingsSheet(
             } else {
                 Text("Export to Perfetto")
             }
-        }
-
-        Spacer(Modifier.height(16.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-        Spacer(Modifier.height(16.dp))
-
-        // Auto memory dump
-        Text("Memory", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Auto-dump pinned processes", style = MaterialTheme.typography.bodyMedium)
-                Text(
-                    "Captures meminfo for each pinned process on every snapshot. Significantly slows recording.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.size(8.dp))
-            androidx.compose.material3.Switch(
-                checked = autoMemoryDump,
-                onCheckedChange = onSetAutoMemoryDump,
-            )
         }
 
         Spacer(Modifier.height(16.dp))

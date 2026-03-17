@@ -219,6 +219,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                     dao.insertSnapshotWithEntries(snapshot, entries)
+
+                    // Auto memory dump for pinned processes on manual snapshot
+                    if (_autoMemoryDump.value && _pinnedProcesses.value.isNotEmpty()) {
+                        for (key in _pinnedProcesses.value) {
+                            val proc = processes.find { it.name == key.name && it.uid == key.uid }
+                            if (proc != null) {
+                                try {
+                                    val memInfo = ShellHelper.getMemInfo(proc.pid)
+                                    dao.insertMemorySnapshot(MemorySnapshotEntity(
+                                        timestamp = snapshot.timestamp,
+                                        pid = proc.pid, name = key.name, uid = key.uid,
+                                        totalPssKb = memInfo.totalPssKb,
+                                        totalRssKb = memInfo.totalRssKb,
+                                        javaHeapKb = memInfo.javaHeapKb,
+                                        nativeHeapKb = memInfo.nativeHeapKb,
+                                        codeKb = memInfo.codeKb,
+                                        stackKb = memInfo.stackKb,
+                                        graphicsKb = memInfo.graphicsKb,
+                                        systemKb = memInfo.systemKb,
+                                        totalSwapKb = memInfo.totalSwapKb,
+                                    ))
+                                } catch (e: Exception) {
+                                    Log.w("MainVM", "Auto meminfo ${key.name} failed: ${e.message}")
+                                }
+                            }
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 Log.e("MainVM", "Pull-to-refresh failed", e)
