@@ -409,8 +409,8 @@ private fun ProcessPickerSheet(
     var search by remember { mutableStateOf("") }
     val filtered = remember(allNames, search, trackedNames) {
         val available = allNames.filter { it !in trackedNames }
-        if (search.isBlank()) available.take(30)
-        else available.filter { search.lowercase() in it.lowercase() }.take(30)
+        if (search.isBlank()) available
+        else available.filter { search.lowercase() in it.lowercase() }
     }
 
     Column(
@@ -418,10 +418,18 @@ private fun ProcessPickerSheet(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Text(
-            "Add Process",
-            style = MaterialTheme.typography.titleMedium,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Pin Process", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.weight(1f))
+            Text(
+                "${filtered.size} available",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
         Spacer(Modifier.height(12.dp))
 
         OutlinedTextField(
