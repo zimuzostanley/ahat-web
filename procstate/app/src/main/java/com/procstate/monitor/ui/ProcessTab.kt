@@ -118,6 +118,8 @@ fun ProcessTab(
 ) {
     val isDark = LocalIsDarkTheme.current
     var dotDetail by remember { mutableStateOf<DotDetail?>(null) }
+    // Track which dot is selected so it stays enlarged while drawer is open
+    var selectedDotId by remember { mutableStateOf<Pair<String, Long>?>(null) }
 
     // Detail drawer
     dotDetail?.let { detail ->
@@ -125,7 +127,7 @@ fun ProcessTab(
             detail = detail,
             isDark = isDark,
             appLabel = getAppLabel(detail.name),
-            onDismiss = { dotDetail = null },
+            onDismiss = { dotDetail = null; selectedDotId = null },
         )
     }
 
@@ -297,7 +299,11 @@ fun ProcessTab(
                         stateMap = stateMap,
                         isDark = isDark,
                         scrollState = scrollState,
-                        onShowDetail = { dotDetail = it },
+                        selectedDotId = selectedDotId,
+                        onShowDetail = { detail, name, ts ->
+                            dotDetail = detail
+                            selectedDotId = name to ts
+                        },
                     )
                 }
             }
@@ -331,7 +337,8 @@ private fun TimelineRow(
     stateMap: Map<ProcessKey, ProcessDot>,
     isDark: Boolean,
     scrollState: androidx.compose.foundation.ScrollState,
-    onShowDetail: (DotDetail) -> Unit,
+    selectedDotId: Pair<String, Long>?,
+    onShowDetail: (DotDetail, String, Long) -> Unit,
 ) {
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
     val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
@@ -375,16 +382,14 @@ private fun TimelineRow(
                         // Triangle for STARTED, circle for NORMAL
                         val isTriangle = dot.marker == Marker.STARTED
 
-                        var tapped by remember { mutableStateOf(false) }
+                        val isSelected = selectedDotId == (key.name to timestamp)
                         val scale by androidx.compose.animation.core.animateFloatAsState(
-                            targetValue = if (tapped) 1.6f else 1f,
+                            targetValue = if (isSelected) 1.5f else 1f,
                             animationSpec = androidx.compose.animation.core.tween(200),
                             label = "dotScale",
-                            finishedListener = { if (tapped) tapped = false },
                         )
                         val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
                         val onTap: () -> Unit = {
-                            tapped = true
                             onShowDetail(DotDetail(
                                 name = key.name,
                                 uid = dot.uid,
@@ -394,7 +399,7 @@ private fun TimelineRow(
                                 frozen = dot.frozen,
                                 started = dot.marker == Marker.STARTED,
                                 timestamp = fullTimeStr,
-                            ))
+                            ), key.name, timestamp)
                         }
 
                         if (isTriangle) {
@@ -455,7 +460,7 @@ private fun TimelineRow(
                                         frozen = false,
                                         started = false,
                                         timestamp = ts,
-                                    ))
+                                    ), key.name, timestamp)
                                 },
                         )
                     }
@@ -631,48 +636,67 @@ fun ProcessDetailSheet(
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 40.dp),
         ) {
-            // Header
+            // Header: color accent bar + app label + state + timestamp
             val stateColor = ProcStateColors.get(detail.state, isDark)
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 20.dp),
-            ) {
+
+            // Color accent strip
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(stateColor),
+            )
+            Spacer(Modifier.height(16.dp))
+
+            // App label
+            Text(
+                appLabel,
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            Spacer(Modifier.height(4.dp))
+
+            // State + timestamp row
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     Modifier
-                        .size(16.dp)
+                        .size(10.dp)
                         .clip(CircleShape)
                         .background(stateColor),
                 )
-                Spacer(Modifier.width(12.dp))
-                Column {
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    ProcStateColors.label(detail.state),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = stateColor,
+                )
+                if (detail.timestamp.isNotEmpty()) {
+                    Spacer(Modifier.weight(1f))
                     Text(
-                        appLabel,
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    Text(
-                        ProcStateColors.label(detail.state),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = stateColor,
+                        detail.timestamp,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
+            Spacer(Modifier.height(20.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
             Spacer(Modifier.height(16.dp))
 
             // Details
-            DetailRow("Process", detail.name)
+            DetailRow("Package", detail.name.substringBefore(':'))
+            if (detail.name.contains(':')) {
+                DetailRow("Process", detail.name)
+            }
             DetailRow("UID", detail.uid)
             if (detail.pid > 0) DetailRow("PID", detail.pid.toString())
-            DetailRow("State", "${ProcStateColors.label(detail.state)} (${detail.state})")
+            DetailRow("OOM Adj", "${ProcStateColors.label(detail.state)} (${detail.state})")
             if (detail.frozen) {
                 DetailRow("Frozen", "Yes")
             }
             if (detail.started) {
                 DetailRow("Event", "Process start")
-            }
-            if (detail.timestamp.isNotEmpty()) {
-                DetailRow("Time", detail.timestamp)
             }
         }
     }
