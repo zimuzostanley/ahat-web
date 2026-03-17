@@ -274,6 +274,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         onPinProcess = vm::pinProcess,
                         onUnpinProcess = vm::unpinProcess,
                         onLoadEntries = vm::getSnapshotEntries,
+                        isRefreshing = isRefreshing,
                     )
                     1 -> ProcessTab(
                         pinnedProcesses = pinnedProcesses,

@@ -75,6 +75,7 @@ fun ProcStateTab(
     onPinProcess: (ProcessKey) -> Unit,
     onUnpinProcess: (ProcessKey) -> Unit,
     onLoadEntries: suspend (Long) -> List<ProcessEntryEntity>,
+    isRefreshing: Boolean = false,
 ) {
     if (snapshots.isEmpty()) {
         // Use LazyColumn so pull-to-refresh overscroll detection works
@@ -114,6 +115,13 @@ fun ProcStateTab(
     val scope = rememberCoroutineScope()
     val isDark = LocalIsDarkTheme.current
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    // Auto-scroll to top after pull-to-refresh (not during recording)
+    androidx.compose.runtime.LaunchedEffect(isRefreshing) {
+        if (!isRefreshing && snapshots.isNotEmpty()) {
+            listState.animateScrollToItem(0)
+        }
+    }
 
     // Show scroll-to-top when not at the top
     val showScrollToTop by remember {
