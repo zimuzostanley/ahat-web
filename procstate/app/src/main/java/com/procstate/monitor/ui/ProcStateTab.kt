@@ -39,7 +39,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -410,24 +409,30 @@ private fun ProcessList(
             .padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
     ) {
         if (entries.size > 5) {
-            OutlinedTextField(
+            androidx.compose.material3.TextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search processes\u2026", style = MaterialTheme.typography.bodySmall) },
-                leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(16.dp)) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(36.dp),
+                placeholder = { Text("Search\u2026", style = MaterialTheme.typography.bodySmall) },
+                leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(14.dp)) },
                 trailingIcon = {
                     if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }, Modifier.size(20.dp)) {
-                            Icon(Icons.Default.Close, null, Modifier.size(14.dp))
+                        IconButton(onClick = { searchQuery = "" }, Modifier.size(18.dp)) {
+                            Icon(Icons.Default.Close, null, Modifier.size(12.dp))
                         }
                     }
                 },
                 singleLine = true,
                 textStyle = MaterialTheme.typography.bodySmall,
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                colors = androidx.compose.material3.TextFieldDefaults.colors(
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
                 ),
+                shape = RoundedCornerShape(4.dp),
             )
             Spacer(Modifier.height(4.dp))
         }

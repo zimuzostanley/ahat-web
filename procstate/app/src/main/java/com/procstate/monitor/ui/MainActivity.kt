@@ -33,6 +33,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
@@ -124,6 +125,7 @@ private fun ProcStateApp(vm: MainViewModel) {
 
     var selectedTab by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
+    var showProcessPicker by remember { mutableStateOf(false) }
 
     val isCapturing by vm.isCapturing.collectAsState()
     val isSnapping by vm.isSnapping.collectAsState()
@@ -160,6 +162,14 @@ private fun ProcStateApp(vm: MainViewModel) {
                     }
                 },
                 actions = {
+                    if (selectedTab == 1) {
+                        IconButton(onClick = { showProcessPicker = !showProcessPicker }) {
+                            Icon(
+                                if (showProcessPicker) Icons.Default.Close else Icons.Default.Add,
+                                "Add process",
+                            )
+                        }
+                    }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Default.Settings, "Settings")
                     }
@@ -247,6 +257,8 @@ private fun ProcStateApp(vm: MainViewModel) {
                     allProcessNames = allProcessNames,
                     onAddProcess = vm::addTrackedProcess,
                     onRemoveProcess = vm::removeTrackedProcess,
+                    showPicker = showProcessPicker,
+                    onDismissPicker = { showProcessPicker = false },
                 )
             }
         }

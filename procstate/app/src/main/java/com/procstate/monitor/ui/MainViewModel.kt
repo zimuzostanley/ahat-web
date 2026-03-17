@@ -47,6 +47,9 @@ enum class TimeRange(val label: String, val millis: Long) {
 /** Capture interval presets. */
 @Immutable
 enum class CaptureInterval(val label: String, val seconds: Int) {
+    SEC_1("1s", 1),
+    SEC_2("2s", 2),
+    SEC_5("5s", 5),
     SEC_10("10s", 10),
     SEC_30("30s", 30),
     MIN_1("1m", 60),
@@ -231,7 +234,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun addTrackedProcess(name: String) {
         val current = _trackedProcesses.value
-        if (name in current || current.size >= 5) return
+        if (name in current) return
         _trackedProcesses.value = current + name
         saveTrackedProcesses()
     }
