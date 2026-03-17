@@ -487,7 +487,6 @@ fun QueryScreen(
                                     if (count.isNotBlank()) {
                                         Text(count, style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            textAlign = TextAlign.End,
                                             modifier = Modifier.width(48.dp))
                                     }
                                 }
