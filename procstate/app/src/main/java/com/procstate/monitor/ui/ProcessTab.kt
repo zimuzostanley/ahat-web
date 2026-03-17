@@ -925,20 +925,15 @@ fun ProcessDetailSheet(
                         )
                     }
                 } else if (memoryData != null) {
-                    // Show memory breakdown — horizontal compact layout
+                    // Show memory breakdown — single scrollable row
                     Text("Memory", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
-                    // PSS / RSS row
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        MemoryChip("PSS", memoryData.totalPssKb, Modifier.weight(1f))
-                        MemoryChip("RSS", memoryData.totalRssKb, Modifier.weight(1f))
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    // Breakdown row
                     Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
+                        MemoryChip("PSS", memoryData.totalPssKb)
+                        MemoryChip("RSS", memoryData.totalRssKb)
                         MemoryChip("Java", memoryData.javaHeapKb)
                         MemoryChip("Native", memoryData.nativeHeapKb)
                         MemoryChip("Code", memoryData.codeKb)
@@ -974,7 +969,10 @@ fun ProcessDetailSheet(
                         MemoryStatRow("Java", memoryStats.minJavaHeap, memoryStats.avgJavaHeap, memoryStats.maxJavaHeap)
                         MemoryStatRow("Native", memoryStats.minNativeHeap, memoryStats.avgNativeHeap, memoryStats.maxNativeHeap)
                         MemoryStatRow("Code", memoryStats.minCode, memoryStats.avgCode, memoryStats.maxCode)
+                        MemoryStatRow("Stack", memoryStats.minStack, memoryStats.avgStack, memoryStats.maxStack)
                         MemoryStatRow("Graphics", memoryStats.minGraphics, memoryStats.avgGraphics, memoryStats.maxGraphics)
+                        MemoryStatRow("System", memoryStats.minSystem, memoryStats.avgSystem, memoryStats.maxSystem)
+                        MemoryStatRow("Swap", memoryStats.minSwap, memoryStats.avgSwap, memoryStats.maxSwap)
                     }
                 } else if (onDumpMemory != null) {
                     // Dump button

@@ -229,8 +229,9 @@ object ShellHelper {
 
     // Parse the "App Summary" section which has the correct breakdown.
     // Lines look like: "           Java Heap:    12345"
+    // Match category lines from App Summary — use \h (horizontal whitespace) for robustness
     private val SUMMARY_LINE = Regex(
-        """^\s*(Java Heap|Native Heap|Code|Stack|Graphics|System):\s+(\d+)"""
+        """(?:^|\n)\s*(Java Heap|Native Heap|Code|Stack|Graphics|System):\s+(\d+)"""
     )
     // Fallback for Graphics from detailed MEMINFO table rows like "GL mtrack" or "Gfx dev"
     private val GFX_LINE = Regex("""^\s+(GL mtrack|Gfx dev|EGL mtrack)\s+(\d+)""")
@@ -290,7 +291,13 @@ object ShellHelper {
         val info = parseMemInfoOutput(output)
         Log.d(TAG, "MemInfo PID $pid: PSS=${info.totalPssKb} RSS=${info.totalRssKb} " +
             "Java=${info.javaHeapKb} Native=${info.nativeHeapKb} " +
-            "Code=${info.codeKb} Gfx=${info.graphicsKb}")
+            "Code=${info.codeKb} Graphics=${info.graphicsKb} System=${info.systemKb}")
+        if (info.graphicsKb == 0L) {
+            // Debug: log whether "Graphics:" appears in output at all
+            val hasGraphicsLine = output.lines().any { "Graphics:" in it }
+            Log.w(TAG, "Graphics=0 for PID $pid. Output has 'Graphics:' line: $hasGraphicsLine, " +
+                "output length: ${output.length}")
+        }
         return info
     }
 }

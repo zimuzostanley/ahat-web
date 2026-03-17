@@ -103,6 +103,61 @@ class MemInfoParseTest {
     }
 
     @Test
+    fun `parseMemInfoOutput full dumpsys output with MEMINFO table and App Summary`() {
+        val output = """Applications Memory Usage (in Kilobytes):
+Uptime: 529296826 Realtime: 744273467
+
+** MEMINFO in pid 4795 [com.android.systemui] **
+                   Pss  Private  Private  SwapPss      Rss     Heap     Heap     Heap
+                 Total    Dirty    Clean    Dirty    Total     Size    Alloc     Free
+                ------   ------   ------   ------   ------   ------   ------   ------
+  Native Heap    97565    92496     5068    62305   101072   348668   129056   214617
+  Dalvik Heap   117594   117440       88      159   124364   262144   114450   147694
+ Dalvik Other    12748     6520      152       88    19380
+        Stack     2864     2756      108     2000     2868
+       Ashmem      560      552        0        0     2396
+    Other dev      149        4      144        0      520
+     .so mmap      713      124       36      628    45912
+    .jar mmap     1110        0       44        0    56284
+    .apk mmap    14382        0      464        0    41548
+    .ttf mmap      539        0      232        0     1820
+    .dex mmap    13957      124    13832        0    14912
+    .oat mmap       81        0        0        0    13028
+    .art mmap     1900     1400      428        0    24780
+   Other mmap      249        4      172        0     1448
+   EGL mtrack    70920    70920        0        0    70920
+    GL mtrack    30256    30256        0        0    30256
+        Memfd      306        0        0        0      612
+      Unknown    17130     9840     7288     1597    18084
+        TOTAL   449800   332436    28056    66777   570204   610812   243506   362311
+
+ App Summary
+                       Pss(KB)                        Rss(KB)
+                        ------                         ------
+           Java Heap:   119268                         149144
+         Native Heap:    92496                         101072
+                Code:    15216                         186020
+               Stack:     2756                           2868
+            Graphics:   101176                         101176
+       Private Other:    29580
+              System:    89308
+             Unknown:                                   29924
+
+           TOTAL PSS:   449800            TOTAL RSS:   570204       TOTAL SWAP PSS:    66777"""
+
+        val info = ShellHelper.parseMemInfoOutput(output)
+        assertEquals("Graphics from App Summary", 101176, info.graphicsKb)
+        assertEquals(119268, info.javaHeapKb)
+        assertEquals(92496, info.nativeHeapKb)
+        assertEquals(15216, info.codeKb)
+        assertEquals(2756, info.stackKb)
+        assertEquals(89308, info.systemKb)
+        assertEquals(449800, info.totalPssKb)
+        assertEquals(570204, info.totalRssKb)
+        assertEquals(66777, info.totalSwapKb)
+    }
+
+    @Test
     fun `parseMemInfoOutput exact user output`() {
         // Exact copy-paste from user's device — do NOT modify whitespace
         val output = "App Summary\n" +
