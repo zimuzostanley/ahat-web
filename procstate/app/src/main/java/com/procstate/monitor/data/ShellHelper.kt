@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 object ShellHelper {
 
     private const val TAG = "ProcState"
-    private const val SHELL_TIMEOUT_SEC = 15L
+    private const val SHELL_TIMEOUT_SEC = 30L
 
     // Groups: 1=oomState, 2=PID, 3=name, 4=UID (optional)
     private val LRU_LINE = Regex("""^\s*#\d+:\s+(\S+)\s+.*?\s(\d+):([^\s/]+)(?:/(\S+))?""")
@@ -195,7 +195,9 @@ object ShellHelper {
 
     fun getFrozenPids(): Set<Int> {
         return try {
-            val output = exec("dumpsys activity | grep -A 2000 'Apps frozen:'")
+            // Use a bounded grep — full `dumpsys activity` is huge and can timeout.
+            // 500 lines is enough for ~500 frozen processes.
+            val output = exec("dumpsys activity processes | grep -A 500 'Apps frozen:'")
             val pids = mutableSetOf<Int>()
             var inSection = false
             for (line in output.lines()) {
