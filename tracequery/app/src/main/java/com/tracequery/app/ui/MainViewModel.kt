@@ -337,21 +337,38 @@ class MainViewModel(
         }
     }
 
-    /** Get distinct values for a column. Returns via callback (runs async). */
+    /** Get distinct values for a column from the CURRENT query result. */
     fun getDistinctValues(column: String, callback: (List<String>) -> Unit) {
         val tab = _state.value.activeTab ?: return
         val session = tab.session ?: return
-        val baseSql = tab.baseSql.ifBlank { tab.currentSql }.trimEnd().removeSuffix(";").trim()
+        // Use currentSql (the fully composed query) so distinct values
+        // reflect the current result including ops/filters/aggregation
+        val raw = tab.currentSql.trimEnd().trimEnd(';').trim()
+        val includes = mutableListOf<String>()
+        val queryLines = mutableListOf<String>()
+        for (line in raw.lines()) {
+            val t = line.trim()
+            if (t.uppercase().startsWith("INCLUDE PERFETTO MODULE")) {
+                includes.add(t.trimEnd(';'))
+            } else if (t.isNotEmpty()) {
+                queryLines.add(line)
+            }
+        }
+        val prefix = if (includes.isNotEmpty()) includes.joinToString(";\n") + ";\n" else ""
+        val selectSql = queryLines.joinToString("\n").trim().trimEnd(';').trim()
+        // Strip ORDER BY from the inner query (not needed for distinct)
+        val cleanSql = selectSql.replace(
+            Regex("\\s+ORDER BY\\s+[^)]*$", RegexOption.IGNORE_CASE), ""
+        ).trim()
 
         viewModelScope.launch {
-            val sql = "SELECT $column, COUNT(*) as cnt FROM ($baseSql) WHERE $column IS NOT NULL GROUP BY $column ORDER BY cnt DESC;"
+            val sql = "${prefix}SELECT $column, COUNT(*) as cnt FROM ($cleanSql) WHERE $column IS NOT NULL GROUP BY $column ORDER BY cnt DESC;"
             val result = session.query(sql)
             if (!result.isError) {
-                // Return "value (count)" pairs
                 callback(result.rows.map { row ->
                     val value = row.getOrNull(0) ?: ""
                     val count = row.getOrNull(1) ?: ""
-                    "$value\t$count" // tab-separated value and count
+                    "$value\t$count"
                 })
             } else {
                 callback(emptyList())
