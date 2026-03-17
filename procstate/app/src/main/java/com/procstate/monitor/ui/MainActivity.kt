@@ -11,11 +11,17 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +31,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -34,17 +39,14 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,7 +56,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -79,6 +80,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.material.ExperimentalMaterialApi
+import androidx.compose.material.pullrefresh.PullRefreshIndicator
+import androidx.compose.material.pullrefresh.pullRefresh
+import androidx.compose.material.pullrefresh.rememberPullRefreshState
 import com.procstate.monitor.data.ShellHelper
 import com.procstate.monitor.service.CaptureService
 import com.procstate.monitor.ui.theme.ProcStateTheme
@@ -106,7 +111,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
 @Composable
 private fun ProcStateApp(vm: MainViewModel) {
     val context = LocalContext.current
@@ -131,7 +136,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     var showProcessPicker by remember { mutableStateOf(false) }
 
     val isCapturing by vm.isCapturing.collectAsState()
-    val isSnapping by vm.isSnapping.collectAsState()
+    val isRefreshing by vm.isRefreshing.collectAsState()
     val timeRange by vm.timeRange.collectAsState()
     val captureInterval by vm.captureInterval.collectAsState()
     val stopAfter by vm.stopAfter.collectAsState()
@@ -189,7 +194,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                 .padding(paddingValues)
                 .background(MaterialTheme.colorScheme.background),
         ) {
-            // Permission warning banner
+            // Permission warning
             if (!permState.canCapture) {
                 PermissionBanner(permState)
             }
@@ -197,21 +202,19 @@ private fun ProcStateApp(vm: MainViewModel) {
             // Capture controls
             CaptureControls(
                 isCapturing = isCapturing,
-                isSnapping = isSnapping,
                 captureInterval = captureInterval,
                 stopAfter = stopAfter,
                 onIntervalChange = vm::setCaptureInterval,
                 onStopAfterChange = vm::setStopAfter,
                 onStart = vm::startCapture,
                 onStop = vm::stopCapture,
-                onCaptureOnce = vm::captureOnce,
             )
 
             // Error banner
-            androidx.compose.animation.AnimatedVisibility(
+            AnimatedVisibility(
                 visible = captureError != null,
-                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
-                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(),
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
             ) {
                 captureError?.let { error ->
                     Row(
@@ -234,7 +237,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                 }
             }
 
-            // Time range filter (scrollable)
+            // Time range filter
             TimeRangeSelector(selected = timeRange, onSelect = vm::setTimeRange)
 
             // Legend
@@ -253,21 +256,34 @@ private fun ProcStateApp(vm: MainViewModel) {
                 }
             }
 
-            when (selectedTab) {
-                0 -> ProcStateTab(
-                    snapshots = snapshots,
-                    trackedProcesses = trackedProcesses,
-                    onAddTrackedProcess = vm::addTrackedProcess,
-                    onLoadEntries = vm::getSnapshotEntries,
-                )
-                1 -> ProcessTab(
-                    trackedProcesses = trackedProcesses,
-                    timelineRows = timelineRows,
-                    allProcessNames = allProcessNames,
-                    onAddProcess = vm::addTrackedProcess,
-                    onRemoveProcess = vm::removeTrackedProcess,
-                    showPicker = showProcessPicker,
-                    onDismissPicker = { showProcessPicker = false },
+            // Pull-to-refresh wraps tab content
+            val pullState = rememberPullRefreshState(isRefreshing, vm::pullToRefresh)
+
+            Box(Modifier.fillMaxSize().pullRefresh(pullState)) {
+                when (selectedTab) {
+                    0 -> ProcStateTab(
+                        snapshots = snapshots,
+                        trackedProcesses = trackedProcesses,
+                        onAddTrackedProcess = vm::addTrackedProcess,
+                        onLoadEntries = vm::getSnapshotEntries,
+                    )
+                    1 -> ProcessTab(
+                        trackedProcesses = trackedProcesses,
+                        timelineRows = timelineRows,
+                        allProcessNames = allProcessNames,
+                        onAddProcess = vm::addTrackedProcess,
+                        onRemoveProcess = vm::removeTrackedProcess,
+                        showPicker = showProcessPicker,
+                        onOpenPicker = { showProcessPicker = true },
+                        onDismissPicker = { showProcessPicker = false },
+                    )
+                }
+
+                PullRefreshIndicator(
+                    refreshing = isRefreshing,
+                    state = pullState,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    contentColor = MaterialTheme.colorScheme.primary,
                 )
             }
         }
@@ -302,9 +318,7 @@ private fun PermissionBanner(permState: ShellHelper.PermissionState) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(
-            Icons.Default.Warning,
-            null,
-            Modifier.size(16.dp),
+            Icons.Default.Warning, null, Modifier.size(16.dp),
             tint = MaterialTheme.colorScheme.onTertiaryContainer,
         )
         Spacer(Modifier.width(8.dp))
@@ -331,8 +345,7 @@ private fun PermissionBanner(permState: ShellHelper.PermissionState) {
 private fun PulsingDot() {
     val transition = rememberInfiniteTransition(label = "pulse")
     val alpha by transition.animateFloat(
-        initialValue = 1f,
-        targetValue = 0.3f,
+        initialValue = 1f, targetValue = 0.3f,
         animationSpec = infiniteRepeatable(tween(800), RepeatMode.Reverse),
         label = "pulseAlpha",
     )
@@ -345,19 +358,17 @@ private fun PulsingDot() {
     )
 }
 
-// ── Capture controls ────────────────────────────────────────────────────────
+// ── Capture controls (collapsible) ──────────────────────────────────────────
 
 @Composable
 private fun CaptureControls(
     isCapturing: Boolean,
-    isSnapping: Boolean,
     captureInterval: CaptureInterval,
     stopAfter: StopAfter,
     onIntervalChange: (CaptureInterval) -> Unit,
     onStopAfterChange: (StopAfter) -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit,
-    onCaptureOnce: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
 
@@ -366,7 +377,7 @@ private fun CaptureControls(
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        // Main row: Record/Stop + Snapshot + expand arrow
+        // Main row: Record/Stop + expand arrow
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -392,23 +403,24 @@ private fun CaptureControls(
                 }
             }
 
-            OutlinedButton(
-                onClick = onCaptureOnce,
-                enabled = !isSnapping,
-            ) {
-                if (isSnapping) {
-                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(Icons.Default.CameraAlt, null, Modifier.size(16.dp))
-                }
-                Spacer(Modifier.width(4.dp))
-                Text("Snapshot")
+            // Current settings summary
+            Text(
+                "${captureInterval.label}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (stopAfter != StopAfter.NEVER) {
+                Text(
+                    "for ${stopAfter.label}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
-            // Expand/collapse arrow with smooth rotation
-            val arrowRotation by androidx.compose.animation.core.animateFloatAsState(
+            // Expand arrow
+            val arrowRotation by animateFloatAsState(
                 targetValue = if (expanded) 180f else 0f,
-                animationSpec = androidx.compose.animation.core.tween(300),
+                animationSpec = tween(300),
                 label = "arrowRotation",
             )
             IconButton(
@@ -426,21 +438,21 @@ private fun CaptureControls(
             }
         }
 
-        // Collapsible details
-        androidx.compose.animation.AnimatedVisibility(
+        // Collapsible: interval + stop-after selectors
+        AnimatedVisibility(
             visible = expanded,
-            enter = androidx.compose.animation.expandVertically(),
-            exit = androidx.compose.animation.shrinkVertically(),
+            enter = fadeIn() + expandVertically(),
+            exit = fadeOut() + shrinkVertically(),
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    .padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Every:",
+                    "Every",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -451,9 +463,9 @@ private fun CaptureControls(
                     onSelect = onIntervalChange,
                     enabled = !isCapturing,
                 )
-                Spacer(Modifier.width(4.dp))
+                Spacer(Modifier.weight(1f))
                 Text(
-                    "Stop after:",
+                    "Stop after",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -498,7 +510,7 @@ private fun <T> DropdownSelector(
     }
 }
 
-// ── Time range chips (scrollable) ───────────────────────────────────────────
+// ── Time range chips ────────────────────────────────────────────────────────
 
 @Composable
 private fun TimeRangeSelector(selected: TimeRange, onSelect: (TimeRange) -> Unit) {

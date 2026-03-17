@@ -25,8 +25,10 @@ interface SnapshotDao {
     }
 
     /**
-     * Snapshots with per-state counts in a time range, for the stacked bar view.
-     * Limited to 500 most recent snapshots to prevent OOM on large ranges.
+     * Snapshots with per-state counts since a start time.
+     * No upper bound — Room's InvalidationTracker re-emits on every insert,
+     * so new snapshots appear immediately without needing a ticker.
+     * Limited to 500 most recent to prevent OOM.
      */
     @Query("""
         SELECT s.id, s.timestamp, pe.procState, COUNT(*) as count
@@ -34,21 +36,21 @@ interface SnapshotDao {
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE s.id IN (
             SELECT id FROM snapshots
-            WHERE timestamp BETWEEN :start AND :end
+            WHERE timestamp >= :start
             ORDER BY timestamp DESC
             LIMIT 500
         )
         GROUP BY s.id, pe.procState
         ORDER BY s.timestamp DESC
     """)
-    fun getSnapshotStateCounts(start: Long, end: Long): Flow<List<SnapshotStateRow>>
+    fun getSnapshotStateCounts(start: Long): Flow<List<SnapshotStateRow>>
 
     /** All process entries for a single snapshot (for expanded breakdown). */
     @Query("SELECT * FROM process_entries WHERE snapshotId = :snapshotId ORDER BY procState, name")
     suspend fun getEntriesForSnapshot(snapshotId: Long): List<ProcessEntryEntity>
 
     /**
-     * Process state timeline for specific process names in a time range.
+     * Process state timeline for specific process names since a start time.
      * Limited to 500 most recent snapshots.
      */
     @Query("""
@@ -57,13 +59,13 @@ interface SnapshotDao {
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE pe.name IN (:names) AND s.id IN (
             SELECT id FROM snapshots
-            WHERE timestamp BETWEEN :start AND :end
+            WHERE timestamp >= :start
             ORDER BY timestamp DESC
             LIMIT 500
         )
         ORDER BY s.timestamp ASC
     """)
-    fun getProcessTimeline(names: List<String>, start: Long, end: Long): Flow<List<ProcessTimelineRow>>
+    fun getProcessTimeline(names: List<String>, start: Long): Flow<List<ProcessTimelineRow>>
 
     /** All distinct process names ever seen (for search/selection). */
     @Query("SELECT DISTINCT name FROM process_entries ORDER BY name")

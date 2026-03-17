@@ -1,14 +1,10 @@
 package com.procstate.monitor.ui
 
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import com.procstate.monitor.ui.theme.LocalIsDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,12 +26,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -44,19 +44,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.procstate.monitor.data.ProcessTimelineRow
+import com.procstate.monitor.ui.theme.LocalIsDarkTheme
 import com.procstate.monitor.ui.theme.ProcStateColors
 
-/** Track colors: light and dark variants for the column headers. Wraps around. */
 private data class TrackColor(val light: Color, val dark: Color)
 
 private val TrackColors = listOf(
@@ -72,6 +69,7 @@ private val TrackColors = listOf(
 
 private const val COL_WIDTH_DP = 80
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProcessTab(
     trackedProcesses: List<String>,
@@ -80,21 +78,26 @@ fun ProcessTab(
     onAddProcess: (String) -> Unit,
     onRemoveProcess: (String) -> Unit,
     showPicker: Boolean = false,
+    onOpenPicker: () -> Unit = {},
     onDismissPicker: () -> Unit = {},
 ) {
     val isDark = LocalIsDarkTheme.current
 
-    Column(Modifier.fillMaxSize()) {
-        // Picker (toggled from top bar +)
-        AnimatedVisibility(visible = showPicker, enter = expandVertically(), exit = shrinkVertically()) {
-            ProcessPicker(
+    // Bottom sheet drawer for process picker
+    if (showPicker) {
+        ModalBottomSheet(
+            onDismissRequest = onDismissPicker,
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            ProcessPickerSheet(
                 allNames = allProcessNames,
                 trackedNames = trackedProcesses,
                 onSelect = onAddProcess,
-                onDismiss = onDismissPicker,
             )
         }
+    }
 
+    Column(Modifier.fillMaxSize()) {
         // Chips row
         if (trackedProcesses.isNotEmpty()) {
             TrackedChipsRow(
@@ -102,9 +105,8 @@ fun ProcessTab(
                 isDark = isDark,
                 onRemoveProcess = onRemoveProcess,
             )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
         }
-
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
         if (trackedProcesses.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -114,12 +116,18 @@ fun ProcessTab(
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Spacer(Modifier.height(4.dp))
+                    Spacer(Modifier.height(8.dp))
                     Text(
-                        "Add from the By State tab or tap + in the top bar",
+                        "Add from the By State tab or tap below",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )
+                    Spacer(Modifier.height(16.dp))
+                    OutlinedButton(onClick = onOpenPicker) {
+                        Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Add Process")
+                    }
                 }
             }
             return
@@ -144,7 +152,7 @@ fun ProcessTab(
 
         val scrollState = rememberScrollState()
 
-        // Column headers (horizontally scrollable, synced with body)
+        // Column headers
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -182,7 +190,7 @@ fun ProcessTab(
             }
         }
 
-        // Timeline (horizontally scrollable columns, synced scroll)
+        // Timeline
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(vertical = 4.dp),
@@ -200,7 +208,7 @@ fun ProcessTab(
     }
 }
 
-// ── Timeline row with colored dots ──────────────────────────────────────────
+// ── Timeline row ────────────────────────────────────────────────────────────
 
 @Composable
 private fun TimelineRow(
@@ -275,7 +283,7 @@ private fun TimelineRow(
     }
 }
 
-// ── Tracked process chips (horizontally scrollable) ─────────────────────────
+// ── Tracked process chips ───────────────────────────────────────────────────
 
 @Composable
 private fun TrackedChipsRow(
@@ -309,7 +317,7 @@ private fun ProcessChip(name: String, color: Color, onRemove: () -> Unit) {
             .background(color.copy(alpha = 0.1f))
             .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
             .clickable { Toast.makeText(context, name, Toast.LENGTH_SHORT).show() }
-            .padding(start = 8.dp, end = 4.dp, top = 3.dp, bottom = 3.dp),
+            .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -332,78 +340,88 @@ private fun ProcessChip(name: String, color: Color, onRemove: () -> Unit) {
     }
 }
 
-// ── Process picker (shown from top bar +) ───────────────────────────────────
+// ── Process picker (bottom sheet drawer) ────────────────────────────────────
 
 @Composable
-private fun ProcessPicker(
+private fun ProcessPickerSheet(
     allNames: List<String>,
     trackedNames: List<String>,
     onSelect: (String) -> Unit,
-    onDismiss: () -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
     val filtered = remember(allNames, search, trackedNames) {
         val available = allNames.filter { it !in trackedNames }
-        if (search.isBlank()) available.take(20)
-        else available.filter { search.lowercase() in it.lowercase() }.take(20)
+        if (search.isBlank()) available.take(30)
+        else available.filter { search.lowercase() in it.lowercase() }.take(30)
     }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            androidx.compose.material3.TextField(
-                value = search,
-                onValueChange = { search = it },
-                modifier = Modifier
-                    .weight(1f)
-                    .height(36.dp),
-                placeholder = { Text("Search processes\u2026", style = MaterialTheme.typography.bodySmall) },
-                leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(14.dp)) },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall,
-                colors = TextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                    unfocusedIndicatorColor = Color.Transparent,
-                    focusedIndicatorColor = MaterialTheme.colorScheme.primary,
-                ),
-                shape = RoundedCornerShape(4.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
-                Icon(Icons.Default.Close, "Close", Modifier.size(16.dp))
+        Text(
+            "Add Process",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Spacer(Modifier.height(12.dp))
+
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Search processes\u2026") },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = {
+                if (search.isNotEmpty()) {
+                    IconButton(onClick = { search = "" }) {
+                        Icon(Icons.Default.Close, null)
+                    }
+                }
+            },
+            singleLine = true,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f, fill = false),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            items(filtered) { name ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { onSelect(name) }
+                        .padding(vertical = 8.dp, horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Icon(
+                        Icons.Default.Add, null, Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
-        Spacer(Modifier.height(4.dp))
-        for (name in filtered) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSelect(name) }
-                    .padding(vertical = 3.dp, horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    name,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Icon(Icons.Default.Add, null, Modifier.size(14.dp), tint = MaterialTheme.colorScheme.primary)
-            }
-        }
+
         if (filtered.isEmpty()) {
             Text(
-                if (allNames.isEmpty()) "No processes captured yet" else "No matches",
+                if (allNames.isEmpty()) "No processes captured yet" else "No processes match your search",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(8.dp),
+                modifier = Modifier.padding(16.dp),
             )
         }
+
+        Spacer(Modifier.height(16.dp))
     }
 }

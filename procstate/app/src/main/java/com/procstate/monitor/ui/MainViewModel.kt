@@ -31,7 +31,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** Time range filter options. */
 @Immutable
 enum class TimeRange(val label: String, val millis: Long) {
     MIN_5("5m", 5 * 60_000L),
@@ -44,7 +43,6 @@ enum class TimeRange(val label: String, val millis: Long) {
     DAY_30("30d", 30L * 24 * 60 * 60_000L),
 }
 
-/** Capture interval presets. */
 @Immutable
 enum class CaptureInterval(val label: String, val seconds: Int) {
     SEC_1("1s", 1),
@@ -57,7 +55,6 @@ enum class CaptureInterval(val label: String, val seconds: Int) {
     MIN_15("15m", 900),
 }
 
-/** Stop-after presets (0 = never). */
 @Immutable
 enum class StopAfter(val label: String, val minutes: Int) {
     NEVER("Never", 0),
@@ -97,8 +94,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setTimeRange(range: TimeRange) { _timeRange.value = range }
 
     /**
-     * Ticker that emits periodically to keep the time window fresh.
-     * Triggers re-evaluation of "now" for sliding-window queries.
+     * Ticker that periodically slides the start boundary forward.
+     * Room's InvalidationTracker handles new inserts automatically (no upper bound),
+     * but the start boundary needs periodic refresh so old data drops off.
      */
     private val _ticker = MutableStateFlow(System.currentTimeMillis())
 
@@ -113,11 +111,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _isCapturing = MutableStateFlow(CaptureService.running)
     val isCapturing: StateFlow<Boolean> = _isCapturing.asStateFlow()
 
-    private val _isSnapping = MutableStateFlow(false)
-    val isSnapping: StateFlow<Boolean> = _isSnapping.asStateFlow()
-
-    private val _lastCaptureMs = MutableStateFlow(0L)
-    val lastCaptureMs: StateFlow<Long> = _lastCaptureMs.asStateFlow()
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
 
     private val _captureError = MutableStateFlow<String?>(null)
     val captureError: StateFlow<String?> = _captureError.asStateFlow()
@@ -127,8 +122,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun refreshCaptureStatus() {
         _isCapturing.value = CaptureService.running
-        _lastCaptureMs.value = System.currentTimeMillis()
-        _ticker.value = System.currentTimeMillis()
     }
 
     fun startCapture() {
@@ -153,10 +146,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _isCapturing.value = false
     }
 
-    fun captureOnce() {
-        if (_isSnapping.value) return
+    /** Pull-to-refresh: capture a snapshot on demand. */
+    fun pullToRefresh() {
+        if (_isRefreshing.value) return
         viewModelScope.launch {
-            _isSnapping.value = true
+            _isRefreshing.value = true
             _captureError.value = null
             try {
                 withContext(Dispatchers.IO) {
@@ -171,15 +165,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                     dao.insertSnapshotWithEntries(snapshot, entries)
-                    Log.d("MainVM", "Manual capture: ${processes.size} processes")
+                    Log.d("MainVM", "Pull-to-refresh: ${processes.size} processes")
                 }
-                _lastCaptureMs.value = System.currentTimeMillis()
-                _ticker.value = System.currentTimeMillis()
             } catch (e: Exception) {
-                Log.e("MainVM", "Manual capture failed", e)
+                Log.e("MainVM", "Pull-to-refresh failed", e)
                 _captureError.value = e.message ?: "Capture failed"
             } finally {
-                _isSnapping.value = false
+                _isRefreshing.value = false
             }
         }
     }
@@ -188,21 +180,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Proc State tab data ─────────────────────────────────────────────────
 
-    /** Snapshots with state counts, reactive to time range AND ticker changes. */
+    /**
+     * Snapshots with state counts. Room re-emits on every insert (no upper bound),
+     * so new bars appear in realtime. The ticker only slides the start boundary.
+     */
     val snapshotsWithCounts: StateFlow<List<SnapshotWithCounts>> =
-        combine(_timeRange, _ticker) { range, tick -> range to tick }
-            .flatMapLatest { (range, tick) ->
-                val now = tick
-                dao.getSnapshotStateCounts(now - range.millis, now)
-            }.map { rows ->
-                rows.groupBy { it.id }.map { (id, group) ->
-                    SnapshotWithCounts(
-                        id = id,
-                        timestamp = group.first().timestamp,
-                        stateCounts = group.associate { it.procState to it.count },
-                    )
-                }.sortedByDescending { it.timestamp }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        combine(_timeRange, _ticker) { range, tick ->
+            tick - range.millis
+        }.flatMapLatest { start ->
+            dao.getSnapshotStateCounts(start)
+        }.map { rows ->
+            rows.groupBy { it.id }.map { (id, group) ->
+                SnapshotWithCounts(
+                    id = id,
+                    timestamp = group.first().timestamp,
+                    stateCounts = group.associate { it.procState to it.count },
+                )
+            }.sortedByDescending { it.timestamp }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val visibleStates: StateFlow<Set<String>> =
         snapshotsWithCounts.map { snapshots ->
@@ -223,7 +218,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             ShellHelper.detectRoot()
             _permissionState.value = ShellHelper.checkPermissions(ctx)
         }
-        // Ticker: refresh time window every 30s while subscribed
+        // Ticker: slide the start boundary forward every 30s
         viewModelScope.launch {
             while (isActive) {
                 delay(30_000)
@@ -249,10 +244,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             Triple(names, range, tick)
         }.flatMapLatest { (names, range, tick) ->
             if (names.isEmpty()) flowOf(emptyList())
-            else {
-                val now = tick
-                dao.getProcessTimeline(names, now - range.millis, now)
-            }
+            else dao.getProcessTimeline(names, tick - range.millis)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val allProcessNames: StateFlow<List<String>> =
@@ -275,16 +267,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Tracked process persistence (using StringSet) ───────────────────────
+    // ── Tracked process persistence ─────────────────────────────────────────
 
     private fun loadTrackedProcesses() {
         val prefs = ctx.getSharedPreferences("tracked", Context.MODE_PRIVATE)
-        // Migrate from old null-separated format if needed
         val oldFormat = prefs.getString("processes", null)
         if (oldFormat != null) {
             val list = oldFormat.split("\u0000").filter { it.isNotEmpty() }
             _trackedProcesses.value = list
-            // Migrate to ordered list format
             prefs.edit()
                 .remove("processes")
                 .putString("process_list", list.joinToString("|"))
