@@ -469,6 +469,7 @@ private fun SnapshotBreakdown(
                     pinnedProcesses = pinnedProcesses,
                     onPinProcess = onPinProcess,
                     onUnpinProcess = onUnpinProcess,
+                    onShowDetail = onShowDetail,
                 )
             }
         }
