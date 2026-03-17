@@ -1,0 +1,147 @@
+package com.procstate.monitor.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import com.procstate.monitor.ui.theme.ThemeMode
+
+@Composable
+fun SettingsSheet(
+    themeMode: ThemeMode,
+    snapshotCount: Int,
+    onSetTheme: (ThemeMode) -> Unit,
+    onClearAll: () -> Unit,
+    onPrune: (Long) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var confirmClear by remember { mutableStateOf(false) }
+    var confirmPrune by remember { mutableStateOf<Long?>(null) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+    ) {
+        Text("Settings", style = MaterialTheme.typography.titleLarge)
+
+        Spacer(Modifier.height(20.dp))
+
+        // Theme
+        Text("Theme", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        for (mode in ThemeMode.entries) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = themeMode == mode, onClick = { onSetTheme(mode) })
+                Column {
+                    Text(
+                        mode.name.lowercase().replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (mode == ThemeMode.SYSTEM) {
+                        Text(
+                            "Follow device setting",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        Spacer(Modifier.height(20.dp))
+
+        // Data management
+        Text("Data", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "$snapshotCount snapshots stored",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(12.dp))
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = { confirmPrune = 7 * 24 * 60 * 60_000L }) {
+                Text("Prune > 7d")
+            }
+            TextButton(onClick = { confirmPrune = 24 * 60 * 60_000L }) {
+                Text("Prune > 24h")
+            }
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Button(
+            onClick = { confirmClear = true },
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+            ),
+        ) {
+            Text("Clear all data")
+        }
+
+        Spacer(Modifier.height(24.dp))
+
+        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+            Text("Done")
+        }
+    }
+
+    // Confirmation dialogs
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear all data?") },
+            text = { Text("This will permanently delete all $snapshotCount snapshots. This cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = { onClearAll(); confirmClear = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                ) { Text("Clear") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    confirmPrune?.let { millis ->
+        val label = if (millis >= 7 * 24 * 60 * 60_000L) "7 days" else "24 hours"
+        AlertDialog(
+            onDismissRequest = { confirmPrune = null },
+            title = { Text("Prune old data?") },
+            text = { Text("Delete all snapshots older than $label?") },
+            confirmButton = {
+                Button(onClick = { onPrune(millis); confirmPrune = null }) { Text("Prune") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmPrune = null }) { Text("Cancel") }
+            },
+        )
+    }
+}

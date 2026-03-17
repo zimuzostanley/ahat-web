@@ -1,0 +1,212 @@
+package com.procstate.monitor.service
+
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.os.Build
+import android.os.IBinder
+import android.os.PowerManager
+import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.procstate.monitor.R
+import com.procstate.monitor.data.AppDatabase
+import com.procstate.monitor.data.ProcessEntryEntity
+import com.procstate.monitor.data.ShellHelper
+import com.procstate.monitor.data.SnapshotEntity
+import com.procstate.monitor.ui.MainActivity
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+
+/**
+ * Foreground service that periodically captures process LRU state and stores
+ * snapshots in Room. Uses structured coroutines for proper cancellation.
+ */
+class CaptureService : Service() {
+
+    companion object {
+        private const val TAG = "CaptureService"
+        private const val CHANNEL_ID = "procstate_capture"
+        private const val NOTIFICATION_ID = 2001
+
+        const val ACTION_STOP = "com.procstate.monitor.STOP_CAPTURE"
+        const val ACTION_SNAPSHOT_SAVED = "com.procstate.monitor.SNAPSHOT_SAVED"
+        const val EXTRA_INTERVAL_SECONDS = "interval_seconds"
+        const val EXTRA_STOP_AFTER_MINUTES = "stop_after_minutes"
+
+        @Volatile var running = false
+            private set
+    }
+
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var serviceScope: CoroutineScope? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == ACTION_STOP) {
+            Log.i(TAG, "Stop requested")
+            finish()
+            return START_NOT_STICKY
+        }
+
+        // Cancel any existing scope to prevent double-runs
+        serviceScope?.cancel()
+        serviceScope = null
+
+        val intervalSeconds = intent?.getIntExtra(EXTRA_INTERVAL_SECONDS, 30) ?: 30
+        val stopAfterMinutes = intent?.getIntExtra(EXTRA_STOP_AFTER_MINUTES, 0) ?: 0
+
+        // Wake lock with safe Long arithmetic
+        val pm = getSystemService(POWER_SERVICE) as PowerManager
+        val timeoutMs = if (stopAfterMinutes > 0) {
+            (stopAfterMinutes.toLong() + 5) * 60 * 1000
+        } else {
+            24L * 3600 * 1000
+        }
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "procstate:capture").apply {
+            acquire(timeoutMs)
+        }
+
+        val notifText = buildString {
+            append("Capturing every ${intervalSeconds}s")
+            if (stopAfterMinutes > 0) append(" \u00b7 stop in ${stopAfterMinutes}m")
+        }
+        val notification = buildNotification(notifText)
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+
+        running = true
+        val dao = AppDatabase.get(this).snapshotDao()
+        val startTimeMs = System.currentTimeMillis()
+        val stopAtMs = if (stopAfterMinutes > 0) {
+            startTimeMs + stopAfterMinutes.toLong() * 60 * 1000
+        } else {
+            Long.MAX_VALUE
+        }
+
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        serviceScope = scope
+
+        scope.launch {
+            var cycleCount = 0
+            while (isActive) {
+                if (System.currentTimeMillis() >= stopAtMs) {
+                    Log.i(TAG, "Stop-after timeout reached ($stopAfterMinutes min)")
+                    break
+                }
+                cycleCount++
+                try {
+                    val processes = ShellHelper.getProcessList()
+                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis())
+                    val entries = processes.map { p ->
+                        ProcessEntryEntity(
+                            snapshotId = 0, // placeholder, set inside transaction
+                            pid = p.pid,
+                            name = p.name,
+                            procState = p.procState,
+                        )
+                    }
+                    dao.insertSnapshotWithEntries(snapshot, entries)
+                    Log.d(TAG, "Cycle #$cycleCount: ${processes.size} processes saved")
+                    updateNotification("#$cycleCount \u00b7 ${processes.size} procs \u00b7 every ${intervalSeconds}s")
+                    sendBroadcast(Intent(ACTION_SNAPSHOT_SAVED))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.e(TAG, "Cycle #$cycleCount failed", e)
+                    updateNotification("#$cycleCount failed: ${e.message}")
+                }
+                delay(intervalSeconds * 1000L)
+            }
+            showDoneNotification("Stopped after $cycleCount snapshots")
+            finish()
+        }
+
+        return START_NOT_STICKY
+    }
+
+    private fun finish() {
+        running = false
+        serviceScope?.cancel()
+        serviceScope = null
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+        sendBroadcast(Intent(ACTION_SNAPSHOT_SAVED))
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        running = false
+        serviceScope?.cancel()
+        serviceScope = null
+        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock = null
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                CHANNEL_ID, "Process Capture", NotificationManager.IMPORTANCE_LOW,
+            ).apply { description = "Shows progress during process state capture" }
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+    }
+
+    private fun buildNotification(text: String): Notification {
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
+        }
+        val openPi = PendingIntent.getActivity(this, 0, openIntent, PendingIntent.FLAG_IMMUTABLE)
+
+        val stopIntent = Intent(this, CaptureService::class.java).apply {
+            action = ACTION_STOP
+        }
+        val stopPi = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE)
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("ProcState")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_notif)
+            .setOngoing(true)
+            .setContentIntent(openPi)
+            .addAction(R.drawable.ic_notif, "Stop", stopPi)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+            .build()
+    }
+
+    private fun updateNotification(text: String) {
+        getSystemService(NotificationManager::class.java)
+            .notify(NOTIFICATION_ID, buildNotification(text))
+    }
+
+    private fun showDoneNotification(text: String) {
+        val n = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("ProcState")
+            .setContentText(text)
+            .setSmallIcon(R.drawable.ic_notif)
+            .setAutoCancel(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID + 1, n)
+    }
+}
