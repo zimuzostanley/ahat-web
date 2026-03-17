@@ -98,7 +98,7 @@ fun ProcStateTab(
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         items(snapshots, key = { it.id }) { snapshot ->
             val isExpanded = snapshot.id in expandedSnapshots
@@ -211,13 +211,12 @@ private fun StackedBar(stateCounts: Map<String, Int>, total: Int, isDark: Boolea
             .map { it.key to it.value }
     }
 
-    // Draw using Canvas for segment separators and adaptive text
-    val separatorColor = if (isDark) Color.Black.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.4f)
+    val separatorColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(24.dp)
+            .height(28.dp)
             .clip(RoundedCornerShape(4.dp))
             .border(
                 0.5.dp,
@@ -245,10 +244,10 @@ private fun StackedBar(stateCounts: Map<String, Int>, total: Int, isDark: Boolea
                 Box(
                     modifier = Modifier
                         .weight(fraction)
-                        .height(24.dp),
+                        .height(28.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (fraction > 0.06f) {
+                    if (fraction > 0.05f) {
                         val color = ProcStateColors.get(state, isDark)
                         val textColor = if (ProcStateColors.useWhiteText(color)) Color.White else Color(0xFF1A1A1A)
                         Text(
@@ -361,15 +360,15 @@ private fun StateRow(
         Box(
             modifier = Modifier
                 .width(60.dp)
-                .height(6.dp)
-                .clip(RoundedCornerShape(3.dp))
-                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                .height(8.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth(count.toFloat() / total)
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(3.dp))
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp))
                     .background(color),
             )
         }

@@ -251,7 +251,7 @@ private fun TimelineRow(
                                 .size(14.dp)
                                 .clip(CircleShape)
                                 .background(dotColor)
-                                .border(1.5.dp, dotColor.copy(alpha = 0.3f), CircleShape)
+                                .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
                                 .clickable {
                                     Toast
                                         .makeText(context, "$name: $state", Toast.LENGTH_SHORT)
@@ -261,10 +261,10 @@ private fun TimelineRow(
                     } else {
                         Box(
                             modifier = Modifier
-                                .size(6.dp)
+                                .size(10.dp)
                                 .border(
                                     1.dp,
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
                                     CircleShape,
                                 ),
                         )

@@ -74,6 +74,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -207,22 +208,28 @@ private fun ProcStateApp(vm: MainViewModel) {
             )
 
             // Error banner
-            captureError?.let { error ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(MaterialTheme.colorScheme.errorContainer)
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        error,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer,
-                        modifier = Modifier.weight(1f),
-                    )
-                    IconButton(onClick = vm::dismissError, modifier = Modifier.size(20.dp)) {
-                        Icon(Icons.Default.Close, null, Modifier.size(14.dp))
+            androidx.compose.animation.AnimatedVisibility(
+                visible = captureError != null,
+                enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.expandVertically(),
+                exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.shrinkVertically(),
+            ) {
+                captureError?.let { error ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.errorContainer)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            error,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.weight(1f),
+                        )
+                        IconButton(onClick = vm::dismissError, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.Close, null, Modifier.size(14.dp))
+                        }
                     }
                 }
             }
@@ -398,15 +405,22 @@ private fun CaptureControls(
                 Text("Snapshot")
             }
 
-            // Expand/collapse arrow
+            // Expand/collapse arrow with smooth rotation
+            val arrowRotation by androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (expanded) 180f else 0f,
+                animationSpec = androidx.compose.animation.core.tween(300),
+                label = "arrowRotation",
+            )
             IconButton(
                 onClick = { expanded = !expanded },
                 modifier = Modifier.size(32.dp),
             ) {
                 Icon(
-                    if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    Icons.Default.KeyboardArrowDown,
                     contentDescription = "Recording options",
-                    modifier = Modifier.size(20.dp),
+                    modifier = Modifier
+                        .size(20.dp)
+                        .graphicsLayer { rotationZ = arrowRotation },
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }

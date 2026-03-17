@@ -36,6 +36,7 @@ fun SettingsSheet(
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     var confirmPrune by remember { mutableStateOf<Long?>(null) }
+    val hasData = snapshotCount > 0
 
     Column(
         modifier = Modifier
@@ -44,11 +45,11 @@ fun SettingsSheet(
     ) {
         Text("Settings", style = MaterialTheme.typography.titleLarge)
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
 
         // Theme
         Text("Theme", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(8.dp))
         for (mode in ThemeMode.entries) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -71,26 +72,32 @@ fun SettingsSheet(
             }
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(16.dp))
 
         // Data management
         Text("Data", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(8.dp))
         Text(
-            "$snapshotCount snapshots stored",
+            if (hasData) "$snapshotCount snapshots stored" else "No data stored yet",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = { confirmPrune = 7 * 24 * 60 * 60_000L }) {
-                Text("Prune > 7d")
+            TextButton(
+                onClick = { confirmPrune = 7 * 24 * 60 * 60_000L },
+                enabled = hasData,
+            ) {
+                Text("Prune older than 7d")
             }
-            TextButton(onClick = { confirmPrune = 24 * 60 * 60_000L }) {
-                Text("Prune > 24h")
+            TextButton(
+                onClick = { confirmPrune = 24 * 60 * 60_000L },
+                enabled = hasData,
+            ) {
+                Text("Prune older than 24h")
             }
         }
 
@@ -98,6 +105,7 @@ fun SettingsSheet(
 
         Button(
             onClick = { confirmClear = true },
+            enabled = hasData,
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.error,
             ),
@@ -105,14 +113,13 @@ fun SettingsSheet(
             Text("Clear all data")
         }
 
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
 
         TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
             Text("Done")
         }
     }
 
-    // Confirmation dialogs
     if (confirmClear) {
         AlertDialog(
             onDismissRequest = { confirmClear = false },
