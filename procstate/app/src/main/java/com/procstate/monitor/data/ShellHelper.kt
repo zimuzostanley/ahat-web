@@ -19,7 +19,8 @@ object ShellHelper {
     private const val TAG = "ProcState"
     private const val SHELL_TIMEOUT_SEC = 15L
 
-    private val LRU_LINE = Regex("""^\s*#\d+:\s+(\S+)\s+.*?\s(\d+):([^\s/]+)""")
+    // Groups: 1=oomState, 2=PID, 3=name, 4=UID (optional)
+    private val LRU_LINE = Regex("""^\s*#\d+:\s+(\S+)\s+.*?\s(\d+):([^\s/]+)(?:/(\S+))?""")
 
     private val OOM_LABEL_MAP = mapOf(
         "pers" to "Persistent",
@@ -166,7 +167,7 @@ object ShellHelper {
         return OOM_LABEL_MAP[base] ?: raw
     }
 
-    data class ProcessEntry(val pid: Int, val name: String, val procState: String)
+    data class ProcessEntry(val pid: Int, val name: String, val procState: String, val uid: String = "")
 
     fun parseLruOutput(output: String): List<ProcessEntry> {
         val results = mutableListOf<ProcessEntry>()
@@ -176,39 +177,33 @@ object ShellHelper {
             val pid = m.groupValues[2].toIntOrNull() ?: continue
             if (!seen.add(pid)) continue
             val oomRaw = m.groupValues[1].replace(Regex("""\+\d+$"""), "")
-            results.add(ProcessEntry(pid, m.groupValues[3], mapOomLabel(oomRaw)))
+            val uid = m.groupValues.getOrElse(4) { "" }
+            results.add(ProcessEntry(pid, m.groupValues[3], mapOomLabel(oomRaw), uid))
         }
         return results
     }
 
     /**
-     * Get PIDs of frozen processes by reading cgroup freeze state.
-     * Returns empty set if the freezer is unavailable or command fails.
+     * Get PIDs of frozen processes from `dumpsys activity` "Apps frozen:" section.
+     * Output format:
+     *   Apps frozen: 164
+     *     499170472: 637 com.google.android.apps.aiwallpapers
+     *     492503897: 949 com.google.android.apps.gcs
+     * Returns empty set if command fails.
      */
+    private val FROZEN_LINE = Regex("""^\s*\d+:\s+(\d+)\s+""")
+
     fun getFrozenPids(): Set<Int> {
         return try {
-            // dumpsys activity lru already tags frozen as "frzn", but that replaces the state.
-            // For overlay detection, check /proc/<pid>/cgroup for "frozen" in cgroup path,
-            // or parse "dumpsys activity" for "frozen=true".
-            // Simplest: grep all cgroup.freeze files under /sys/fs/cgroup/
-            val output = exec("cat /proc/*/cgroup 2>/dev/null | grep -l frozen 2>/dev/null || true")
-            // Alternative: use am command to list frozen apps
-            val amOutput = try { exec("dumpsys activity processes | grep frozen=true") } catch (_: Exception) { "" }
+            val output = exec("dumpsys activity | grep -A 2000 'Apps frozen:'")
             val pids = mutableSetOf<Int>()
-            // Parse "frozen=true" lines which look like: "pid=1234 frozen=true"
-            val pidPattern = Regex("""pid=(\d+).*frozen=true""")
-            for (line in amOutput.lines()) {
-                pidPattern.find(line)?.groupValues?.get(1)?.toIntOrNull()?.let { pids.add(it) }
-            }
-            // Also check /proc/<pid>/cgroup for "frozen" string
-            if (pids.isEmpty()) {
-                try {
-                    val procOutput = exec("for p in /proc/[0-9]*/cgroup; do grep -q frozen \"\$p\" 2>/dev/null && echo \"\$p\"; done")
-                    val pathPattern = Regex("""/proc/(\d+)/cgroup""")
-                    for (line in procOutput.lines()) {
-                        pathPattern.find(line)?.groupValues?.get(1)?.toIntOrNull()?.let { pids.add(it) }
-                    }
-                } catch (_: Exception) {}
+            var inSection = false
+            for (line in output.lines()) {
+                if ("Apps frozen:" in line) { inSection = true; continue }
+                if (!inSection) continue
+                // Section ends at next non-indented line or empty line
+                if (line.isBlank() || (!line.startsWith(" ") && !line.startsWith("\t"))) break
+                FROZEN_LINE.find(line)?.groupValues?.get(1)?.toIntOrNull()?.let { pids.add(it) }
             }
             Log.d(TAG, "Frozen PIDs: ${pids.size}")
             pids
@@ -231,7 +226,7 @@ object ShellHelper {
                 if (pidStr.isEmpty()) continue
                 val pid = pidStr.split(Regex("\\s+"))[0].toInt()
                 if (pid !in pids) {
-                    list.add(0, ProcessEntry(pid, name, "System"))
+                    list.add(0, ProcessEntry(pid, name, "System", "1000"))
                     Log.d(TAG, "Pinned: $name PID $pid")
                 }
             } catch (e: Exception) {

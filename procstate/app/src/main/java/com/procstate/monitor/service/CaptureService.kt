@@ -121,6 +121,7 @@ class CaptureService : Service() {
                             snapshotId = 0,
                             pid = p.pid,
                             name = p.name,
+                            uid = p.uid,
                             procState = p.procState,
                             frozen = p.pid in frozenPids,
                         )

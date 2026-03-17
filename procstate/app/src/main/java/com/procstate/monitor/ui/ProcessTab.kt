@@ -76,6 +76,16 @@ private val TrackColors = listOf(
 
 private const val COL_WIDTH_DP = 80
 
+private enum class Marker { NORMAL, STARTED, DIED }
+
+private data class ProcessDot(
+    val procState: String,
+    val frozen: Boolean,
+    val pid: Int,
+    val uid: String,
+    val marker: Marker,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProcessTab(
@@ -164,11 +174,33 @@ fun ProcessTab(
             return
         }
 
-        // Map: timestamp → (name → Pair(procState, frozen))
+        // Detect process restarts (PID changes for same name)
         val timelineByTimestamp = remember(timelineRows) {
+            // Build marker map: (name, timestamp) → Marker
+            val markerMap = mutableMapOf<Pair<String, Long>, Marker>()
+            val byName = timelineRows.groupBy { it.name }
+            for ((_, rows) in byName) {
+                val sorted = rows.sortedBy { it.timestamp }
+                for (i in 1 until sorted.size) {
+                    if (sorted[i].pid != sorted[i - 1].pid) {
+                        markerMap[sorted[i - 1].name to sorted[i - 1].timestamp] = Marker.DIED
+                        markerMap[sorted[i].name to sorted[i].timestamp] = Marker.STARTED
+                    }
+                }
+            }
             timelineRows.groupBy { it.timestamp }
                 .toSortedMap(compareByDescending { it })
-                .map { (ts, rows) -> ts to rows.associate { it.name to Pair(it.procState, it.frozen) } }
+                .map { (ts, rows) ->
+                    ts to rows.associate { row ->
+                        row.name to ProcessDot(
+                            procState = row.procState,
+                            frozen = row.frozen,
+                            pid = row.pid,
+                            uid = row.uid,
+                            marker = markerMap[row.name to ts] ?: Marker.NORMAL,
+                        )
+                    }
+                }
         }
 
         val scrollState = rememberScrollState()
@@ -265,7 +297,7 @@ fun ProcessTab(
 private fun TimelineRow(
     timestamp: Long,
     trackedProcesses: List<String>,
-    stateMap: Map<String, Pair<String, Boolean>>, // name → (procState, frozen)
+    stateMap: Map<String, ProcessDot>,
     isDark: Boolean,
     scrollState: androidx.compose.foundation.ScrollState,
 ) {
@@ -297,22 +329,35 @@ private fun TimelineRow(
                 .weight(1f)
                 .horizontalScroll(scrollState)
                 .drawBehind {
-                    // Subtle horizontal line connecting dots
                     val y = size.height / 2
                     drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
                 },
         ) {
             for (name in trackedProcesses) {
-                val entry = stateMap[name]
-                val state = entry?.first
+                val dot = stateMap[name]
 
                 Box(
                     modifier = Modifier.width(COL_WIDTH_DP.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (state != null) {
-                        val frozen = entry?.second == true
-                        val dotColor = ProcStateColors.get(state, isDark)
+                    if (dot != null) {
+                        // Shape and color based on marker
+                        val shape = when (dot.marker) {
+                            Marker.STARTED -> RoundedCornerShape(3.dp) // rounded rect
+                            Marker.DIED -> RoundedCornerShape(0.dp)   // sharp square
+                            Marker.NORMAL -> CircleShape
+                        }
+                        val dotColor = when (dot.marker) {
+                            Marker.STARTED -> if (isDark) Color(0xFF4ADE80) else Color(0xFF16A34A)
+                            Marker.DIED -> if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
+                            Marker.NORMAL -> ProcStateColors.get(dot.procState, isDark)
+                        }
+                        val dotSize = when (dot.marker) {
+                            Marker.STARTED -> Modifier.size(width = 18.dp, height = 12.dp)
+                            Marker.DIED -> Modifier.size(12.dp)
+                            Marker.NORMAL -> Modifier.size(14.dp)
+                        }
+
                         var tapped by remember { mutableStateOf(false) }
                         val scale by androidx.compose.animation.core.animateFloatAsState(
                             targetValue = if (tapped) 1.6f else 1f,
@@ -321,19 +366,25 @@ private fun TimelineRow(
                             finishedListener = { if (tapped) tapped = false },
                         )
                         val toastText = buildString {
-                            append("$name: $state")
-                            if (frozen) append(" (frozen)")
+                            append("$name")
+                            if (dot.uid.isNotEmpty()) append(" (${dot.uid})")
+                            append(" PID ${dot.pid}: ${dot.procState}")
+                            if (dot.frozen) append(" [frozen]")
+                            when (dot.marker) {
+                                Marker.STARTED -> append(" \u25B6 STARTED")
+                                Marker.DIED -> append(" \u2620 DIED")
+                                else -> {}
+                            }
                         }
                         Box(
-                            modifier = Modifier
-                                .size(14.dp)
+                            modifier = dotSize
                                 .graphicsLayer {
                                     scaleX = scale
                                     scaleY = scale
                                 }
-                                .clip(CircleShape)
+                                .clip(shape)
                                 .background(dotColor)
-                                .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
+                                .border(1.dp, dotColor.copy(alpha = 0.3f), shape)
                                 .clickable {
                                     tapped = true
                                     Toast
@@ -342,13 +393,10 @@ private fun TimelineRow(
                                 },
                             contentAlignment = Alignment.Center,
                         ) {
-                            // Frozen overlay: light X
-                            if (frozen) {
+                            if (dot.frozen) {
                                 Text(
                                     "\u2715",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontSize = 8.sp,
-                                    ),
+                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
                                     color = Color.White.copy(alpha = 0.8f),
                                 )
                             }

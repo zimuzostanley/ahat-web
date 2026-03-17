@@ -23,7 +23,8 @@ data class SnapshotEntity(
     indices = [
         Index("snapshotId"),
         Index("name"),
-        Index("snapshotId", "procState", "name"),  // composite for ORDER BY
+        Index("name", "uid"),
+        Index("snapshotId", "procState", "name"),
     ],
 )
 data class ProcessEntryEntity(
@@ -31,6 +32,7 @@ data class ProcessEntryEntity(
     val snapshotId: Long,
     val pid: Int,
     val name: String,
+    val uid: String = "",
     val procState: String,
     val frozen: Boolean = false,
 )
@@ -47,6 +49,8 @@ data class SnapshotStateRow(
 data class ProcessTimelineRow(
     val timestamp: Long,
     val name: String,
+    val pid: Int = 0,
+    val uid: String = "",
     val procState: String,
     val frozen: Boolean = false,
 )

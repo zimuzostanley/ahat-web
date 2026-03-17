@@ -28,12 +28,15 @@ class ShellHelperParseTest {
         assertEquals("com.android.launcher3", result[0].name)
         assertEquals("Foreground", result[0].procState)
         assertEquals(29613, result[0].pid)
+        assertEquals("u0a62", result[0].uid)
 
         assertEquals("com.android.systemui", result[1].name)
         assertEquals("Visible", result[1].procState)
+        assertEquals("1000", result[1].uid)
 
         assertEquals("com.google.android.gms.persistent", result[2].name)
         assertEquals("FG Service", result[2].procState)
+        assertEquals("u0a120", result[2].uid)
 
         assertEquals("com.example.cached", result[3].name)
         assertEquals("Cached", result[3].procState)

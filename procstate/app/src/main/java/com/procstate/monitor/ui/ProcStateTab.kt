@@ -490,10 +490,13 @@ private fun ProcessList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
-                        val frozenTag = if (entry.frozen) " (frozen)" else ""
-                        Toast
-                            .makeText(context, "${entry.name} (PID ${entry.pid})$frozenTag", Toast.LENGTH_SHORT)
-                            .show()
+                        val details = buildString {
+                            append(entry.name)
+                            if (entry.uid.isNotEmpty()) append(" (${entry.uid})")
+                            append(" PID ${entry.pid}")
+                            if (entry.frozen) append(" [frozen]")
+                        }
+                        Toast.makeText(context, details, Toast.LENGTH_SHORT).show()
                     }
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
