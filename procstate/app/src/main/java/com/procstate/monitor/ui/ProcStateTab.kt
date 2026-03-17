@@ -50,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -648,21 +649,31 @@ private fun ProcessList(
 // ── Legend ───────────────────────────────────────────────────────────────────
 
 @Composable
-fun ProcStateLegend(visibleStates: Set<String>) {
+fun ProcStateLegend(
+    visibleStates: Set<String>,
+    stateFilter: Set<String> = emptySet(),
+    onTap: () -> Unit = {},
+) {
     if (visibleStates.isEmpty()) return
 
     val isDark = LocalIsDarkTheme.current
     val states = ProcStateColors.order.filter { it in visibleStates }
+    val hasFilter = stateFilter.isNotEmpty()
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
+            .clickable(onClick = onTap)
             .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         for (state in states) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            val dimmed = hasFilter && state !in stateFilter
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = if (dimmed) Modifier.alpha(0.3f) else Modifier,
+            ) {
                 Box(
                     modifier = Modifier
                         .size(8.dp)

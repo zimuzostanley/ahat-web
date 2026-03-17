@@ -232,6 +232,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _seenStates = MutableStateFlow<Set<String>>(emptySet())
     val visibleStates: StateFlow<Set<String>> = _seenStates.asStateFlow()
 
+    /** State filter: empty = show all, non-empty = only these states. */
+    private val _stateFilter = MutableStateFlow<Set<String>>(emptySet())
+    val stateFilter: StateFlow<Set<String>> = _stateFilter.asStateFlow()
+
+    val hasStateFilter: Boolean get() = _stateFilter.value.isNotEmpty()
+
+    fun setStateFilter(states: Set<String>) { _stateFilter.value = states }
+    fun clearStateFilter() { _stateFilter.value = emptySet() }
+
+    /** Snapshots filtered by selected states (for By State tab only). */
+    val filteredSnapshots: StateFlow<List<SnapshotWithCounts>> =
+        combine(snapshotsWithCounts, _stateFilter) { snapshots, filter ->
+            if (filter.isEmpty()) snapshots
+            else snapshots.map { snapshot ->
+                val filtered = snapshot.stateCounts.filter { it.key in filter }
+                snapshot.copy(stateCounts = filtered)
+            }.filter { it.stateCounts.isNotEmpty() }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     suspend fun getSnapshotEntries(snapshotId: Long): List<ProcessEntryEntity> =
         dao.getEntriesForSnapshot(snapshotId)
 

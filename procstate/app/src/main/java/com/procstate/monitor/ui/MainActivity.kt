@@ -23,14 +23,19 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,6 +45,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
@@ -60,6 +66,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -86,6 +94,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.ShellHelper
+import com.procstate.monitor.ui.theme.ProcStateColors
 import com.procstate.monitor.service.CaptureService
 import com.procstate.monitor.ui.theme.ProcStateTheme
 
@@ -145,11 +154,14 @@ private fun ProcStateApp(vm: MainViewModel) {
     val captureStartMs by vm.captureStartMs.collectAsState()
 
     val snapshots by vm.snapshotsWithCounts.collectAsState()
+    val filteredSnapshots by vm.filteredSnapshots.collectAsState()
     val pinnedProcesses by vm.pinnedProcesses.collectAsState()
     val timelineRows by vm.processTimeline.collectAsState()
     val snapshotTimestamps by vm.snapshotTimestamps.collectAsState()
     val allProcessKeys by vm.allProcessKeys.collectAsState()
     val visibleStates by vm.visibleStates.collectAsState()
+    val stateFilter by vm.stateFilter.collectAsState()
+    var showStateFilterSheet by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -180,6 +192,13 @@ private fun ProcStateApp(vm: MainViewModel) {
                     } else {
                         IconButton(onClick = { showRecordSheet = true }) {
                             Icon(Icons.Default.PlayArrow, "Record")
+                        }
+                    }
+                    // State tab: clear filter button
+                    if (selectedTab == 0 && stateFilter.isNotEmpty()) {
+                        IconButton(onClick = vm::clearStateFilter) {
+                            Icon(Icons.Default.Close, "Clear state filter",
+                                modifier = Modifier.size(20.dp))
                         }
                     }
                     // Process tab actions
@@ -249,7 +268,11 @@ private fun ProcStateApp(vm: MainViewModel) {
             TimeRangeSelector(selected = timeRange, onSelect = vm::setTimeRange)
 
             // Legend
-            ProcStateLegend(visibleStates)
+            ProcStateLegend(
+                visibleStates = visibleStates,
+                stateFilter = stateFilter,
+                onTap = { showStateFilterSheet = true },
+            )
 
             // Tabs
             TabRow(
@@ -270,7 +293,7 @@ private fun ProcStateApp(vm: MainViewModel) {
             Box(Modifier.fillMaxSize().pullRefresh(pullState)) {
                 when (selectedTab) {
                     0 -> ProcStateTab(
-                        snapshots = snapshots,
+                        snapshots = filteredSnapshots,
                         pinnedProcesses = pinnedProcesses,
                         onPinProcess = vm::pinProcess,
                         onUnpinProcess = vm::unpinProcess,
@@ -317,6 +340,21 @@ private fun ProcStateApp(vm: MainViewModel) {
                     vm.startCapture()
                     showRecordSheet = false
                 },
+            )
+        }
+    }
+
+    // State filter sheet
+    if (showStateFilterSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showStateFilterSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        ) {
+            StateFilterSheet(
+                allStates = visibleStates,
+                selectedStates = stateFilter,
+                onApply = { vm.setStateFilter(it); showStateFilterSheet = false },
+                onClearAll = { vm.clearStateFilter(); showStateFilterSheet = false },
             )
         }
     }
@@ -528,5 +566,139 @@ private fun TimeRangeSelector(selected: TimeRange, onSelect: (TimeRange) -> Unit
                 label = { Text(range.label, style = MaterialTheme.typography.labelSmall) },
             )
         }
+    }
+}
+
+// ── State filter sheet ──────────────────────────────────────────────────────
+
+@Composable
+private fun StateFilterSheet(
+    allStates: Set<String>,
+    selectedStates: Set<String>,
+    onApply: (Set<String>) -> Unit,
+    onClearAll: () -> Unit,
+) {
+    var search by remember { mutableStateOf("") }
+    val working = remember(selectedStates) { selectedStates.toMutableSet() }
+    var toggle by remember { mutableIntStateOf(0) } // force recompose on toggle
+
+    val sorted = remember(allStates) {
+        allStates.sortedBy { ProcStateColors.label(it).lowercase() }
+    }
+    val filtered = remember(sorted, search) {
+        if (search.isBlank()) sorted
+        else sorted.filter {
+            search.lowercase() in ProcStateColors.label(it).lowercase() || search.lowercase() in it.lowercase()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.8f)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Filter States", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.weight(1f))
+            androidx.compose.material3.TextButton(onClick = {
+                if (working.size == filtered.size) {
+                    working.clear()
+                } else {
+                    working.addAll(filtered)
+                }
+                toggle++
+            }) {
+                Text(if (working.containsAll(filtered.toSet())) "Clear all" else "Select all")
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+
+        OutlinedTextField(
+            value = search,
+            onValueChange = { search = it },
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text("Search states\u2026") },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = {
+                if (search.isNotEmpty()) {
+                    IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, null) }
+                }
+            },
+            singleLine = true,
+        )
+        Spacer(Modifier.height(8.dp))
+
+        // Suppress unused variable warning — toggle forces recompose
+        @Suppress("UNUSED_EXPRESSION") toggle
+
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            items(filtered) { state ->
+                val isDark = com.procstate.monitor.ui.theme.LocalIsDarkTheme.current
+                val color = ProcStateColors.get(state, isDark)
+                val checked = state in working
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable {
+                            if (checked) working.remove(state) else working.add(state)
+                            toggle++
+                        }
+                        .padding(vertical = 6.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    androidx.compose.material3.Checkbox(
+                        checked = checked,
+                        onCheckedChange = {
+                            if (it) working.add(state) else working.remove(state)
+                            toggle++
+                        },
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(color),
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        ProcStateColors.label(state),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        state,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            OutlinedButton(
+                onClick = onClearAll,
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Show all")
+            }
+            Button(
+                onClick = { onApply(working.toSet()) },
+                modifier = Modifier.weight(1f),
+            ) {
+                Text("Apply (${working.size})")
+            }
+        }
+        Spacer(Modifier.height(8.dp))
     }
 }
