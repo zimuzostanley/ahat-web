@@ -364,7 +364,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     if (showStateFilterSheet) {
         ModalBottomSheet(
             onDismissRequest = { showStateFilterSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             StateFilterSheet(
                 allStates = visibleStates,
@@ -620,7 +620,7 @@ private fun StateFilterSheet(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.8f)
+            .fillMaxHeight(0.9f)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
