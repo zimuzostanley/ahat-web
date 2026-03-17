@@ -105,6 +105,7 @@ private data class DotDetail(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProcessTab(
+    getAppLabel: (String) -> String = { it.substringAfterLast('.') },
     pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
     allSnapshotTimestamps: List<Long>,
@@ -130,10 +131,11 @@ fun ProcessTab(
                     .padding(horizontal = 20.dp, vertical = 12.dp),
             ) {
                 Text(
-                    ProcStateColors.label(detail.state),
+                    getAppLabel(detail.name),
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Spacer(Modifier.height(12.dp))
+                DetailRow("App", getAppLabel(detail.name))
                 DetailRow("Process", detail.name)
                 DetailRow("UID", detail.uid)
                 DetailRow("PID", detail.pid.toString())
@@ -164,6 +166,7 @@ fun ProcessTab(
             TrackedChipsRow(
                 pinnedProcesses = pinnedProcesses,
                 isDark = isDark,
+                getAppLabel = getAppLabel,
                 onUnpinProcess = onUnpinProcess,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
@@ -281,7 +284,7 @@ fun ProcessTab(
                         if (isDark) it.dark else it.light
                     }
                     Text(
-                        key.name,
+                        getAppLabel(key.name),
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                         color = trackColor,
                         modifier = Modifier.width(COL_WIDTH_DP.dp),
@@ -495,6 +498,7 @@ private fun TimelineRow(
 private fun TrackedChipsRow(
     pinnedProcesses: List<ProcessKey>,
     isDark: Boolean,
+    getAppLabel: (String) -> String,
     onUnpinProcess: (ProcessKey) -> Unit,
 ) {
     Row(
@@ -509,13 +513,13 @@ private fun TrackedChipsRow(
             val trackColor = TrackColors[i % TrackColors.size].let {
                 if (isDark) it.dark else it.light
             }
-            ProcessChip(key = key, color = trackColor, onRemove = { onUnpinProcess(key) })
+            ProcessChip(label = getAppLabel(key.name), key = key, color = trackColor, onRemove = { onUnpinProcess(key) })
         }
     }
 }
 
 @Composable
-private fun ProcessChip(key: ProcessKey, color: Color, onRemove: () -> Unit) {
+private fun ProcessChip(label: String, key: ProcessKey, color: Color, onRemove: () -> Unit) {
     val context = LocalContext.current
     Row(
         modifier = Modifier
@@ -529,7 +533,7 @@ private fun ProcessChip(key: ProcessKey, color: Color, onRemove: () -> Unit) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(4.dp))
         Text(
-            key.shortName,
+            label,
             style = MaterialTheme.typography.bodySmall,
             color = color,
             maxLines = 1,

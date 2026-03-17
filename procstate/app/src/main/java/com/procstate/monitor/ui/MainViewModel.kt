@@ -75,6 +75,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = AppDatabase.get(app).snapshotDao()
     private val ctx: Context get() = getApplication()
 
+    // ── App label cache ────────────────────────────────────────────────────
+
+    private val appLabelCache = mutableMapOf<String, String>()
+
+    /**
+     * Resolve app label from package name via PackageManager.
+     * Process names like "com.chrome:sandboxed" -> package "com.chrome".
+     * Falls back to short name if package not found.
+     */
+    fun getAppLabel(processName: String): String {
+        return appLabelCache.getOrPut(processName) {
+            try {
+                val packageName = processName.substringBefore(':')
+                val pm = ctx.packageManager
+                val ai = pm.getApplicationInfo(packageName, 0)
+                pm.getApplicationLabel(ai).toString()
+            } catch (_: Exception) {
+                processName.substringAfterLast('.')
+            }
+        }
+    }
+
     // ── Theme ───────────────────────────────────────────────────────────────
 
     private val _themeMode = MutableStateFlow(ThemePrefs.load(app))

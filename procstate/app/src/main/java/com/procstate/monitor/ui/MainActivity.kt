@@ -278,6 +278,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         isRefreshing = isRefreshing,
                     )
                     1 -> ProcessTab(
+                        getAppLabel = vm::getAppLabel,
                         pinnedProcesses = pinnedProcesses,
                         timelineRows = timelineRows,
                         allSnapshotTimestamps = snapshotTimestamps,
