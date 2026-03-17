@@ -317,18 +317,29 @@ private fun ProcStateApp(vm: MainViewModel) {
                         isRefreshing = isRefreshing,
                         getAppLabel = vm::getAppLabel,
                     )
-                    1 -> ProcessTab(
-                        getAppLabel = vm::getAppLabel,
-                        pinnedProcesses = pinnedProcesses,
-                        timelineRows = timelineRows,
-                        allSnapshotTimestamps = snapshotTimestamps,
-                        allProcessKeys = allProcessKeys,
-                        onPinProcess = vm::pinProcess,
-                        onUnpinProcess = vm::unpinProcess,
-                        showPicker = showProcessPicker,
-                        onOpenPicker = { showProcessPicker = true },
-                        onDismissPicker = { showProcessPicker = false },
-                    )
+                    1 -> {
+                        val memDumpProgress by vm.memoryDumpProgress.collectAsState()
+                        val memEnrichedDots by vm.memoryEnrichedDots.collectAsState()
+                        ProcessTab(
+                            getAppLabel = vm::getAppLabel,
+                            onDumpMemory = { pid, name, uid, onDone ->
+                                vm.dumpMemory(pid, name, uid, onDone)
+                            },
+                            getMemoryForDot = vm::getMemoryForDot,
+                            getMemoryStats = vm::getMemoryStats,
+                            memoryDumpProgress = memDumpProgress,
+                            memoryEnrichedDots = memEnrichedDots,
+                            pinnedProcesses = pinnedProcesses,
+                            timelineRows = timelineRows,
+                            allSnapshotTimestamps = snapshotTimestamps,
+                            allProcessKeys = allProcessKeys,
+                            onPinProcess = vm::pinProcess,
+                            onUnpinProcess = vm::unpinProcess,
+                            showPicker = showProcessPicker,
+                            onOpenPicker = { showProcessPicker = true },
+                            onDismissPicker = { showProcessPicker = false },
+                        )
+                    }
                 }
 
                 PullRefreshIndicator(

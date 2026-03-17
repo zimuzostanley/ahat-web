@@ -56,11 +56,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.procstate.monitor.data.MemoryDotKey
+import com.procstate.monitor.data.MemorySnapshotEntity
+import com.procstate.monitor.data.MemoryStatsAggregate
 import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.ProcessTimelineRow
 import com.procstate.monitor.ui.theme.LocalIsDarkTheme
@@ -101,7 +105,7 @@ data class DotDetail(
     val frozen: Boolean,
     val started: Boolean,
     val timestamp: String,
-    /** State counts up to this point in time: state -> count, sorted by count desc. */
+    val timestampMs: Long = 0,
     val stateHistory: List<Pair<String, Int>> = emptyList(),
     val frozenCount: Int = 0,
     val restartCount: Int = 0,
@@ -111,6 +115,11 @@ data class DotDetail(
 @Composable
 fun ProcessTab(
     getAppLabel: (String) -> String = { it.substringAfterLast('.') },
+    onDumpMemory: ((pid: Int, name: String, uid: String, onDone: () -> Unit) -> Unit)? = null,
+    getMemoryForDot: (suspend (name: String, uid: String, pid: Int, timestamp: Long) -> MemorySnapshotEntity?)? = null,
+    getMemoryStats: (suspend (name: String, uid: String) -> MemoryStatsAggregate?)? = null,
+    memoryDumpProgress: String? = null,
+    memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
     pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
     allSnapshotTimestamps: List<Long>,
@@ -126,8 +135,21 @@ fun ProcessTab(
     // Track which dot is selected (name, timestamp, pid) for enlarged state
     var selectedDotId by remember { mutableStateOf<Triple<String, Long, Int>?>(null) }
 
-    // Detail drawer
+    // Detail drawer with memory data
     dotDetail?.let { detail ->
+        var memData by remember(detail) { mutableStateOf<MemorySnapshotEntity?>(null) }
+        var memStats by remember(detail) { mutableStateOf<MemoryStatsAggregate?>(null) }
+
+        // Load memory data when drawer opens
+        androidx.compose.runtime.LaunchedEffect(detail) {
+            if (getMemoryForDot != null && detail.pid > 0) {
+                memData = getMemoryForDot(detail.name, detail.uid, detail.pid, detail.timestampMs)
+            }
+            if (getMemoryStats != null) {
+                memStats = getMemoryStats(detail.name, detail.uid)
+            }
+        }
+
         ProcessDetailSheet(
             detail = detail,
             isDark = isDark,
@@ -136,6 +158,16 @@ fun ProcessTab(
                 dotDetail = null
                 selectedDotId = null
             },
+            memoryData = memData,
+            memoryStats = memStats,
+            memoryDumpProgress = memoryDumpProgress,
+            onDumpMemory = if (onDumpMemory != null) { pid, name, uid ->
+                onDumpMemory(pid, name, uid) {
+                    // On done: close drawer, it will reopen with fresh data on next tap
+                    dotDetail = null
+                    selectedDotId = null
+                }
+            } else null,
         )
     }
 
@@ -439,6 +471,7 @@ private fun TimelineRow(
                                 frozen = dot.frozen,
                                 started = dot.marker == Marker.STARTED,
                                 timestamp = fullTimeStr,
+                                timestampMs = timestamp,
                                 stateHistory = history,
                                 frozenCount = frozen,
                                 restartCount = restarts,
@@ -676,6 +709,10 @@ fun ProcessDetailSheet(
     isDark: Boolean,
     appLabel: String,
     onDismiss: () -> Unit,
+    memoryData: MemorySnapshotEntity? = null,
+    memoryStats: MemoryStatsAggregate? = null,
+    memoryDumpProgress: String? = null,
+    onDumpMemory: ((pid: Int, name: String, uid: String) -> Unit)? = null,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -857,8 +894,128 @@ fun ProcessDetailSheet(
                     }
                 }
             }
+
+            // ── Memory section ──────────────────────────────────────────────
+            if (detail.pid > 0) {
+                Spacer(Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                Spacer(Modifier.height(12.dp))
+
+                if (memoryDumpProgress != null) {
+                    // Dumping in progress
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            memoryDumpProgress,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else if (memoryData != null) {
+                    // Show memory breakdown
+                    Text("Memory", style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(8.dp))
+                    MemoryRow("Total PSS", memoryData.totalPssKb)
+                    MemoryRow("Total RSS", memoryData.totalRssKb)
+                    MemoryRow("Java Heap", memoryData.javaHeapKb)
+                    MemoryRow("Native Heap", memoryData.nativeHeapKb)
+                    MemoryRow("Code", memoryData.codeKb)
+                    MemoryRow("Stack", memoryData.stackKb)
+                    MemoryRow("Graphics", memoryData.graphicsKb)
+                    MemoryRow("System", memoryData.systemKb)
+                    if (memoryData.totalSwapKb > 0) MemoryRow("Swap", memoryData.totalSwapKb)
+
+                    // Memory summary stats
+                    if (memoryStats != null && memoryStats.count > 1) {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Memory history (${memoryStats.count} samples)",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        // Header
+                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                            Text("", Modifier.width(100.dp), style = MaterialTheme.typography.labelSmall)
+                            Text("Min", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                                textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Avg", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                                textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Max", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
+                                textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        MemoryStatRow("PSS", memoryStats.minPss, memoryStats.avgPss, memoryStats.maxPss)
+                        MemoryStatRow("RSS", memoryStats.minRss, memoryStats.avgRss, memoryStats.maxRss)
+                        MemoryStatRow("Java", memoryStats.minJavaHeap, memoryStats.avgJavaHeap, memoryStats.maxJavaHeap)
+                        MemoryStatRow("Native", memoryStats.minNativeHeap, memoryStats.avgNativeHeap, memoryStats.maxNativeHeap)
+                        MemoryStatRow("Code", memoryStats.minCode, memoryStats.avgCode, memoryStats.maxCode)
+                        MemoryStatRow("Graphics", memoryStats.minGraphics, memoryStats.avgGraphics, memoryStats.maxGraphics)
+                    }
+                } else if (onDumpMemory != null) {
+                    // Dump button
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Memory", style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.weight(1f))
+                        androidx.compose.material3.IconButton(
+                            onClick = { onDumpMemory(detail.pid, detail.name, detail.uid) },
+                            modifier = Modifier.size(32.dp),
+                        ) {
+                            Icon(
+                                androidx.compose.material.icons.Icons.Default.KeyboardArrowDown,
+                                "Dump memory",
+                                Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                    Text(
+                        "Tap to capture memory snapshot for this process",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
     }
+}
+
+@Composable
+private fun MemoryRow(label: String, kb: Long) {
+    if (kb <= 0) return
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(100.dp),
+        )
+        Text(
+            formatKb(kb),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+    }
+}
+
+@Composable
+private fun MemoryStatRow(label: String, minKb: Long, avgKb: Double, maxKb: Long) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text(label, Modifier.width(100.dp), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(formatKb(minKb), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.End)
+        Text(formatKb(avgKb.toLong()), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.End)
+        Text(formatKb(maxKb), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.End)
+    }
+}
+
+private fun formatKb(kb: Long): String = when {
+    kotlin.math.abs(kb) < 1024 -> "$kb KB"
+    else -> "%.1f MB".format(kb / 1024.0)
 }
 
 @Composable
