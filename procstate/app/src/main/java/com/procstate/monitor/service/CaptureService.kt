@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.procstate.monitor.R
 import com.procstate.monitor.data.AppDatabase
+import com.procstate.monitor.data.MemorySnapshotEntity
 import com.procstate.monitor.data.ProcessEntryEntity
 import com.procstate.monitor.data.ShellHelper
 import com.procstate.monitor.data.SnapshotEntity
@@ -45,6 +46,10 @@ class CaptureService : Service() {
 
         @Volatile var running = false
             private set
+
+        /** Set before starting service: process names to auto-dump memory for. */
+        var autoMemoryNames: List<Pair<String, String>> = emptyList() // (name, uid)
+        var autoMemoryEnabled = false
     }
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -127,6 +132,34 @@ class CaptureService : Service() {
                         )
                     }
                     dao.insertSnapshotWithEntries(snapshot, entries)
+
+                    // Auto memory dump for pinned processes
+                    if (autoMemoryEnabled && autoMemoryNames.isNotEmpty()) {
+                        for ((mName, mUid) in autoMemoryNames) {
+                            val proc = processes.find { it.name == mName && it.uid == mUid }
+                            if (proc != null) {
+                                try {
+                                    val memInfo = ShellHelper.getMemInfo(proc.pid)
+                                    dao.insertMemorySnapshot(MemorySnapshotEntity(
+                                        timestamp = snapshot.timestamp,
+                                        pid = proc.pid, name = mName, uid = mUid,
+                                        totalPssKb = memInfo.totalPssKb,
+                                        totalRssKb = memInfo.totalRssKb,
+                                        javaHeapKb = memInfo.javaHeapKb,
+                                        nativeHeapKb = memInfo.nativeHeapKb,
+                                        codeKb = memInfo.codeKb,
+                                        stackKb = memInfo.stackKb,
+                                        graphicsKb = memInfo.graphicsKb,
+                                        systemKb = memInfo.systemKb,
+                                        totalSwapKb = memInfo.totalSwapKb,
+                                    ))
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Auto meminfo $mName failed: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+
                     Log.d(TAG, "Cycle #$cycleCount: ${processes.size} processes saved")
                     updateNotification("#$cycleCount \u00b7 ${processes.size} procs \u00b7 every ${intervalSeconds}s")
                     sendBroadcast(Intent(ACTION_SNAPSHOT_SAVED))

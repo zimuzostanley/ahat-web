@@ -36,6 +36,8 @@ fun SettingsSheet(
     themeMode: ThemeMode,
     snapshotCount: Int,
     isExporting: Boolean,
+    autoMemoryDump: Boolean,
+    onSetAutoMemoryDump: (Boolean) -> Unit,
     onSetTheme: (ThemeMode) -> Unit,
     onClearAll: () -> Unit,
     onPrune: (Long) -> Unit,
@@ -132,6 +134,32 @@ fun SettingsSheet(
             } else {
                 Text("Export to Perfetto")
             }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        Spacer(Modifier.height(16.dp))
+
+        // Auto memory dump
+        Text("Memory", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Auto-dump pinned processes", style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Captures meminfo for each pinned process on every snapshot. Significantly slows recording.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(Modifier.size(8.dp))
+            androidx.compose.material3.Switch(
+                checked = autoMemoryDump,
+                onCheckedChange = onSetAutoMemoryDump,
+            )
         }
 
         Spacer(Modifier.height(16.dp))

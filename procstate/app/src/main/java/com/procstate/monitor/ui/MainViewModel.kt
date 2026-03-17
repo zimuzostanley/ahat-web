@@ -83,6 +83,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val appLabelCache = mutableMapOf<String, String>()
 
+    // ── Auto memory dump ──────────────────────────────────────────────────
+
+    private val _autoMemoryDump = MutableStateFlow(false)
+    val autoMemoryDump: StateFlow<Boolean> = _autoMemoryDump.asStateFlow()
+
+    fun setAutoMemoryDump(enabled: Boolean) { _autoMemoryDump.value = enabled }
+
     /**
      * Resolve app label from package name via PackageManager.
      * Process names like "com.chrome:sandboxed" -> package "com.chrome".
@@ -156,6 +163,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startCapture() {
         _captureError.value = null
+        // Set auto-dump state before starting service
+        CaptureService.autoMemoryEnabled = _autoMemoryDump.value
+        CaptureService.autoMemoryNames = if (_autoMemoryDump.value) {
+            _pinnedProcesses.value.map { it.name to it.uid }
+        } else emptyList()
+
         val intent = Intent(ctx, CaptureService::class.java).apply {
             putExtra(CaptureService.EXTRA_INTERVAL_SECONDS, _captureInterval.value.seconds)
             putExtra(CaptureService.EXTRA_STOP_AFTER_MINUTES, _stopAfter.value.minutes)

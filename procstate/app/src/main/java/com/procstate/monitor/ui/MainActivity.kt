@@ -394,10 +394,13 @@ private fun ProcStateApp(vm: MainViewModel) {
         ) {
             val activity = LocalContext.current as MainActivity
             val isExporting by vm.isExporting.collectAsState()
+            val autoMemDump by vm.autoMemoryDump.collectAsState()
             SettingsSheet(
                 themeMode = themeMode,
                 snapshotCount = snapshotCount,
                 isExporting = isExporting,
+                autoMemoryDump = autoMemDump,
+                onSetAutoMemoryDump = vm::setAutoMemoryDump,
                 onSetTheme = vm::setTheme,
                 onClearAll = vm::clearAllData,
                 onPrune = vm::pruneOlderThan,

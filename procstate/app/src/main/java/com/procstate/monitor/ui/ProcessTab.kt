@@ -349,6 +349,7 @@ fun ProcessTab(
                         scrollState = scrollState,
                         selectedDotId = selectedDotId,
                         allTimelineRows = timelineRows,
+                        memoryEnrichedDots = memoryEnrichedDots,
                         onShowDetail = { detail, name, ts, pid ->
                             dotDetail = detail
                             selectedDotId = Triple(name, ts, pid)
@@ -398,6 +399,7 @@ private fun TimelineRow(
     scrollState: androidx.compose.foundation.ScrollState,
     selectedDotId: Triple<String, Long, Int>?,
     allTimelineRows: List<ProcessTimelineRow>,
+    memoryEnrichedDots: Set<MemoryDotKey>,
     onShowDetail: (DotDetail, String, Long, Int) -> Unit,
 ) {
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
@@ -495,13 +497,20 @@ private fun TimelineRow(
                                     .clickable { onTap() },
                             )
                         } else {
+                            val hasMemory = memoryEnrichedDots.contains(
+                                MemoryDotKey(timestamp, key.name, key.uid)
+                            )
+                            val borderColor = if (hasMemory) {
+                                if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.5f)
+                            } else dotColor.copy(alpha = 0.3f)
+                            val borderWidth = if (hasMemory) 2.dp else 1.dp
                             Box(
                                 modifier = Modifier
                                     .size(14.dp)
                                     .graphicsLayer { scaleX = scale; scaleY = scale }
                                     .clip(CircleShape)
                                     .background(dotColor)
-                                    .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
+                                    .border(borderWidth, borderColor, CircleShape)
                                     .clickable { onTap() },
                                 contentAlignment = Alignment.Center,
                             ) {
