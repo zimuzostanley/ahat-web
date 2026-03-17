@@ -99,10 +99,11 @@ interface SnapshotDao {
     @Insert
     suspend fun insertMemorySnapshot(snapshot: MemorySnapshotEntity): Long
 
-    /** Get memory for a specific process at a timestamp (closest match). */
+    /** Get memory for a specific process at a timestamp (within 5s window). */
     @Query("""
         SELECT * FROM memory_snapshots
         WHERE name = :name AND uid = :uid AND pid = :pid
+            AND ABS(timestamp - :timestamp) < 5000
         ORDER BY ABS(timestamp - :timestamp)
         LIMIT 1
     """)
