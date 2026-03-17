@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatRow, formatHexDump, buildRegionMap, offsetToVmaAddr, extractStrings, formatRowSegments, buildDiffRows, findDiffIndex, regionSeparatorRows } from "./views/HexView";
+import { formatRow, formatHexDump, buildRegionMap, offsetToVmaAddr, extractStrings, formatRowSegments, buildDiffRows, findDiffIndex, regionSeparatorRows, computeExtractedDuplicates } from "./views/HexView";
 
 describe("HexView formatRow", () => {
   it("formats a full 16-byte row", () => {
@@ -467,5 +467,69 @@ describe("regionSeparatorRows", () => {
 
   it("empty returns empty", () => {
     expect(regionSeparatorRows([])).toEqual([]);
+  });
+});
+
+describe("computeExtractedDuplicates", () => {
+  it("returns empty for no strings", () => {
+    expect(computeExtractedDuplicates([])).toEqual([]);
+  });
+
+  it("returns empty when all strings are unique", () => {
+    const strings = [
+      { offset: 0, str: "hello" },
+      { offset: 10, str: "world" },
+      { offset: 20, str: "foo" },
+    ];
+    expect(computeExtractedDuplicates(strings)).toEqual([]);
+  });
+
+  it("detects a duplicate pair with correct bytes", () => {
+    const strings = [
+      { offset: 0, str: "hello" },
+      { offset: 10, str: "hello" },
+      { offset: 20, str: "unique" },
+    ];
+    const dups = computeExtractedDuplicates(strings);
+    expect(dups).toHaveLength(1);
+    expect(dups[0].value).toBe("hello");
+    expect(dups[0].count).toBe(2);
+    expect(dups[0].totalBytes).toBe(10); // 2 * 5
+  });
+
+  it("handles triple duplicates", () => {
+    const strings = [
+      { offset: 0, str: "abc" },
+      { offset: 10, str: "abc" },
+      { offset: 20, str: "abc" },
+    ];
+    const dups = computeExtractedDuplicates(strings);
+    expect(dups).toHaveLength(1);
+    expect(dups[0].count).toBe(3);
+    expect(dups[0].totalBytes).toBe(9); // 3 * 3
+  });
+
+  it("handles multiple duplicate groups", () => {
+    const strings = [
+      { offset: 0, str: "hello" },
+      { offset: 10, str: "hello" },
+      { offset: 20, str: "ab" },
+      { offset: 30, str: "ab" },
+      { offset: 40, str: "ab" },
+      { offset: 50, str: "unique" },
+    ];
+    const dups = computeExtractedDuplicates(strings);
+    expect(dups).toHaveLength(2);
+    const hello = dups.find(d => d.value === "hello")!;
+    const ab = dups.find(d => d.value === "ab")!;
+    expect(hello.count).toBe(2);
+    expect(hello.totalBytes).toBe(10);
+    expect(ab.count).toBe(3);
+    expect(ab.totalBytes).toBe(6);
+  });
+
+  it("single occurrence is not a duplicate", () => {
+    const strings = [{ offset: 0, str: "only-one" }];
+    expect(computeExtractedDuplicates(strings)).toEqual([]);
   });
 });

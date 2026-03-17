@@ -52,7 +52,8 @@ const VmaEntries: m.Component<{
     const sorted = (() => {
       const cmp = (a: SmapsEntry, b: SmapsEntry) => {
         if (sortField === "addrStart") {
-          return sortAsc ? a.addrStart.localeCompare(b.addrStart) : b.addrStart.localeCompare(a.addrStart);
+          const cmp = parseInt(a.addrStart, 16) - parseInt(b.addrStart, 16);
+          return sortAsc ? cmp : -cmp;
         }
         if (isDeltaKey(sortField)) {
           if (!diffByAddr) return 0;

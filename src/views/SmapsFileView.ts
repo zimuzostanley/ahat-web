@@ -275,9 +275,8 @@ const VmaTable: m.Component<{
 
     const sorted = [...entries].sort((a, b) => {
       if (sortField === "addrStart") {
-        return sortAsc
-          ? a.addrStart.localeCompare(b.addrStart)
-          : b.addrStart.localeCompare(a.addrStart);
+        const cmp = parseInt(a.addrStart, 16) - parseInt(b.addrStart, 16);
+        return sortAsc ? cmp : -cmp;
       }
       return sortAsc ? a[sortField] - b[sortField] : b[sortField] - a[sortField];
     });

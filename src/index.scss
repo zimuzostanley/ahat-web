@@ -1494,6 +1494,48 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   white-space: nowrap;
 }
 
+.ah-hex-strings__dup-header {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ah-text-faint);
+  border-bottom: 1px solid var(--ah-border);
+  position: sticky;
+  top: 0;
+  background: var(--ah-surface);
+  z-index: 1;
+}
+
+.ah-hex-strings__dup-col {
+  font-size: 0.75rem;
+  font-family: $mono;
+  color: var(--ah-text-secondary);
+  flex-shrink: 0;
+  width: 4rem;
+  text-align: right;
+}
+
+.ah-hex-strings__dup-col--sortable {
+  cursor: pointer;
+  &:hover { color: var(--ah-text-primary); }
+}
+
+.ah-hex-strings__dup-col--value {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ah-hex-btn--sm {
+  font-size: 10px;
+  padding: 0.0625rem 0.375rem;
+}
+
 .ah-hex-stats {
   font-size: 0.75rem;
   line-height: 1rem;
