@@ -4,7 +4,7 @@ Android process state timeline monitor. Captures LRU process state via `dumpsys 
 
 ## Install
 
-Download the APK: **[procstate-debug.apk](release/procstate-debug.apk)**
+Download the APK: **[procstate-debug.apk](https://github.com/zimuzostanley/ahat-web/raw/master/procstate/release/procstate-debug.apk)**
 
 ```bash
 adb install procstate-debug.apk
