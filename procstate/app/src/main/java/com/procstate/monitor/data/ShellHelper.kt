@@ -197,7 +197,7 @@ object ShellHelper {
         return try {
             // Use execRaw directly to avoid the Permission Denial check
             // (dumpsys output may contain that string in unrelated sections)
-            val cmd = "dumpsys activity | grep -A 180 'Apps frozen:'"
+            val cmd = "dumpsys activity | grep -A 1000 'Apps frozen:'"
             val output = if (hasRoot == true && suPath != null) {
                 execRaw("sh", "-c", "$suPath -c '${cmd.replace("'", "'\\''")}'")
             } else {
