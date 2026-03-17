@@ -503,7 +503,7 @@ private fun TimelineRow(
                             val borderColor = if (hasMemory) {
                                 if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.5f)
                             } else dotColor.copy(alpha = 0.3f)
-                            val borderWidth = if (hasMemory) 2.dp else 1.dp
+                            val borderWidth = if (hasMemory) 1.5.dp else 1.dp
                             Box(
                                 modifier = Modifier
                                     .size(14.dp)
@@ -992,32 +992,32 @@ fun ProcessDetailSheet(
 private fun MemoryRow(label: String, kb: Long) {
     if (kb <= 0) return
     Row(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
     ) {
         Text(
             label,
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.width(100.dp),
+            modifier = Modifier.width(80.dp),
         )
         Text(
             formatKb(kb),
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface,
         )
     }
 }
 
 @Composable
 private fun MemoryStatRow(label: String, minKb: Long, avgKb: Double, maxKb: Long) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-        Text(label, Modifier.width(100.dp), style = MaterialTheme.typography.bodySmall,
+    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Text(label, Modifier.width(80.dp), style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(formatKb(minKb), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+        Text(formatKb(minKb), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.End)
-        Text(formatKb(avgKb.toLong()), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+        Text(formatKb(avgKb.toLong()), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.End)
-        Text(formatKb(maxKb), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall,
+        Text(formatKb(maxKb), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.End)
     }
 }

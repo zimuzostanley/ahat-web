@@ -85,10 +85,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Auto memory dump ──────────────────────────────────────────────────
 
-    private val _autoMemoryDump = MutableStateFlow(false)
+    private val _autoMemoryDump = MutableStateFlow(
+        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+            .getBoolean("auto_memory_dump", false)
+    )
     val autoMemoryDump: StateFlow<Boolean> = _autoMemoryDump.asStateFlow()
 
-    fun setAutoMemoryDump(enabled: Boolean) { _autoMemoryDump.value = enabled }
+    fun setAutoMemoryDump(enabled: Boolean) {
+        _autoMemoryDump.value = enabled
+        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+            .putBoolean("auto_memory_dump", enabled).apply()
+    }
 
     /**
      * Resolve app label from package name via PackageManager.
