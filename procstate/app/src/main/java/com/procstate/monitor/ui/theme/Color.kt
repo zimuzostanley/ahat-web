@@ -40,30 +40,31 @@ object ProcStateColors {
 
     data class DualColor(val light: Color, val dark: Color)
 
+    // Tableau 10-inspired maximally distinct palette with dark mode variants.
     val palette = linkedMapOf(
-        "System" to DualColor(Color(0xFF7C3AED), Color(0xFFA78BFA)),
-        "Persistent" to DualColor(Color(0xFF4F46E5), Color(0xFF818CF8)),
-        "Top" to DualColor(Color(0xFF16A34A), Color(0xFF4ADE80)),
-        "Foreground" to DualColor(Color(0xFF059669), Color(0xFF34D399)),
-        "Visible" to DualColor(Color(0xFF0D9488), Color(0xFF2DD4BF)),
-        "FG Service" to DualColor(Color(0xFF0891B2), Color(0xFF22D3EE)),
-        "Bound FG" to DualColor(Color(0xFF0284C7), Color(0xFF38BDF8)),
-        "Bound Top" to DualColor(Color(0xFF2563EB), Color(0xFF60A5FA)),
-        "Perceptible" to DualColor(Color(0xFFCA8A04), Color(0xFFFACC15)),
-        "Imp FG" to DualColor(Color(0xFFD97706), Color(0xFFFBBF24)),
-        "Imp BG" to DualColor(Color(0xFFEA580C), Color(0xFFFB923C)),
-        "Previous" to DualColor(Color(0xFF9333EA), Color(0xFFC4B5FD)),
-        "Home" to DualColor(Color(0xFF65A30D), Color(0xFFA3E635)),
-        "Service" to DualColor(Color(0xFFDB2777), Color(0xFFF472B6)),
-        "Service B" to DualColor(Color(0xFFE879A0), Color(0xFFFDA4AF)),
-        "Svc Restart" to DualColor(Color(0xFFBE123C), Color(0xFFFB7185)),
-        "Receiver" to DualColor(Color(0xFFC026D3), Color(0xFFE879F9)),
-        "Backup" to DualColor(Color(0xFF0E7490), Color(0xFF5EEAD4)),
-        "Heavy" to DualColor(Color(0xFFDC2626), Color(0xFFF87171)),
-        "Last Activity" to DualColor(Color(0xFF78716C), Color(0xFFA8A29E)),
-        "Cached" to DualColor(Color(0xFF6B7280), Color(0xFF9CA3AF)),
-        "Frozen" to DualColor(Color(0xFF06B6D4), Color(0xFF67E8F9)),
-        "Native" to DualColor(Color(0xFF6D28D9), Color(0xFFB4A4F4)),
+        "System" to DualColor(Color(0xFF4E79A7), Color(0xFF7AADDE)),  // steel blue
+        "Persistent" to DualColor(Color(0xFF59A14F), Color(0xFF8CD17D)), // green
+        "Top" to DualColor(Color(0xFFE15759), Color(0xFFFF9D9A)),     // red
+        "Foreground" to DualColor(Color(0xFF76B7B2), Color(0xFFA0DAD6)), // teal
+        "Visible" to DualColor(Color(0xFFF28E2B), Color(0xFFFFBE7D)),  // orange
+        "FG Service" to DualColor(Color(0xFFEDC948), Color(0xFFF1DE82)), // gold
+        "Bound FG" to DualColor(Color(0xFFB07AA1), Color(0xFFD4A6C8)),  // mauve
+        "Bound Top" to DualColor(Color(0xFF9C755F), Color(0xFFC9A78C)),  // brown
+        "Perceptible" to DualColor(Color(0xFFFF9DA7), Color(0xFFFFCCD2)), // pink
+        "Imp FG" to DualColor(Color(0xFFBAB0AC), Color(0xFFD7CEC7)),    // warm gray
+        "Imp BG" to DualColor(Color(0xFFD97706), Color(0xFFFBBF24)),    // amber
+        "Previous" to DualColor(Color(0xFF499894), Color(0xFF86BCB6)),   // sage
+        "Home" to DualColor(Color(0xFF86BCB6), Color(0xFFB4D9D2)),      // mint
+        "Service" to DualColor(Color(0xFFCF4E50), Color(0xFFF19092)),    // coral
+        "Service B" to DualColor(Color(0xFFA0CBE8), Color(0xFFC6DFEF)),  // sky
+        "Svc Restart" to DualColor(Color(0xFFD4A6C8), Color(0xFFE8C8DE)), // lavender
+        "Receiver" to DualColor(Color(0xFF8CD17D), Color(0xFFB6E1A6)),   // lime
+        "Backup" to DualColor(Color(0xFFB6992D), Color(0xFFDCC651)),     // olive
+        "Heavy" to DualColor(Color(0xFFD32F2F), Color(0xFFEF5350)),     // strong red
+        "Last Activity" to DualColor(Color(0xFF8D6E63), Color(0xFFBCAAA4)), // taupe
+        "Cached" to DualColor(Color(0xFF78909C), Color(0xFFB0BEC5)),    // blue gray
+        "Frozen" to DualColor(Color(0xFF00ACC1), Color(0xFF4DD0E1)),    // cyan
+        "Native" to DualColor(Color(0xFF7B1FA2), Color(0xFFBA68C8)),    // purple
     )
 
     /** Canonical ordering for consistent bar chart segment order. */

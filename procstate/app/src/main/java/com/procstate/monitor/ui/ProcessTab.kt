@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -254,13 +255,25 @@ private fun TimelineRow(
                 ) {
                     if (state != null) {
                         val dotColor = ProcStateColors.get(state, isDark)
+                        var tapped by remember { mutableStateOf(false) }
+                        val scale by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (tapped) 1.6f else 1f,
+                            animationSpec = androidx.compose.animation.core.tween(200),
+                            label = "dotScale",
+                            finishedListener = { if (tapped) tapped = false },
+                        )
                         Box(
                             modifier = Modifier
                                 .size(14.dp)
+                                .graphicsLayer {
+                                    scaleX = scale
+                                    scaleY = scale
+                                }
                                 .clip(CircleShape)
                                 .background(dotColor)
                                 .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
                                 .clickable {
+                                    tapped = true
                                     Toast
                                         .makeText(context, "$name: $state", Toast.LENGTH_SHORT)
                                         .show()

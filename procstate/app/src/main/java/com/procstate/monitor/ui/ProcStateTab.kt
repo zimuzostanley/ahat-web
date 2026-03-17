@@ -69,6 +69,7 @@ fun ProcStateTab(
     snapshots: List<SnapshotWithCounts>,
     trackedProcesses: List<String>,
     onAddTrackedProcess: (String) -> Unit,
+    onRemoveTrackedProcess: (String) -> Unit,
     onLoadEntries: suspend (Long) -> List<ProcessEntryEntity>,
 ) {
     if (snapshots.isEmpty()) {
@@ -141,6 +142,7 @@ fun ProcStateTab(
                         }
                     },
                     onAddTrackedProcess = onAddTrackedProcess,
+                    onRemoveTrackedProcess = onRemoveTrackedProcess,
                 )
             }
         }
@@ -274,6 +276,7 @@ private fun SnapshotBreakdown(
     isDark: Boolean,
     onToggleState: (String) -> Unit,
     onAddTrackedProcess: (String) -> Unit,
+    onRemoveTrackedProcess: (String) -> Unit,
 ) {
     val sorted = remember(snapshot.stateCounts) {
         snapshot.stateCounts.entries
@@ -311,6 +314,7 @@ private fun SnapshotBreakdown(
                     entries = entries.filter { it.procState == state },
                     trackedProcesses = trackedProcesses,
                     onAddTrackedProcess = onAddTrackedProcess,
+                    onRemoveTrackedProcess = onRemoveTrackedProcess,
                 )
             }
 
@@ -356,13 +360,14 @@ private fun StateRow(
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
         )
-        // Mini proportion bar
+        // Mini proportion bar (left-aligned fill)
         Box(
             modifier = Modifier
                 .width(60.dp)
                 .height(8.dp)
                 .clip(RoundedCornerShape(4.dp))
                 .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+            contentAlignment = Alignment.CenterStart,
         ) {
             Box(
                 modifier = Modifier
@@ -394,6 +399,7 @@ private fun ProcessList(
     entries: List<ProcessEntryEntity>,
     trackedProcesses: List<String>,
     onAddTrackedProcess: (String) -> Unit,
+    onRemoveTrackedProcess: (String) -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val filtered = remember(entries, searchQuery) {
@@ -455,23 +461,24 @@ private fun ProcessList(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
                 Spacer(Modifier.width(6.dp))
-                if (!isTracked && trackedProcesses.size < 5) {
+                if (!isTracked) {
                     IconButton(
                         onClick = { onAddTrackedProcess(entry.name) },
                         modifier = Modifier.size(22.dp),
                     ) {
                         Icon(
                             Icons.Default.Add,
-                            contentDescription = "Track",
+                            contentDescription = "Pin",
                             modifier = Modifier.size(14.dp),
                             tint = MaterialTheme.colorScheme.primary,
                         )
                     }
-                } else if (isTracked) {
+                } else {
                     Text(
-                        "tracking",
+                        "pinned",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
+                        modifier = Modifier.clickable { onRemoveTrackedProcess(entry.name) },
                     )
                 }
             }

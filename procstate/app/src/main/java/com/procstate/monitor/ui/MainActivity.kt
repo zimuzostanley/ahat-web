@@ -265,6 +265,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         snapshots = snapshots,
                         trackedProcesses = trackedProcesses,
                         onAddTrackedProcess = vm::addTrackedProcess,
+                        onRemoveTrackedProcess = vm::removeTrackedProcess,
                         onLoadEntries = vm::getSnapshotEntries,
                     )
                     1 -> ProcessTab(
