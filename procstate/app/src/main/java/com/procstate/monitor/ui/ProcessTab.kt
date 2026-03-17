@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -122,8 +123,8 @@ fun ProcessTab(
 ) {
     val isDark = LocalIsDarkTheme.current
     var dotDetail by remember { mutableStateOf<DotDetail?>(null) }
-    // Track which dot is selected so it stays enlarged while drawer is open
-    var selectedDotId by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    // Track which dot is selected (name, timestamp, pid) for enlarged state
+    var selectedDotId by remember { mutableStateOf<Triple<String, Long, Int>?>(null) }
 
     // Detail drawer
     dotDetail?.let { detail ->
@@ -131,7 +132,10 @@ fun ProcessTab(
             detail = detail,
             isDark = isDark,
             appLabel = getAppLabel(detail.name),
-            onDismiss = { dotDetail = null; selectedDotId = null },
+            onDismiss = {
+                dotDetail = null
+                selectedDotId = null
+            },
         )
     }
 
@@ -283,12 +287,20 @@ fun ProcessTab(
             }
         }
 
-        // Timeline with scroll-to-top
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
-        val showScrollToTop by remember {
+        val totalItems = timelineByTimestamp.size
+        val isNearTop by remember {
             androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 3 }
         }
+        val isNearBottom by remember {
+            androidx.compose.runtime.derivedStateOf {
+                val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+                last != null && last.index < totalItems - 3
+            }
+        }
+        val showFab = isNearTop || isNearBottom
+        val scrollToTop = isNearTop && !isNearBottom
 
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -305,16 +317,16 @@ fun ProcessTab(
                         scrollState = scrollState,
                         selectedDotId = selectedDotId,
                         allTimelineRows = timelineRows,
-                        onShowDetail = { detail, name, ts ->
+                        onShowDetail = { detail, name, ts, pid ->
                             dotDetail = detail
-                            selectedDotId = name to ts
+                            selectedDotId = Triple(name, ts, pid)
                         },
                     )
                 }
             }
 
             androidx.compose.animation.AnimatedVisibility(
-                visible = showScrollToTop,
+                visible = showFab,
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(16.dp),
@@ -322,11 +334,21 @@ fun ProcessTab(
                 exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
             ) {
                 androidx.compose.material3.SmallFloatingActionButton(
-                    onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                    onClick = {
+                        scope.launch {
+                            if (scrollToTop) listState.animateScrollToItem(0)
+                            else listState.animateScrollToItem(totalItems - 1)
+                        }
+                    },
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ) {
-                    Icon(Icons.Default.KeyboardArrowUp, "Scroll to top", Modifier.size(20.dp))
+                    Icon(
+                        if (scrollToTop) Icons.Default.KeyboardArrowUp
+                        else Icons.Default.KeyboardArrowDown,
+                        "Scroll",
+                        Modifier.size(20.dp),
+                    )
                 }
             }
         }
@@ -342,9 +364,9 @@ private fun TimelineRow(
     stateMap: Map<ProcessKey, ProcessDot>,
     isDark: Boolean,
     scrollState: androidx.compose.foundation.ScrollState,
-    selectedDotId: Pair<String, Long>?,
+    selectedDotId: Triple<String, Long, Int>?,
     allTimelineRows: List<ProcessTimelineRow>,
-    onShowDetail: (DotDetail, String, Long) -> Unit,
+    onShowDetail: (DotDetail, String, Long, Int) -> Unit,
 ) {
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
     val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
@@ -388,7 +410,7 @@ private fun TimelineRow(
                         // Triangle for STARTED, circle for NORMAL
                         val isTriangle = dot.marker == Marker.STARTED
 
-                        val isSelected = selectedDotId == (key.name to timestamp)
+                        val isSelected = selectedDotId == Triple(key.name, timestamp, dot.pid)
                         val scale by androidx.compose.animation.core.animateFloatAsState(
                             targetValue = if (isSelected) 1.5f else 1f,
                             animationSpec = androidx.compose.animation.core.tween(200),
@@ -420,7 +442,7 @@ private fun TimelineRow(
                                 stateHistory = history,
                                 frozenCount = frozen,
                                 restartCount = restarts,
-                            ), key.name, timestamp)
+                            ), key.name, timestamp, dot.pid)
                         }
 
                         if (isTriangle) {
@@ -481,7 +503,7 @@ private fun TimelineRow(
                                         frozen = false,
                                         started = false,
                                         timestamp = ts,
-                                    ), key.name, timestamp)
+                                    ), key.name, timestamp, 0)
                                 },
                         )
                     }

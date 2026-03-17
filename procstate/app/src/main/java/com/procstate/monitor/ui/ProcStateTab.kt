@@ -136,8 +136,8 @@ fun ProcStateTab(
         }
     }
 
-    // Show scroll-to-top when not at the top
-    val showScrollToTop by remember {
+    val totalItems = snapshots.size
+    val isNearTop by remember {
         androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 2 }
     }
 
@@ -196,9 +196,17 @@ fun ProcStateTab(
         }
     }
 
-    // Scroll-to-top button
+    val isNearBottom by remember {
+        androidx.compose.runtime.derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
+            last != null && last.index < totalItems - 3
+        }
+    }
+    val showFab = isNearTop || isNearBottom
+    val scrollToTop = isNearTop && !isNearBottom
+
     androidx.compose.animation.AnimatedVisibility(
-        visible = showScrollToTop,
+        visible = showFab,
         modifier = Modifier
             .align(Alignment.BottomEnd)
             .padding(16.dp),
@@ -206,12 +214,17 @@ fun ProcStateTab(
         exit = fadeOut(tween(200)),
     ) {
         androidx.compose.material3.SmallFloatingActionButton(
-            onClick = { scope.launch { listState.animateScrollToItem(0) } },
+            onClick = {
+                scope.launch {
+                    if (scrollToTop) listState.animateScrollToItem(0)
+                    else listState.animateScrollToItem(totalItems - 1)
+                }
+            },
             containerColor = MaterialTheme.colorScheme.surfaceVariant,
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ) {
             Icon(
-                Icons.Default.KeyboardArrowUp,
+                if (scrollToTop) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = "Scroll to top",
                 modifier = Modifier.size(20.dp),
             )
