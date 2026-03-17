@@ -491,7 +491,7 @@ private fun TimelineRow(
                                 MemoryDotKey(timestamp, key.name, key.uid)
                             )
                             val borderColor = if (hasMemory) {
-                                if (isDark) Color.White.copy(alpha = 0.7f) else Color.Black.copy(alpha = 0.5f)
+                                if (isDark) Color(0xFFFFD54F) else Color.Black.copy(alpha = 0.5f)
                             } else dotColor.copy(alpha = 0.3f)
                             val borderWidth = if (hasMemory) 1.5.dp else 1.dp
                             Box(
