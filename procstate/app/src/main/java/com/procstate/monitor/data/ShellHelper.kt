@@ -181,6 +181,43 @@ object ShellHelper {
         return results
     }
 
+    /**
+     * Get PIDs of frozen processes by reading cgroup freeze state.
+     * Returns empty set if the freezer is unavailable or command fails.
+     */
+    fun getFrozenPids(): Set<Int> {
+        return try {
+            // dumpsys activity lru already tags frozen as "frzn", but that replaces the state.
+            // For overlay detection, check /proc/<pid>/cgroup for "frozen" in cgroup path,
+            // or parse "dumpsys activity" for "frozen=true".
+            // Simplest: grep all cgroup.freeze files under /sys/fs/cgroup/
+            val output = exec("cat /proc/*/cgroup 2>/dev/null | grep -l frozen 2>/dev/null || true")
+            // Alternative: use am command to list frozen apps
+            val amOutput = try { exec("dumpsys activity processes | grep frozen=true") } catch (_: Exception) { "" }
+            val pids = mutableSetOf<Int>()
+            // Parse "frozen=true" lines which look like: "pid=1234 frozen=true"
+            val pidPattern = Regex("""pid=(\d+).*frozen=true""")
+            for (line in amOutput.lines()) {
+                pidPattern.find(line)?.groupValues?.get(1)?.toIntOrNull()?.let { pids.add(it) }
+            }
+            // Also check /proc/<pid>/cgroup for "frozen" string
+            if (pids.isEmpty()) {
+                try {
+                    val procOutput = exec("for p in /proc/[0-9]*/cgroup; do grep -q frozen \"\$p\" 2>/dev/null && echo \"\$p\"; done")
+                    val pathPattern = Regex("""/proc/(\d+)/cgroup""")
+                    for (line in procOutput.lines()) {
+                        pathPattern.find(line)?.groupValues?.get(1)?.toIntOrNull()?.let { pids.add(it) }
+                    }
+                } catch (_: Exception) {}
+            }
+            Log.d(TAG, "Frozen PIDs: ${pids.size}")
+            pids
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to detect frozen processes: ${e.message}")
+            emptySet()
+        }
+    }
+
     fun getProcessList(): List<ProcessEntry> {
         Log.d(TAG, "Fetching process list...")
         val output = exec("dumpsys activity lru")

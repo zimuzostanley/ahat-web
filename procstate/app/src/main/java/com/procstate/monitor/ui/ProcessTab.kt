@@ -53,6 +53,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.procstate.monitor.data.ProcessTimelineRow
 import kotlinx.coroutines.launch
 import com.procstate.monitor.ui.theme.LocalIsDarkTheme
@@ -161,10 +162,11 @@ fun ProcessTab(
             return
         }
 
+        // Map: timestamp → (name → Pair(procState, frozen))
         val timelineByTimestamp = remember(timelineRows) {
             timelineRows.groupBy { it.timestamp }
                 .toSortedMap(compareByDescending { it })
-                .map { (ts, rows) -> ts to rows.associate { it.name to it.procState } }
+                .map { (ts, rows) -> ts to rows.associate { it.name to Pair(it.procState, it.frozen) } }
         }
 
         val scrollState = rememberScrollState()
@@ -261,7 +263,7 @@ fun ProcessTab(
 private fun TimelineRow(
     timestamp: Long,
     trackedProcesses: List<String>,
-    stateMap: Map<String, String>,
+    stateMap: Map<String, Pair<String, Boolean>>, // name → (procState, frozen)
     isDark: Boolean,
     scrollState: androidx.compose.foundation.ScrollState,
 ) {
@@ -293,13 +295,15 @@ private fun TimelineRow(
                 .horizontalScroll(scrollState),
         ) {
             for (name in trackedProcesses) {
-                val state = stateMap[name]
+                val entry = stateMap[name]
+                val state = entry?.first
 
                 Box(
                     modifier = Modifier.width(COL_WIDTH_DP.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (state != null) {
+                        val frozen = entry?.second == true
                         val dotColor = ProcStateColors.get(state, isDark)
                         var tapped by remember { mutableStateOf(false) }
                         val scale by androidx.compose.animation.core.animateFloatAsState(
@@ -308,6 +312,10 @@ private fun TimelineRow(
                             label = "dotScale",
                             finishedListener = { if (tapped) tapped = false },
                         )
+                        val toastText = buildString {
+                            append("$name: $state")
+                            if (frozen) append(" (frozen)")
+                        }
                         Box(
                             modifier = Modifier
                                 .size(14.dp)
@@ -321,10 +329,22 @@ private fun TimelineRow(
                                 .clickable {
                                     tapped = true
                                     Toast
-                                        .makeText(context, "$name: $state", Toast.LENGTH_SHORT)
+                                        .makeText(context, toastText, Toast.LENGTH_SHORT)
                                         .show()
                                 },
-                        )
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            // Frozen overlay: light X
+                            if (frozen) {
+                                Text(
+                                    "\u2715",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 8.sp,
+                                    ),
+                                    color = Color.White.copy(alpha = 0.8f),
+                                )
+                            }
+                        }
                     } else {
                         Box(
                             modifier = Modifier

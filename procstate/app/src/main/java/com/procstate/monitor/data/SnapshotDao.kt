@@ -54,7 +54,7 @@ interface SnapshotDao {
      * Limited to 500 most recent snapshots.
      */
     @Query("""
-        SELECT s.timestamp, pe.name, pe.procState
+        SELECT s.timestamp, pe.name, pe.procState, pe.frozen
         FROM snapshots s
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE pe.name IN (:names) AND s.id IN (

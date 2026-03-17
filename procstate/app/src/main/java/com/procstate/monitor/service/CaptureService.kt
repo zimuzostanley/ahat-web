@@ -114,13 +114,15 @@ class CaptureService : Service() {
                 cycleCount++
                 try {
                     val processes = ShellHelper.getProcessList()
+                    val frozenPids = ShellHelper.getFrozenPids()
                     val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis())
                     val entries = processes.map { p ->
                         ProcessEntryEntity(
-                            snapshotId = 0, // placeholder, set inside transaction
+                            snapshotId = 0,
                             pid = p.pid,
                             name = p.name,
                             procState = p.procState,
+                            frozen = p.pid in frozenPids,
                         )
                     }
                     dao.insertSnapshotWithEntries(snapshot, entries)

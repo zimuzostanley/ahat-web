@@ -32,6 +32,7 @@ data class ProcessEntryEntity(
     val pid: Int,
     val name: String,
     val procState: String,
+    val frozen: Boolean = false,
 )
 
 /** Row from the snapshot+state-count JOIN query. */
@@ -47,6 +48,7 @@ data class ProcessTimelineRow(
     val timestamp: Long,
     val name: String,
     val procState: String,
+    val frozen: Boolean = false,
 )
 
 /** Grouped snapshot with its state counts (built in ViewModel from SnapshotStateRow). */
