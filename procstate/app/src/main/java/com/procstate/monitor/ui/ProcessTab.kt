@@ -368,7 +368,7 @@ private fun TimelineRow(
                             append(dot.procState)
                             if (dot.frozen) append(" (frozen)")
                             if (dot.marker == Marker.STARTED) append(" | started")
-                            append("\n${key.shortName} ${dot.uid} pid:${dot.pid}")
+                            append("\n${key.name} ${dot.uid} pid:${dot.pid}")
                         }
 
                         if (isTriangle) {
@@ -421,7 +421,7 @@ private fun TimelineRow(
                                 .size(10.dp)
                                 .border(
                                     1.dp,
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
                                     CircleShape,
                                 )
                                 .clickable {

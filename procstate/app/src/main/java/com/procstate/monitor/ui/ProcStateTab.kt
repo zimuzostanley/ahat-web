@@ -579,7 +579,7 @@ private fun ProcessList(
                         val details = buildString {
                             append(entry.procState)
                             if (entry.frozen) append(" (frozen)")
-                            append("\n${entry.name.substringAfterLast('.')} ${entry.uid} pid:${entry.pid}")
+                            append("\n${entry.name} ${entry.uid} pid:${entry.pid}")
                         }
                         Toast.makeText(context, details, Toast.LENGTH_SHORT).show()
                     }
