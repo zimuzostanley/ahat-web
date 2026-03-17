@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
@@ -490,17 +491,28 @@ private fun TimelineRow(
                             val hasMemory = memoryEnrichedDots.contains(
                                 MemoryDotKey(timestamp, key.name, key.uid)
                             )
-                            val borderColor = if (hasMemory) {
-                                if (isDark) Color(0xFFFFD54F) else Color.Black.copy(alpha = 0.5f)
-                            } else dotColor.copy(alpha = 0.3f)
-                            val borderWidth = if (hasMemory) 1.5.dp else 1.dp
                             Box(
                                 modifier = Modifier
                                     .size(14.dp)
                                     .graphicsLayer { scaleX = scale; scaleY = scale }
+                                    .then(if (hasMemory) {
+                                        // Dotted white border for memory-enriched dots
+                                        Modifier.drawBehind {
+                                            drawCircle(
+                                                color = if (isDark) Color.White else Color.Black,
+                                                radius = size.minDimension / 2,
+                                                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                                    width = 1.5.dp.toPx(),
+                                                    pathEffect = PathEffect.dashPathEffect(
+                                                        floatArrayOf(3f, 3f),
+                                                    ),
+                                                ),
+                                            )
+                                        }
+                                    } else Modifier)
                                     .clip(CircleShape)
                                     .background(dotColor)
-                                    .border(borderWidth, borderColor, CircleShape)
+                                    .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
                                     .clickable { onTap() },
                                 contentAlignment = Alignment.Center,
                             ) {
