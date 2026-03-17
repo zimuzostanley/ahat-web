@@ -46,6 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -289,10 +291,16 @@ private fun TimelineRow(
                 },
         )
 
+        val lineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
         Row(
             modifier = Modifier
                 .weight(1f)
-                .horizontalScroll(scrollState),
+                .horizontalScroll(scrollState)
+                .drawBehind {
+                    // Subtle horizontal line connecting dots
+                    val y = size.height / 2
+                    drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
+                },
         ) {
             for (name in trackedProcesses) {
                 val entry = stateMap[name]

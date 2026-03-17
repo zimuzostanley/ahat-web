@@ -163,6 +163,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 intervalLabel = captureInterval.label,
                                 stopAfterMinutes = stopAfter.minutes,
                                 startMs = captureStartMs,
+                                onDetectStopped = vm::refreshCaptureStatus,
                             )
                         }
                     }
@@ -335,47 +336,40 @@ private fun ProcStateApp(vm: MainViewModel) {
 // ── Recording status with live countdown ────────────────────────────────────
 
 @Composable
-private fun RecordingStatus(intervalLabel: String, stopAfterMinutes: Int, startMs: Long) {
-    if (stopAfterMinutes > 0 && startMs > 0) {
-        val endMs = startMs + stopAfterMinutes * 60_000L
-        var now by remember { mutableStateOf(System.currentTimeMillis()) }
+private fun RecordingStatus(
+    intervalLabel: String,
+    stopAfterMinutes: Int,
+    startMs: Long,
+    onDetectStopped: () -> Unit,
+) {
+    var now by remember { mutableStateOf(System.currentTimeMillis()) }
 
-        // Tick every second
-        androidx.compose.runtime.LaunchedEffect(Unit) {
-            while (true) {
-                kotlinx.coroutines.delay(1000)
-                now = System.currentTimeMillis()
+    // Tick every second; also poll CaptureService.running to catch stop
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            now = System.currentTimeMillis()
+            if (!CaptureService.running) {
+                onDetectStopped()
+                break
             }
         }
-
-        val remainingMs = (endMs - now).coerceAtLeast(0)
-        val elapsedMs = (now - startMs).coerceAtLeast(0)
-        val totalMs = stopAfterMinutes * 60_000L
-
-        Text(
-            "REC $intervalLabel \u00b7 ${formatDuration(elapsedMs)}/${formatDuration(totalMs)}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-    } else {
-        // No stop-after: just show elapsed time
-        var now by remember { mutableStateOf(System.currentTimeMillis()) }
-
-        androidx.compose.runtime.LaunchedEffect(Unit) {
-            while (true) {
-                kotlinx.coroutines.delay(1000)
-                now = System.currentTimeMillis()
-            }
-        }
-
-        val elapsedMs = if (startMs > 0) (now - startMs).coerceAtLeast(0) else 0L
-
-        Text(
-            "REC $intervalLabel \u00b7 ${formatDuration(elapsedMs)}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.error,
-        )
     }
+
+    val elapsedMs = if (startMs > 0) (now - startMs).coerceAtLeast(0) else 0L
+
+    val text = if (stopAfterMinutes > 0) {
+        val totalMs = stopAfterMinutes * 60_000L
+        "REC $intervalLabel \u00b7 ${formatDuration(elapsedMs)}/${formatDuration(totalMs)}"
+    } else {
+        "REC $intervalLabel \u00b7 ${formatDuration(elapsedMs)}"
+    }
+
+    Text(
+        text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.error,
+    )
 }
 
 private fun formatDuration(ms: Long): String {

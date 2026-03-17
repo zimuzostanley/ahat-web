@@ -127,7 +127,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setStopAfter(v: StopAfter) { _stopAfter.value = v }
 
     fun refreshCaptureStatus() {
-        _isCapturing.value = CaptureService.running
+        val running = CaptureService.running
+        _isCapturing.value = running
+        if (!running) _captureStartMs.value = 0
     }
 
     fun startCapture() {
@@ -151,6 +153,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         ctx.startService(intent)
         _isCapturing.value = false
+        _captureStartMs.value = 0
     }
 
     /** Pull-to-refresh: capture a snapshot on demand. */
