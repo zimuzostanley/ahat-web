@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.procstate.monitor.data.ProcessTimelineRow
+import kotlinx.coroutines.launch
 import com.procstate.monitor.ui.theme.LocalIsDarkTheme
 import com.procstate.monitor.ui.theme.ProcStateColors
 
@@ -204,19 +206,49 @@ fun ProcessTab(
             }
         }
 
-        // Timeline
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 4.dp),
-        ) {
-            items(timelineByTimestamp, key = { it.first }) { (timestamp, stateMap) ->
-                TimelineRow(
-                    timestamp = timestamp,
-                    trackedProcesses = trackedProcesses,
-                    stateMap = stateMap,
-                    isDark = isDark,
-                    scrollState = scrollState,
-                )
+        // Timeline with scroll-to-top
+        val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+        val showScrollToTop by remember {
+            androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 3 }
+        }
+
+        Box(Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 4.dp),
+            ) {
+                items(timelineByTimestamp, key = { it.first }) { (timestamp, stateMap) ->
+                    TimelineRow(
+                        timestamp = timestamp,
+                        trackedProcesses = trackedProcesses,
+                        stateMap = stateMap,
+                        isDark = isDark,
+                        scrollState = scrollState,
+                    )
+                }
+            }
+
+            androidx.compose.animation.AnimatedVisibility(
+                visible = showScrollToTop,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                enter = androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(200)),
+                exit = androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(200)),
+            ) {
+                androidx.compose.material3.SmallFloatingActionButton(
+                    onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ) {
+                    Icon(
+                        Icons.Default.KeyboardArrowUp,
+                        contentDescription = "Scroll to top",
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
             }
         }
     }

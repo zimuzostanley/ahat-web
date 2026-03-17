@@ -2,7 +2,10 @@ package com.procstate.monitor.ui
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -109,8 +112,16 @@ fun ProcStateTab(
     val expandedStates = remember { mutableStateMapOf<Long, String>() }
     val scope = rememberCoroutineScope()
     val isDark = LocalIsDarkTheme.current
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
 
+    // Show scroll-to-top when not at the top
+    val showScrollToTop by remember {
+        androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 2 }
+    }
+
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -161,6 +172,29 @@ fun ProcStateTab(
             }
         }
     }
+
+    // Scroll-to-top button
+    androidx.compose.animation.AnimatedVisibility(
+        visible = showScrollToTop,
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(16.dp),
+        enter = fadeIn(tween(200)),
+        exit = fadeOut(tween(200)),
+    ) {
+        androidx.compose.material3.SmallFloatingActionButton(
+            onClick = { scope.launch { listState.animateScrollToItem(0) } },
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ) {
+            Icon(
+                Icons.Default.KeyboardArrowUp,
+                contentDescription = "Scroll to top",
+                modifier = Modifier.size(20.dp),
+            )
+        }
+    }
+    } // Box
 }
 
 // ── Snapshot row with stacked bar ───────────────────────────────────────────
