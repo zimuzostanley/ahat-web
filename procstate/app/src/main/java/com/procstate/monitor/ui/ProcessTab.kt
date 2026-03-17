@@ -991,6 +991,7 @@ fun ProcessDetailSheet(
 
 @Composable
 private fun MemoryChip(label: String, kb: Long, modifier: Modifier = Modifier) {
+    if (kb <= 0) return
     Column(modifier) {
         Text(
             label,
@@ -1006,6 +1007,7 @@ private fun MemoryChip(label: String, kb: Long, modifier: Modifier = Modifier) {
 
 @Composable
 private fun MemoryStatRow(label: String, minKb: Long, avgKb: Double, maxKb: Long) {
+    if (maxKb <= 0) return
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text(label, Modifier.width(80.dp), style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
