@@ -73,6 +73,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tracequery.app.data.model.HistoryEntry
@@ -485,7 +486,9 @@ fun QueryScreen(
                                         modifier = Modifier.weight(1f))
                                     if (count.isNotBlank()) {
                                         Text(count, style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.End,
+                                            modifier = Modifier.width(48.dp))
                                     }
                                 }
                             }

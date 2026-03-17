@@ -35,6 +35,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FilterAlt
 import androidx.compose.material.icons.filled.Functions
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -200,16 +201,19 @@ fun DataGrid(
         visibleCols.map { pagedQuery.columns[it] }
     }
 
-    // Scroll-driven loading
+    // Scroll-driven loading + scroll-to-top visibility
+    val firstVisible by derivedStateOf { listState.firstVisibleItemIndex }
     val lastVisible by derivedStateOf {
         listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
     }
+    val showScrollToTop by derivedStateOf { firstVisible > 20 }
     LaunchedEffect(lastVisible, pagedQuery.version) {
         onEnsureRows?.invoke(lastVisible)
     }
 
     // The entire grid (header + rows) scrolls horizontally together
-    Column(modifier) {
+    Box(modifier) {
+    Column(Modifier.fillMaxWidth()) {
         // Column visibility indicator
         if (visibleCols.size < pagedQuery.columns.size) {
             Text("${visibleCols.size}/${pagedQuery.columns.size} columns",
@@ -381,6 +385,19 @@ fun DataGrid(
             }
         }
     }
+
+    // Scroll to top button
+    if (showScrollToTop) {
+        androidx.compose.material3.SmallFloatingActionButton(
+            onClick = { scope.launch { listState.animateScrollToItem(0) } },
+            modifier = Modifier.align(Alignment.BottomStart).padding(12.dp),
+            containerColor = MaterialTheme.colorScheme.surfaceVariant,
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ) {
+            Icon(Icons.Default.KeyboardArrowUp, "Scroll to top")
+        }
+    }
+    } // Box
 
     // ── Cell context menu (composed ONCE, outside LazyColumn) ────────────
     if (cellMenuRow >= 0) {
