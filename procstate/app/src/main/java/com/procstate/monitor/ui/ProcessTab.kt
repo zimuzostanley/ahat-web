@@ -103,6 +103,7 @@ data class DotDetail(
     /** State counts up to this point in time: state -> count, sorted by count desc. */
     val stateHistory: List<Pair<String, Int>> = emptyList(),
     val frozenCount: Int = 0,
+    val restartCount: Int = 0,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -402,6 +403,11 @@ private fun TimelineRow(
                                 .map { (state, rows) -> state to rows.size }
                                 .sortedByDescending { it.second }
                             val frozen = relevant.count { it.frozen }
+                            val sorted = relevant.sortedBy { it.timestamp }
+                            val restarts = (1 until sorted.size).count {
+                                sorted[it].pid != sorted[it - 1].pid &&
+                                sorted[it].pid != 0 && sorted[it - 1].pid != 0
+                            }
                             onShowDetail(DotDetail(
                                 name = key.name,
                                 uid = dot.uid,
@@ -413,6 +419,7 @@ private fun TimelineRow(
                                 timestamp = fullTimeStr,
                                 stateHistory = history,
                                 frozenCount = frozen,
+                                restartCount = restarts,
                             ), key.name, timestamp)
                         }
 
@@ -776,6 +783,29 @@ fun ProcessDetailSheet(
                         )
                         Text(
                             "$count ($pct%)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                // Restarts
+                if (detail.restartCount > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "Process starts",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "${detail.restartCount}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
