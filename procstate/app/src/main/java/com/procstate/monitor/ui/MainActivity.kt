@@ -380,8 +380,8 @@ private fun ProcStateApp(vm: MainViewModel) {
             StateFilterSheet(
                 allStates = visibleStates,
                 selectedStates = stateFilter,
-                onApply = { vm.setStateFilter(it); showStateFilterSheet = false },
-                onClearAll = { vm.clearStateFilter(); showStateFilterSheet = false },
+                onChanged = { vm.setStateFilter(it) },
+                onShowAll = { vm.clearStateFilter() },
             )
         }
     }
@@ -614,12 +614,10 @@ private fun TimeRangeSelector(selected: TimeRange, onSelect: (TimeRange) -> Unit
 private fun StateFilterSheet(
     allStates: Set<String>,
     selectedStates: Set<String>,
-    onApply: (Set<String>) -> Unit,
-    onClearAll: () -> Unit,
+    onChanged: (Set<String>) -> Unit,
+    onShowAll: () -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
-    val working = remember(selectedStates) { selectedStates.toMutableSet() }
-    var toggle by remember { mutableIntStateOf(0) } // force recompose on toggle
 
     val sorted = remember(allStates) {
         allStates.sortedBy { ProcStateColors.label(it).lowercase() }
@@ -631,24 +629,37 @@ private fun StateFilterSheet(
         }
     }
 
+    // All selected by default (empty filter = show all)
+    val isShowAll = selectedStates.isEmpty()
+
+    fun toggle(state: String) {
+        if (isShowAll) {
+            // Currently showing all — switching to filter with all except this one
+            onChanged((allStates - state))
+        } else if (state in selectedStates) {
+            val next = selectedStates - state
+            if (next.isEmpty()) onShowAll() // deselecting last = show all
+            else onChanged(next)
+        } else {
+            val next = selectedStates + state
+            if (next.size >= allStates.size) onShowAll() // selecting all = show all
+            else onChanged(next)
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .fillMaxHeight(0.9f)
+            .fillMaxHeight(0.8f)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Filter States", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
-            androidx.compose.material3.TextButton(onClick = {
-                if (working.size == filtered.size) {
-                    working.clear()
-                } else {
-                    working.addAll(filtered)
+            if (!isShowAll) {
+                androidx.compose.material3.TextButton(onClick = onShowAll) {
+                    Text("Show all")
                 }
-                toggle++
-            }) {
-                Text(if (working.containsAll(filtered.toSet())) "Clear all" else "Select all")
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -668,9 +679,6 @@ private fun StateFilterSheet(
         )
         Spacer(Modifier.height(8.dp))
 
-        // Suppress unused variable warning — toggle forces recompose
-        @Suppress("UNUSED_EXPRESSION") toggle
-
         LazyColumn(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(2.dp),
@@ -678,24 +686,18 @@ private fun StateFilterSheet(
             items(filtered) { state ->
                 val isDark = com.procstate.monitor.ui.theme.LocalIsDarkTheme.current
                 val color = ProcStateColors.get(state, isDark)
-                val checked = state in working
+                val checked = isShowAll || state in selectedStates
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(4.dp))
-                        .clickable {
-                            if (checked) working.remove(state) else working.add(state)
-                            toggle++
-                        }
+                        .clickable { toggle(state) }
                         .padding(vertical = 6.dp, horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     androidx.compose.material3.Checkbox(
                         checked = checked,
-                        onCheckedChange = {
-                            if (it) working.add(state) else working.remove(state)
-                            toggle++
-                        },
+                        onCheckedChange = { toggle(state) },
                         modifier = Modifier.size(24.dp),
                     )
                     Spacer(Modifier.width(8.dp))
@@ -717,25 +719,6 @@ private fun StateFilterSheet(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            OutlinedButton(
-                onClick = onClearAll,
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Show all")
-            }
-            Button(
-                onClick = { onApply(working.toSet()) },
-                modifier = Modifier.weight(1f),
-            ) {
-                Text("Apply (${working.size})")
             }
         }
         Spacer(Modifier.height(8.dp))
