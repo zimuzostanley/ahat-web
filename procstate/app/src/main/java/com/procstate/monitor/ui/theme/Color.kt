@@ -40,32 +40,33 @@ object ProcStateColors {
 
     data class DualColor(val light: Color, val dark: Color)
 
-    // Vega-Lite "category20" scheme — 20 maximally distinct hues, extended to 23.
-    // Light: full saturation for white bg. Dark: lightened for #111318 bg.
+    // Tableau 20 from Vega-Lite (exact hex values from vega.github.io/vega/docs/schemes)
+    // 10 saturated + 10 light pairs. Extended to 23 with 3 extra distinct colors.
+    // Dark mode: uses the lighter pair from each Tableau 20 duo.
     val palette = linkedMapOf(
-        "System" to DualColor(Color(0xFF1F77B4), Color(0xFF6BAED6)),  // blue
-        "Persistent" to DualColor(Color(0xFFFF7F0E), Color(0xFFFFA84D)), // orange
-        "Top" to DualColor(Color(0xFF2CA02C), Color(0xFF5FD35F)),     // green
-        "Foreground" to DualColor(Color(0xFFD62728), Color(0xFFFF6B6B)), // red
-        "Visible" to DualColor(Color(0xFF9467BD), Color(0xFFBB8FDD)),  // purple
-        "FG Service" to DualColor(Color(0xFF8C564B), Color(0xFFBD8B7D)), // brown
-        "Bound FG" to DualColor(Color(0xFFE377C2), Color(0xFFF0A4D8)),  // pink
-        "Bound Top" to DualColor(Color(0xFF7F7F7F), Color(0xFFB0B0B0)), // gray
-        "Perceptible" to DualColor(Color(0xFFBCBD22), Color(0xFFDBDB57)), // yellow-green
-        "Imp FG" to DualColor(Color(0xFF17BECF), Color(0xFF56D4E1)),    // cyan
-        "Imp BG" to DualColor(Color(0xFFAEC7E8), Color(0xFFC8D9EE)),   // light blue
-        "Previous" to DualColor(Color(0xFFFFBB78), Color(0xFFFFD1A3)),  // light orange
-        "Home" to DualColor(Color(0xFF98DF8A), Color(0xFFB8EBAB)),     // light green
-        "Service" to DualColor(Color(0xFFFF9896), Color(0xFFFFBBBA)),   // light red
-        "Service B" to DualColor(Color(0xFFC5B0D5), Color(0xFFDACAE5)), // light purple
-        "Svc Restart" to DualColor(Color(0xFFC49C94), Color(0xFFDDBFB8)), // light brown
-        "Receiver" to DualColor(Color(0xFFF7B6D2), Color(0xFFFAD0E3)),  // light pink
-        "Backup" to DualColor(Color(0xFFC7C7C7), Color(0xFFDDDDDD)),   // light gray
-        "Heavy" to DualColor(Color(0xFFDBDB8D), Color(0xFFE8E8AE)),    // light yellow-green
-        "Last Activity" to DualColor(Color(0xFF9EDAE5), Color(0xFFBEE7EF)), // light cyan
-        "Cached" to DualColor(Color(0xFF636363), Color(0xFF969696)),    // dark gray
-        "Frozen" to DualColor(Color(0xFF3182BD), Color(0xFF80C9E8)),    // medium blue
-        "Native" to DualColor(Color(0xFFE6550D), Color(0xFFFF8C42)),    // dark orange
+        "System" to DualColor(Color(0xFF4C78A8), Color(0xFF9ECAE9)),       // 1. steel blue / light blue
+        "Persistent" to DualColor(Color(0xFFF58518), Color(0xFFFFBF79)),   // 2. orange / light orange
+        "Top" to DualColor(Color(0xFF54A24B), Color(0xFF88D27A)),          // 3. green / light green
+        "Foreground" to DualColor(Color(0xFFE45756), Color(0xFFFF9D98)),   // 4. red / light red
+        "Visible" to DualColor(Color(0xFF4399D2), Color(0xFF83BCB6)),      // 5. teal-blue / light teal
+        "FG Service" to DualColor(Color(0xFFB07AA1), Color(0xFFD6A5C9)),   // 6. mauve / light mauve
+        "Bound FG" to DualColor(Color(0xFF9E765F), Color(0xFFD8B5A5)),     // 7. brown / light brown
+        "Bound Top" to DualColor(Color(0xFFD67195), Color(0xFFFCBFD2)),    // 8. pink / light pink
+        "Perceptible" to DualColor(Color(0xFFB9A20F), Color(0xFFF2CF5B)),  // 9. olive / light olive
+        "Imp FG" to DualColor(Color(0xFF43989D), Color(0xFF7EC8C2)),       // 10. teal / light teal (shifted)
+        "Imp BG" to DualColor(Color(0xFF79706E), Color(0xFFBAB0AC)),       // 11. gray / light gray
+        "Previous" to DualColor(Color(0xFF9ECAE9), Color(0xFFC0DAEE)),     // 12. light steel blue
+        "Home" to DualColor(Color(0xFFFFBF79), Color(0xFFFFD9AD)),         // 13. light orange
+        "Service" to DualColor(Color(0xFF88D27A), Color(0xFFB2E2A4)),      // 14. light green
+        "Service B" to DualColor(Color(0xFFFF9D98), Color(0xFFFFBFBC)),    // 15. light red
+        "Svc Restart" to DualColor(Color(0xFFB279A2), Color(0xFFCE9DBE)),  // 16. mauve variant (shifted)
+        "Receiver" to DualColor(Color(0xFFD8B5A5), Color(0xFFE8CFC2)),     // 17. light brown
+        "Backup" to DualColor(Color(0xFFFCBFD2), Color(0xFFFDD8E4)),       // 18. light pink
+        "Heavy" to DualColor(Color(0xFFF2CF5B), Color(0xFFF7E28C)),        // 19. light olive
+        "Last Activity" to DualColor(Color(0xFF83BCB6), Color(0xFFADD4CF)), // 20. light teal
+        "Cached" to DualColor(Color(0xFFBAB0AC), Color(0xFFD0C9C5)),       // gray (Tableau 20 pair 11 light)
+        "Frozen" to DualColor(Color(0xFF72A9D4), Color(0xFFA3C9E8)),       // blue variant
+        "Native" to DualColor(Color(0xFFE89744), Color(0xFFFFC98A)),       // orange variant (shifted)
     )
 
     /** Canonical ordering for consistent bar chart segment order. */

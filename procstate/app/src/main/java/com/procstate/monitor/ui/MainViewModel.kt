@@ -206,10 +206,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val visibleStates: StateFlow<Set<String>> =
-        snapshotsWithCounts.map { snapshots ->
-            snapshots.flatMap { it.stateCounts.keys }.toSet()
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+    /** Accumulates all states ever seen — never shrinks during the session. */
+    private val _seenStates = MutableStateFlow<Set<String>>(emptySet())
+    val visibleStates: StateFlow<Set<String>> = _seenStates.asStateFlow()
 
     suspend fun getSnapshotEntries(snapshotId: Long): List<ProcessEntryEntity> =
         dao.getEntriesForSnapshot(snapshotId)
@@ -229,6 +228,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             while (isActive) {
                 delay(30_000)
                 _ticker.value = System.currentTimeMillis()
+            }
+        }
+        // Accumulate all states ever seen in legend
+        viewModelScope.launch {
+            snapshotsWithCounts.collect { snapshots ->
+                val newStates = snapshots.flatMap { it.stateCounts.keys }.toSet()
+                if (newStates.isNotEmpty()) {
+                    _seenStates.value = _seenStates.value + newStates
+                }
             }
         }
     }
