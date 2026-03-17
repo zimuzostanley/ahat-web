@@ -241,7 +241,10 @@ private fun SnapshotRow(
             )
             Spacer(Modifier.weight(1f))
             Text(
-                "${snapshot.totalProcesses} procs",
+                buildString {
+                    append("${snapshot.totalProcesses} procs")
+                    if (snapshot.frozenCount > 0) append(" / ${snapshot.frozenCount} frozen")
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -410,8 +413,26 @@ private fun SnapshotBreakdown(
                     "Frozen",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.weight(1f))
+                // Mini proportion bar
+                Box(
+                    modifier = Modifier
+                        .width(60.dp)
+                        .height(8.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.CenterStart,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(snapshot.frozenCount.toFloat() / snapshot.totalProcesses.coerceAtLeast(1))
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(frozenColor),
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
                 Text(
                     "${snapshot.frozenCount}",
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
@@ -556,11 +577,9 @@ private fun ProcessList(
                     .fillMaxWidth()
                     .clickable {
                         val details = buildString {
-                            append(entry.name.substringAfterLast('.'))
-                            if (entry.name.contains('.')) append(" (${entry.name})")
-                            append(" / ${entry.uid}")
-                            append(" / PID ${entry.pid}")
-                            if (entry.frozen) append(" [frozen]")
+                            append("${entry.name}\n")
+                            append("UID: ${entry.uid}  PID: ${entry.pid}")
+                            if (entry.frozen) append("\nFrozen")
                         }
                         Toast.makeText(context, details, Toast.LENGTH_SHORT).show()
                     }

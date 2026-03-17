@@ -357,12 +357,11 @@ private fun TimelineRow(
                             finishedListener = { if (tapped) tapped = false },
                         )
                         val toastText = buildString {
-                            append(key.shortName)
-                            if (key.shortName != key.name) append(" (${key.name})")
-                            append(" / ${dot.uid} / PID ${dot.pid}")
-                            append(" / ${dot.procState}")
-                            if (dot.frozen) append(" [frozen]")
-                            if (dot.marker == Marker.STARTED) append(" / process start")
+                            append("${key.name}\n")
+                            append("UID: ${dot.uid}  PID: ${dot.pid}\n")
+                            append("State: ${dot.procState}")
+                            if (dot.frozen) append(" (frozen)")
+                            if (dot.marker == Marker.STARTED) append("\nProcess start")
                         }
 
                         if (isTriangle) {
