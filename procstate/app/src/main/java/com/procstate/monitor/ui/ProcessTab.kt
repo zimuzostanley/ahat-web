@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -322,17 +323,18 @@ fun ProcessTab(
         val listState = androidx.compose.foundation.lazy.rememberLazyListState()
         val scope = androidx.compose.runtime.rememberCoroutineScope()
         val totalItems = timelineByTimestamp.size
-        val isNearTop by remember {
+        val scrolledFromTop by remember {
             androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 3 }
         }
-        val isNearBottom by remember {
+        val atBottom by remember {
             androidx.compose.runtime.derivedStateOf {
                 val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
-                last != null && last.index < totalItems - 3
+                last != null && last.index >= totalItems - 2
             }
         }
-        val showFab = isNearTop || isNearBottom
-        val scrollToTop = isNearTop && !isNearBottom
+        val showFab = scrolledFromTop || atBottom
+        // Up arrow to jump to newest (top), down arrow to jump to oldest (bottom)
+        val goUp = scrolledFromTop
 
         Box(Modifier.fillMaxSize()) {
             LazyColumn(
@@ -369,7 +371,7 @@ fun ProcessTab(
                 androidx.compose.material3.SmallFloatingActionButton(
                     onClick = {
                         scope.launch {
-                            if (scrollToTop) listState.animateScrollToItem(0)
+                            if (goUp) listState.animateScrollToItem(0)
                             else listState.animateScrollToItem(totalItems - 1)
                         }
                     },
@@ -377,7 +379,7 @@ fun ProcessTab(
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ) {
                     Icon(
-                        if (scrollToTop) Icons.Default.KeyboardArrowUp
+                        if (goUp) Icons.Default.KeyboardArrowUp
                         else Icons.Default.KeyboardArrowDown,
                         "Scroll",
                         Modifier.size(20.dp),
@@ -730,6 +732,7 @@ fun ProcessDetailSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 40.dp),
         ) {
@@ -922,18 +925,28 @@ fun ProcessDetailSheet(
                         )
                     }
                 } else if (memoryData != null) {
-                    // Show memory breakdown
+                    // Show memory breakdown — horizontal compact layout
                     Text("Memory", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
-                    MemoryRow("Total PSS", memoryData.totalPssKb)
-                    MemoryRow("Total RSS", memoryData.totalRssKb)
-                    MemoryRow("Java Heap", memoryData.javaHeapKb)
-                    MemoryRow("Native Heap", memoryData.nativeHeapKb)
-                    MemoryRow("Code", memoryData.codeKb)
-                    MemoryRow("Stack", memoryData.stackKb)
-                    MemoryRow("Graphics", memoryData.graphicsKb)
-                    MemoryRow("System", memoryData.systemKb)
-                    if (memoryData.totalSwapKb > 0) MemoryRow("Swap", memoryData.totalSwapKb)
+                    // PSS / RSS row
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        MemoryChip("PSS", memoryData.totalPssKb, Modifier.weight(1f))
+                        MemoryChip("RSS", memoryData.totalRssKb, Modifier.weight(1f))
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    // Breakdown row
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        MemoryChip("Java", memoryData.javaHeapKb)
+                        MemoryChip("Native", memoryData.nativeHeapKb)
+                        MemoryChip("Code", memoryData.codeKb)
+                        MemoryChip("Stack", memoryData.stackKb)
+                        MemoryChip("Graphics", memoryData.graphicsKb)
+                        MemoryChip("System", memoryData.systemKb)
+                        if (memoryData.totalSwapKb > 0) MemoryChip("Swap", memoryData.totalSwapKb)
+                    }
 
                     // Memory summary stats
                     if (memoryStats != null && memoryStats.count > 1) {
@@ -991,13 +1004,17 @@ fun ProcessDetailSheet(
 }
 
 @Composable
-private fun MemoryRow(label: String, kb: Long) {
-    if (kb <= 0) return
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(label, Modifier.width(80.dp), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(formatKb(kb), style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface)
+private fun MemoryChip(label: String, kb: Long, modifier: Modifier = Modifier) {
+    Column(modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            formatKb(kb),
+            style = MaterialTheme.typography.bodyMedium,
+        )
     }
 }
 

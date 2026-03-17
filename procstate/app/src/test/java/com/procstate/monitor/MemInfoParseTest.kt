@@ -103,6 +103,30 @@ class MemInfoParseTest {
     }
 
     @Test
+    fun `parseMemInfoOutput exact user output`() {
+        // Exact copy-paste from user's device — do NOT modify whitespace
+        val output = "App Summary\n" +
+            "                       Pss(KB)                        Rss(KB)\n" +
+            "                        ------                         ------\n" +
+            "           Java Heap:   128116                         158040\n" +
+            "         Native Heap:    97252                         106732\n" +
+            "                Code:    16264                         186504\n" +
+            "               Stack:     2892                           3020\n" +
+            "            Graphics:    99256                          99256\n" +
+            "       Private Other:    30272\n" +
+            "              System:    84015\n" +
+            "             Unknown:                                   29472\n" +
+            "\n" +
+            "           TOTAL PSS:   458067            TOTAL RSS:   583024       TOTAL SWAP PSS:    61829\n"
+
+        val info = ShellHelper.parseMemInfoOutput(output)
+        assertEquals("Graphics should be 99256", 99256, info.graphicsKb)
+        assertEquals(128116, info.javaHeapKb)
+        assertEquals(97252, info.nativeHeapKb)
+        assertEquals(458067, info.totalPssKb)
+    }
+
+    @Test
     fun `parseMemInfoOutput real device output with Graphics`() {
         val output = """ App Summary
                        Pss(KB)                        Rss(KB)

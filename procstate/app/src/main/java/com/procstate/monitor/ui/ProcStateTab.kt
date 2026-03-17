@@ -137,7 +137,7 @@ fun ProcStateTab(
     }
 
     val totalItems = snapshots.size
-    val isNearTop by remember {
+    val scrolledFromTop by remember {
         androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 2 }
     }
 
@@ -196,14 +196,14 @@ fun ProcStateTab(
         }
     }
 
-    val isNearBottom by remember {
+    val atBottom by remember {
         androidx.compose.runtime.derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()
             last != null && last.index < totalItems - 3
         }
     }
-    val showFab = isNearTop || isNearBottom
-    val scrollToTop = isNearTop && !isNearBottom
+    val showFab = scrolledFromTop || atBottom
+    val goUp = scrolledFromTop
 
     androidx.compose.animation.AnimatedVisibility(
         visible = showFab,
@@ -216,7 +216,7 @@ fun ProcStateTab(
         androidx.compose.material3.SmallFloatingActionButton(
             onClick = {
                 scope.launch {
-                    if (scrollToTop) listState.animateScrollToItem(0)
+                    if (goUp) listState.animateScrollToItem(0)
                     else listState.animateScrollToItem(totalItems - 1)
                 }
             },
@@ -224,7 +224,7 @@ fun ProcStateTab(
             contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ) {
             Icon(
-                if (scrollToTop) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                if (goUp) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
                 contentDescription = "Scroll to top",
                 modifier = Modifier.size(20.dp),
             )

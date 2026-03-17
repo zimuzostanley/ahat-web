@@ -375,7 +375,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     if (showStateFilterSheet) {
         ModalBottomSheet(
             onDismissRequest = { showStateFilterSheet = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
             StateFilterSheet(
                 allStates = visibleStates,

@@ -232,6 +232,8 @@ object ShellHelper {
     private val SUMMARY_LINE = Regex(
         """^\s*(Java Heap|Native Heap|Code|Stack|Graphics|System):\s+(\d+)"""
     )
+    // Fallback for Graphics from detailed MEMINFO table rows like "GL mtrack" or "Gfx dev"
+    private val GFX_LINE = Regex("""^\s+(GL mtrack|Gfx dev|EGL mtrack)\s+(\d+)""")
     private val TOTAL_PSS = Regex("""TOTAL PSS:\s+(\d+)""")
     private val TOTAL_RSS = Regex("""TOTAL RSS:\s+(\d+)""")
     private val TOTAL_SWAP = Regex("""TOTAL SWAP.*?:\s+(\d+)""")
@@ -252,6 +254,13 @@ object ShellHelper {
                     "Stack" -> stack = kb
                     "Graphics" -> graphics = kb
                     "System" -> system = kb
+                }
+            }
+
+            // Fallback: accumulate graphics from GL/Gfx table rows
+            if (graphics == 0L) {
+                GFX_LINE.find(line)?.let { m ->
+                    graphics += m.groupValues[2].toLong()
                 }
             }
 
