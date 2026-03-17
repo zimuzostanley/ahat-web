@@ -91,6 +91,17 @@ private data class ProcessDot(
     val marker: Marker,
 )
 
+private data class DotDetail(
+    val name: String,
+    val uid: String,
+    val pid: Int,
+    val state: String,
+    val stateLabel: String,
+    val frozen: Boolean,
+    val started: Boolean,
+    val timestamp: String,
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProcessTab(
@@ -105,6 +116,35 @@ fun ProcessTab(
     onDismissPicker: () -> Unit = {},
 ) {
     val isDark = LocalIsDarkTheme.current
+    var dotDetail by remember { mutableStateOf<DotDetail?>(null) }
+
+    // Detail drawer
+    dotDetail?.let { detail ->
+        ModalBottomSheet(
+            onDismissRequest = { dotDetail = null },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+            ) {
+                Text(
+                    ProcStateColors.label(detail.state),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Spacer(Modifier.height(12.dp))
+                DetailRow("Process", detail.name)
+                DetailRow("UID", detail.uid)
+                DetailRow("PID", detail.pid.toString())
+                DetailRow("State", "${ProcStateColors.label(detail.state)} (${detail.state})")
+                if (detail.frozen) DetailRow("Frozen", "Yes")
+                if (detail.started) DetailRow("Event", "Process start")
+                DetailRow("Time", detail.timestamp)
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
 
     if (showPicker) {
         ModalBottomSheet(
@@ -241,7 +281,7 @@ fun ProcessTab(
                         if (isDark) it.dark else it.light
                     }
                     Text(
-                        key.shortName,
+                        key.name,
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                         color = trackColor,
                         modifier = Modifier.width(COL_WIDTH_DP.dp),
@@ -273,6 +313,7 @@ fun ProcessTab(
                         stateMap = stateMap,
                         isDark = isDark,
                         scrollState = scrollState,
+                        onShowDetail = { dotDetail = it },
                     )
                 }
             }
@@ -306,6 +347,7 @@ private fun TimelineRow(
     stateMap: Map<ProcessKey, ProcessDot>,
     isDark: Boolean,
     scrollState: androidx.compose.foundation.ScrollState,
+    onShowDetail: (DotDetail) -> Unit,
 ) {
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
     val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
@@ -364,15 +406,22 @@ private fun TimelineRow(
                             label = "dotScale",
                             finishedListener = { if (tapped) tapped = false },
                         )
-                        val toastText = buildString {
-                            append(dot.procState)
-                            if (dot.frozen) append(" (frozen)")
-                            if (dot.marker == Marker.STARTED) append(" | started")
-                            append("\n${key.name} ${dot.uid} pid:${dot.pid}")
+                        val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
+                        val onTap: () -> Unit = {
+                            tapped = true
+                            onShowDetail(DotDetail(
+                                name = key.name,
+                                uid = dot.uid,
+                                pid = dot.pid,
+                                state = dot.procState,
+                                stateLabel = ProcStateColors.label(dot.procState),
+                                frozen = dot.frozen,
+                                started = dot.marker == Marker.STARTED,
+                                timestamp = fullTimeStr,
+                            ))
                         }
 
                         if (isTriangle) {
-                            // Draw triangle pointing up
                             Box(
                                 modifier = Modifier
                                     .size(14.dp)
@@ -386,10 +435,7 @@ private fun TimelineRow(
                                         }
                                         drawPath(path, dotColor)
                                     }
-                                    .clickable {
-                                        tapped = true
-                                        Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
-                                    },
+                                    .clickable { onTap() },
                             )
                         } else {
                             Box(
@@ -399,10 +445,7 @@ private fun TimelineRow(
                                     .clip(CircleShape)
                                     .background(dotColor)
                                     .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
-                                    .clickable {
-                                        tapped = true
-                                        Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
-                                    },
+                                    .clickable { onTap() },
                                 contentAlignment = Alignment.Center,
                             ) {
                                 if (dot.frozen) {
@@ -425,11 +468,18 @@ private fun TimelineRow(
                                     CircleShape,
                                 )
                                 .clickable {
-                                    Toast.makeText(
-                                        context,
-                                        "${key.name}\nNot running",
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
+                                    val fullTimeStr = formatTimestampFull(timestamp)
+                                    val ts = formatTimestampFull(timestamp)
+                                    onShowDetail(DotDetail(
+                                        name = key.name,
+                                        uid = key.uid,
+                                        pid = 0,
+                                        state = "not running",
+                                        stateLabel = "Not Running",
+                                        frozen = false,
+                                        started = false,
+                                        timestamp = ts,
+                                    ))
                                 },
                         )
                     }
@@ -581,5 +631,29 @@ private fun ProcessPickerSheet(
             )
         }
         Spacer(Modifier.height(16.dp))
+    }
+}
+
+// ── Detail dialog row ───────────────────────────────────────────────────────
+
+@Composable
+private fun DetailRow(label: String, value: String) {
+    if (value.isEmpty() || value == "0") return
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp),
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.width(80.dp),
+        )
+        Text(
+            value,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }

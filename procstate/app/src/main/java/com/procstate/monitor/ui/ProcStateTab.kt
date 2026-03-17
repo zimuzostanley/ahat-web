@@ -487,7 +487,7 @@ private fun StateRow(
         )
         Spacer(Modifier.width(8.dp))
         Text(
-            state,
+            ProcStateColors.label(state),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f),
@@ -651,7 +651,7 @@ fun ProcStateLegend(visibleStates: Set<String>) {
                 )
                 Spacer(Modifier.width(3.dp))
                 Text(
-                    state,
+                    ProcStateColors.label(state),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -32,17 +32,12 @@ val DarkError = Color(0xFFF87171)
 
 // ── Proc state colors ───────────────────────────────────────────────────────
 
-/**
- * Dynamic color assignment using the Tableau 20 palette from Vega-Lite.
- * States are assigned colors as they're first encountered — no static mapping.
- * This means every raw device state (fg, cch, psvc, prcl, etc.) gets a color.
- */
 @Stable
 object ProcStateColors {
 
     data class DualColor(val light: Color, val dark: Color)
 
-    // Tableau 20 exact hex values from vega.github.io/vega/docs/schemes/#tableau20
+    // Tableau 20 palette from Vega-Lite (vega.github.io/vega/docs/schemes/#tableau20)
     private val TABLEAU_20 = listOf(
         DualColor(Color(0xFF4C78A8), Color(0xFF9ECAE9)),  // 1  steel blue
         DualColor(Color(0xFFF58518), Color(0xFFFFBF79)),  // 2  orange
@@ -66,17 +61,72 @@ object ProcStateColors {
         DualColor(Color(0xFFF2CF5B), Color(0xFFF7E28C)),  // 20 light olive
     )
 
+    /**
+     * OOM adj label -> friendly name + explicit Tableau 20 color index.
+     * From Android ProcessList.makeOomAdjString() + dumpsys activity lru output.
+     * Intentional color assignments for visual clarity.
+     */
+    private data class StateInfo(val label: String, val colorIndex: Int)
+
+    private val STATE_MAP = mapOf(
+        // From makeOomAdjString (by priority, high to low)
+        "ntv" to StateInfo("Native", 7),           // brown
+        "sys" to StateInfo("System", 0),            // steel blue
+        "pers" to StateInfo("Persistent", 0),       // steel blue (same as system)
+        "psvc" to StateInfo("Persistent Svc", 6),   // mauve
+        "fg" to StateInfo("Foreground", 2),          // green
+        "vis" to StateInfo("Visible", 5),            // teal
+        "prcp" to StateInfo("Perceptible", 1),       // orange
+        "prcm" to StateInfo("Perceptible Med", 11),  // light orange
+        "prcl" to StateInfo("Perceptible Low", 9),   // olive
+        "bkup" to StateInfo("Backup", 16),           // light teal
+        "hvy" to StateInfo("Heavy", 3),              // red
+        "svc" to StateInfo("Service", 8),            // pink
+        "home" to StateInfo("Home", 12),             // light orange
+        "prev" to StateInfo("Previous", 17),         // light brown
+        "svcb" to StateInfo("Service B", 18),        // light pink
+        "cch" to StateInfo("Cached", 14),            // light gray
+        // Additional states from dumpsys activity lru
+        "top" to StateInfo("Top", 2),                // green (same as fg)
+        "btop" to StateInfo("Bound Top", 10),        // light steel blue
+        "fgs" to StateInfo("FG Service", 5),         // teal (same as visible)
+        "bfgs" to StateInfo("Bound FG", 15),         // light gray-teal
+        "impfg" to StateInfo("Imp FG", 1),           // orange (same as perceptible)
+        "impbg" to StateInfo("Imp BG", 11),          // light orange
+        "backup" to StateInfo("Backup", 16),         // light teal
+        "service" to StateInfo("Service", 8),        // pink
+        "service-rs" to StateInfo("Svc Restart", 13), // light red
+        "receiver" to StateInfo("Receiver", 19),     // light olive
+        "heavy" to StateInfo("Heavy", 3),            // red
+        "lastact" to StateInfo("Last Activity", 17), // light brown
+        "cached" to StateInfo("Cached", 14),         // light gray
+        "frzn" to StateInfo("Frozen", 4),            // gray
+        "native" to StateInfo("Native", 7),          // brown
+        "fore" to StateInfo("Foreground", 2),        // green
+        "percep" to StateInfo("Perceptible", 1),     // orange
+        "perceptible" to StateInfo("Perceptible", 1),
+        "svcrst" to StateInfo("Svc Restart", 13),
+        "lstact" to StateInfo("Last Activity", 17),
+        "prev" to StateInfo("Previous", 17),
+    )
+
     private val fallback = DualColor(Color(0xFF636363), Color(0xFF969696))
 
-    // Dynamic assignment: state string -> index into TABLEAU_20
-    private val stateIndex = LinkedHashMap<String, Int>()
+    private val seenStates = mutableSetOf<String>()
 
-    /** All states seen so far, in order of first appearance. */
-    val order: List<String> get() = stateIndex.keys.toList()
+    /** All states seen so far. */
+    val order: List<String> get() = seenStates.toList()
+
+    /** Map raw state to friendly label. */
+    fun label(state: String): String = STATE_MAP[state]?.label ?: state
 
     fun get(state: String, isDark: Boolean): Color {
-        val idx = stateIndex.getOrPut(state) { stateIndex.size }
-        val dual = if (idx < TABLEAU_20.size) TABLEAU_20[idx] else fallback
+        seenStates.add(state)
+        val info = STATE_MAP[state]
+        val dual = if (info != null) TABLEAU_20[info.colorIndex] else {
+            // Unknown state: stable hash into palette
+            TABLEAU_20[(state.hashCode() and 0x7FFFFFFF) % TABLEAU_20.size]
+        }
         return if (isDark) dual.dark else dual.light
     }
 
