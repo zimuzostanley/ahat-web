@@ -1,6 +1,9 @@
 package com.procstate.monitor.ui
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,18 +51,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.ProcessTimelineRow
-import kotlinx.coroutines.launch
 import com.procstate.monitor.ui.theme.LocalIsDarkTheme
 import com.procstate.monitor.ui.theme.ProcStateColors
+import kotlinx.coroutines.launch
 
 private data class TrackColor(val light: Color, val dark: Color)
 
@@ -76,7 +81,7 @@ private val TrackColors = listOf(
 
 private const val COL_WIDTH_DP = 80
 
-private enum class Marker { NORMAL, STARTED, DIED }
+private enum class Marker { NORMAL, STARTED }
 
 private data class ProcessDot(
     val procState: String,
@@ -89,44 +94,41 @@ private data class ProcessDot(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProcessTab(
-    trackedProcesses: List<String>,
+    pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
-    allProcessNames: List<String>,
-    onAddProcess: (String) -> Unit,
-    onRemoveProcess: (String) -> Unit,
+    allProcessKeys: List<ProcessKey>,
+    onPinProcess: (ProcessKey) -> Unit,
+    onUnpinProcess: (ProcessKey) -> Unit,
     showPicker: Boolean = false,
     onOpenPicker: () -> Unit = {},
     onDismissPicker: () -> Unit = {},
 ) {
     val isDark = LocalIsDarkTheme.current
 
-    // Bottom sheet drawer for process picker
     if (showPicker) {
         ModalBottomSheet(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
             ProcessPickerSheet(
-                allNames = allProcessNames,
-                trackedNames = trackedProcesses,
-                onSelect = onAddProcess,
+                allKeys = allProcessKeys,
+                pinnedKeys = pinnedProcesses,
+                onSelect = onPinProcess,
             )
         }
     }
 
     Column(Modifier.fillMaxSize()) {
-        // Chips row
-        if (trackedProcesses.isNotEmpty()) {
+        if (pinnedProcesses.isNotEmpty()) {
             TrackedChipsRow(
-                trackedProcesses = trackedProcesses,
+                pinnedProcesses = pinnedProcesses,
                 isDark = isDark,
-                onRemoveProcess = onRemoveProcess,
+                onUnpinProcess = onUnpinProcess,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
         }
 
-        if (trackedProcesses.isEmpty()) {
-            // LazyColumn so pull-to-refresh works on empty state
+        if (pinnedProcesses.isEmpty()) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -174,16 +176,16 @@ fun ProcessTab(
             return
         }
 
-        // Detect process restarts (PID changes for same name)
-        val timelineByTimestamp = remember(timelineRows) {
-            // Build marker map: (name, timestamp) → Marker
+        // Detect process starts (PID changes for same key)
+        val timelineByTimestamp = remember(timelineRows, pinnedProcesses) {
             val markerMap = mutableMapOf<Pair<String, Long>, Marker>()
             val byName = timelineRows.groupBy { it.name }
             for ((_, rows) in byName) {
                 val sorted = rows.sortedBy { it.timestamp }
                 for (i in 1 until sorted.size) {
                     if (sorted[i].pid != sorted[i - 1].pid) {
-                        markerMap[sorted[i - 1].name to sorted[i - 1].timestamp] = Marker.DIED
+                        // PID changed = process restarted. Mark new as STARTED.
+                        // Old one just disappears (no node = died).
                         markerMap[sorted[i].name to sorted[i].timestamp] = Marker.STARTED
                     }
                 }
@@ -226,12 +228,12 @@ fun ProcessTab(
                     .weight(1f)
                     .horizontalScroll(scrollState),
             ) {
-                for ((i, name) in trackedProcesses.withIndex()) {
+                for ((i, key) in pinnedProcesses.withIndex()) {
                     val trackColor = TrackColors[i % TrackColors.size].let {
                         if (isDark) it.dark else it.light
                     }
                     Text(
-                        name.substringAfterLast('.'),
+                        key.shortName,
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold),
                         color = trackColor,
                         modifier = Modifier.width(COL_WIDTH_DP.dp),
@@ -259,7 +261,7 @@ fun ProcessTab(
                 items(timelineByTimestamp, key = { it.first }) { (timestamp, stateMap) ->
                     TimelineRow(
                         timestamp = timestamp,
-                        trackedProcesses = trackedProcesses,
+                        pinnedProcesses = pinnedProcesses,
                         stateMap = stateMap,
                         isDark = isDark,
                         scrollState = scrollState,
@@ -280,11 +282,7 @@ fun ProcessTab(
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ) {
-                    Icon(
-                        Icons.Default.KeyboardArrowUp,
-                        contentDescription = "Scroll to top",
-                        modifier = Modifier.size(20.dp),
-                    )
+                    Icon(Icons.Default.KeyboardArrowUp, "Scroll to top", Modifier.size(20.dp))
                 }
             }
         }
@@ -296,7 +294,7 @@ fun ProcessTab(
 @Composable
 private fun TimelineRow(
     timestamp: Long,
-    trackedProcesses: List<String>,
+    pinnedProcesses: List<ProcessKey>,
     stateMap: Map<String, ProcessDot>,
     isDark: Boolean,
     scrollState: androidx.compose.foundation.ScrollState,
@@ -304,11 +302,12 @@ private fun TimelineRow(
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
     val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
     val context = LocalContext.current
+    val lineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.06f)
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
+            .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -318,45 +317,37 @@ private fun TimelineRow(
             modifier = Modifier
                 .width(72.dp)
                 .padding(start = 12.dp)
-                .clickable {
-                    Toast.makeText(context, fullTimeStr, Toast.LENGTH_SHORT).show()
-                },
+                .clickable { Toast.makeText(context, fullTimeStr, Toast.LENGTH_SHORT).show() },
         )
 
-        val lineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f)
+        val hLineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.06f)
         Row(
             modifier = Modifier
                 .weight(1f)
                 .horizontalScroll(scrollState)
                 .drawBehind {
+                    // Horizontal connector line
                     val y = size.height / 2
-                    drawLine(lineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
+                    drawLine(hLineColor, Offset(0f, y), Offset(size.width, y), strokeWidth = 0.5.dp.toPx())
+                    // Thin vertical column lines
+                    val colW = COL_WIDTH_DP.dp.toPx()
+                    for (i in pinnedProcesses.indices) {
+                        val cx = colW * i + colW / 2
+                        drawLine(lineColor, Offset(cx, 0f), Offset(cx, size.height), strokeWidth = 0.5.dp.toPx())
+                    }
                 },
         ) {
-            for (name in trackedProcesses) {
-                val dot = stateMap[name]
+            for (key in pinnedProcesses) {
+                val dot = stateMap[key.name]
 
                 Box(
                     modifier = Modifier.width(COL_WIDTH_DP.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (dot != null) {
-                        // Shape and color based on marker
-                        val shape = when (dot.marker) {
-                            Marker.STARTED -> RoundedCornerShape(3.dp) // rounded rect
-                            Marker.DIED -> RoundedCornerShape(0.dp)   // sharp square
-                            Marker.NORMAL -> CircleShape
-                        }
-                        val dotColor = when (dot.marker) {
-                            Marker.STARTED -> if (isDark) Color(0xFF4ADE80) else Color(0xFF16A34A)
-                            Marker.DIED -> if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
-                            Marker.NORMAL -> ProcStateColors.get(dot.procState, isDark)
-                        }
-                        val dotSize = when (dot.marker) {
-                            Marker.STARTED -> Modifier.size(width = 18.dp, height = 12.dp)
-                            Marker.DIED -> Modifier.size(12.dp)
-                            Marker.NORMAL -> Modifier.size(14.dp)
-                        }
+                        val dotColor = ProcStateColors.get(dot.procState, isDark)
+                        // Triangle for STARTED, circle for NORMAL
+                        val isTriangle = dot.marker == Marker.STARTED
 
                         var tapped by remember { mutableStateOf(false) }
                         val scale by androidx.compose.animation.core.animateFloatAsState(
@@ -366,48 +357,65 @@ private fun TimelineRow(
                             finishedListener = { if (tapped) tapped = false },
                         )
                         val toastText = buildString {
-                            append("$name")
-                            if (dot.uid.isNotEmpty()) append(" (${dot.uid})")
-                            append(" PID ${dot.pid}: ${dot.procState}")
+                            append(key.shortName)
+                            if (key.shortName != key.name) append(" (${key.name})")
+                            append(" / ${dot.uid} / PID ${dot.pid}")
+                            append(" / ${dot.procState}")
                             if (dot.frozen) append(" [frozen]")
-                            when (dot.marker) {
-                                Marker.STARTED -> append(" \u25B6 STARTED")
-                                Marker.DIED -> append(" \u2620 DIED")
-                                else -> {}
-                            }
+                            if (dot.marker == Marker.STARTED) append(" / process start")
                         }
-                        Box(
-                            modifier = dotSize
-                                .graphicsLayer {
-                                    scaleX = scale
-                                    scaleY = scale
+
+                        if (isTriangle) {
+                            // Draw triangle pointing up
+                            Box(
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                                    .drawBehind {
+                                        val path = Path().apply {
+                                            moveTo(size.width / 2, 0f)
+                                            lineTo(size.width, size.height)
+                                            lineTo(0f, size.height)
+                                            close()
+                                        }
+                                        drawPath(path, dotColor)
+                                    }
+                                    .clickable {
+                                        tapped = true
+                                        Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                                    },
+                            )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(14.dp)
+                                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                                    .clip(CircleShape)
+                                    .background(dotColor)
+                                    .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
+                                    .clickable {
+                                        tapped = true
+                                        Toast.makeText(context, toastText, Toast.LENGTH_SHORT).show()
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (dot.frozen) {
+                                    Text(
+                                        "\u2715",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                                        color = Color.White.copy(alpha = 0.8f),
+                                    )
                                 }
-                                .clip(shape)
-                                .background(dotColor)
-                                .border(1.dp, dotColor.copy(alpha = 0.3f), shape)
-                                .clickable {
-                                    tapped = true
-                                    Toast
-                                        .makeText(context, toastText, Toast.LENGTH_SHORT)
-                                        .show()
-                                },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (dot.frozen) {
-                                Text(
-                                    "\u2715",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-                                    color = Color.White.copy(alpha = 0.8f),
-                                )
                             }
                         }
                     } else {
+                        // Not present in this snapshot (gap = process not running)
                         Box(
                             modifier = Modifier
                                 .size(10.dp)
                                 .border(
                                     1.dp,
-                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                                     CircleShape,
                                 ),
                         )
@@ -422,9 +430,9 @@ private fun TimelineRow(
 
 @Composable
 private fun TrackedChipsRow(
-    trackedProcesses: List<String>,
+    pinnedProcesses: List<ProcessKey>,
     isDark: Boolean,
-    onRemoveProcess: (String) -> Unit,
+    onUnpinProcess: (ProcessKey) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -434,36 +442,31 @@ private fun TrackedChipsRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        for ((i, name) in trackedProcesses.withIndex()) {
+        for ((i, key) in pinnedProcesses.withIndex()) {
             val trackColor = TrackColors[i % TrackColors.size].let {
                 if (isDark) it.dark else it.light
             }
-            ProcessChip(name = name, color = trackColor, onRemove = { onRemoveProcess(name) })
+            ProcessChip(key = key, color = trackColor, onRemove = { onUnpinProcess(key) })
         }
     }
 }
 
 @Composable
-private fun ProcessChip(name: String, color: Color, onRemove: () -> Unit) {
+private fun ProcessChip(key: ProcessKey, color: Color, onRemove: () -> Unit) {
     val context = LocalContext.current
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
             .background(color.copy(alpha = 0.1f))
             .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
-            .clickable { Toast.makeText(context, name, Toast.LENGTH_SHORT).show() }
+            .clickable { Toast.makeText(context, "${key.name} / ${key.uid}", Toast.LENGTH_SHORT).show() }
             .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(7.dp)
-                .clip(CircleShape)
-                .background(color),
-        )
+        Box(Modifier.size(7.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(4.dp))
         Text(
-            name.substringAfterLast('.'),
+            key.shortName,
             style = MaterialTheme.typography.bodySmall,
             color = color,
             maxLines = 1,
@@ -475,19 +478,20 @@ private fun ProcessChip(name: String, color: Color, onRemove: () -> Unit) {
     }
 }
 
-// ── Process picker (bottom sheet drawer) ────────────────────────────────────
+// ── Process picker (bottom sheet) ───────────────────────────────────────────
 
 @Composable
 private fun ProcessPickerSheet(
-    allNames: List<String>,
-    trackedNames: List<String>,
-    onSelect: (String) -> Unit,
+    allKeys: List<ProcessKey>,
+    pinnedKeys: List<ProcessKey>,
+    onSelect: (ProcessKey) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
-    val filtered = remember(allNames, search, trackedNames) {
-        val available = allNames.filter { it !in trackedNames }
+    val pinnedSet = remember(pinnedKeys) { pinnedKeys.toSet() }
+    val filtered = remember(allKeys, search, pinnedSet) {
+        val available = allKeys.filter { it !in pinnedSet }
         if (search.isBlank()) available
-        else available.filter { search.lowercase() in it.lowercase() }
+        else available.filter { search.lowercase() in it.name.lowercase() }
     }
 
     Column(
@@ -496,10 +500,7 @@ private fun ProcessPickerSheet(
             .fillMaxHeight(0.8f)
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Pin Process", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
             Text(
@@ -518,9 +519,7 @@ private fun ProcessPickerSheet(
             leadingIcon = { Icon(Icons.Default.Search, null) },
             trailingIcon = {
                 if (search.isNotEmpty()) {
-                    IconButton(onClick = { search = "" }) {
-                        Icon(Icons.Default.Close, null)
-                    }
+                    IconButton(onClick = { search = "" }) { Icon(Icons.Default.Close, null) }
                 }
             },
             singleLine = true,
@@ -528,44 +527,46 @@ private fun ProcessPickerSheet(
         Spacer(Modifier.height(8.dp))
 
         LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f, fill = false),
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            items(filtered) { name ->
+            items(filtered) { key ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(4.dp))
-                        .clickable { onSelect(name) }
+                        .clickable { onSelect(key) }
                         .padding(vertical = 8.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Icon(
-                        Icons.Default.Add, null, Modifier.size(18.dp),
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            key.name,
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (key.uid.isNotEmpty()) {
+                            Text(
+                                key.uid,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    Icon(Icons.Default.Add, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
 
         if (filtered.isEmpty()) {
             Text(
-                if (allNames.isEmpty()) "No processes captured yet" else "No processes match your search",
+                if (allKeys.isEmpty()) "No processes captured yet" else "No processes match your search",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp),
             )
         }
-
         Spacer(Modifier.height(16.dp))
     }
 }

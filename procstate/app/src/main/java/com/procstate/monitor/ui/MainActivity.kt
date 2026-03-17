@@ -84,6 +84,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.ShellHelper
 import com.procstate.monitor.service.CaptureService
 import com.procstate.monitor.ui.theme.ProcStateTheme
@@ -144,9 +145,9 @@ private fun ProcStateApp(vm: MainViewModel) {
     val captureStartMs by vm.captureStartMs.collectAsState()
 
     val snapshots by vm.snapshotsWithCounts.collectAsState()
-    val trackedProcesses by vm.trackedProcesses.collectAsState()
+    val pinnedProcesses by vm.pinnedProcesses.collectAsState()
     val timelineRows by vm.processTimeline.collectAsState()
-    val allProcessNames by vm.allProcessNames.collectAsState()
+    val allProcessKeys by vm.allProcessKeys.collectAsState()
     val visibleStates by vm.visibleStates.collectAsState()
 
     Scaffold(
@@ -182,8 +183,8 @@ private fun ProcStateApp(vm: MainViewModel) {
                     }
                     // Process tab actions
                     if (selectedTab == 1) {
-                        if (trackedProcesses.isNotEmpty()) {
-                            IconButton(onClick = vm::clearAllTrackedProcesses) {
+                        if (pinnedProcesses.isNotEmpty()) {
+                            IconButton(onClick = vm::clearAllPinnedProcesses) {
                                 Icon(Icons.Default.Close, "Unpin all",
                                     modifier = Modifier.size(20.dp))
                             }
@@ -269,17 +270,17 @@ private fun ProcStateApp(vm: MainViewModel) {
                 when (selectedTab) {
                     0 -> ProcStateTab(
                         snapshots = snapshots,
-                        trackedProcesses = trackedProcesses,
-                        onAddTrackedProcess = vm::addTrackedProcess,
-                        onRemoveTrackedProcess = vm::removeTrackedProcess,
+                        pinnedProcesses = pinnedProcesses,
+                        onPinProcess = vm::pinProcess,
+                        onUnpinProcess = vm::unpinProcess,
                         onLoadEntries = vm::getSnapshotEntries,
                     )
                     1 -> ProcessTab(
-                        trackedProcesses = trackedProcesses,
+                        pinnedProcesses = pinnedProcesses,
                         timelineRows = timelineRows,
-                        allProcessNames = allProcessNames,
-                        onAddProcess = vm::addTrackedProcess,
-                        onRemoveProcess = vm::removeTrackedProcess,
+                        allProcessKeys = allProcessKeys,
+                        onPinProcess = vm::pinProcess,
+                        onUnpinProcess = vm::unpinProcess,
                         showPicker = showProcessPicker,
                         onOpenPicker = { showProcessPicker = true },
                         onDismissPicker = { showProcessPicker = false },

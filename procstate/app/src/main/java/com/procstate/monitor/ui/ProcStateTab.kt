@@ -60,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.procstate.monitor.data.ProcessEntryEntity
+import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.SnapshotWithCounts
 import com.procstate.monitor.ui.theme.ProcStateColors
 import kotlinx.coroutines.launch
@@ -70,9 +71,9 @@ import java.util.Locale
 @Composable
 fun ProcStateTab(
     snapshots: List<SnapshotWithCounts>,
-    trackedProcesses: List<String>,
-    onAddTrackedProcess: (String) -> Unit,
-    onRemoveTrackedProcess: (String) -> Unit,
+    pinnedProcesses: List<ProcessKey>,
+    onPinProcess: (ProcessKey) -> Unit,
+    onUnpinProcess: (ProcessKey) -> Unit,
     onLoadEntries: suspend (Long) -> List<ProcessEntryEntity>,
 ) {
     if (snapshots.isEmpty()) {
@@ -157,7 +158,7 @@ fun ProcStateTab(
                     snapshot = snapshot,
                     entries = entries,
                     expandedState = expandedState,
-                    trackedProcesses = trackedProcesses,
+                    pinnedProcesses = pinnedProcesses,
                     isDark = isDark,
                     onToggleState = { state ->
                         if (expandedState == state) {
@@ -166,8 +167,8 @@ fun ProcStateTab(
                             expandedStates[snapshot.id] = state
                         }
                     },
-                    onAddTrackedProcess = onAddTrackedProcess,
-                    onRemoveTrackedProcess = onRemoveTrackedProcess,
+                    onPinProcess = onPinProcess,
+                    onUnpinProcess = onUnpinProcess,
                 )
             }
         }
@@ -320,11 +321,11 @@ private fun SnapshotBreakdown(
     snapshot: SnapshotWithCounts,
     entries: List<ProcessEntryEntity>,
     expandedState: String?,
-    trackedProcesses: List<String>,
+    pinnedProcesses: List<ProcessKey>,
     isDark: Boolean,
     onToggleState: (String) -> Unit,
-    onAddTrackedProcess: (String) -> Unit,
-    onRemoveTrackedProcess: (String) -> Unit,
+    onPinProcess: (ProcessKey) -> Unit,
+    onUnpinProcess: (ProcessKey) -> Unit,
 ) {
     val sorted = remember(snapshot.stateCounts) {
         snapshot.stateCounts.entries
@@ -360,9 +361,9 @@ private fun SnapshotBreakdown(
             ) {
                 ProcessList(
                     entries = entries.filter { it.procState == state },
-                    trackedProcesses = trackedProcesses,
-                    onAddTrackedProcess = onAddTrackedProcess,
-                    onRemoveTrackedProcess = onRemoveTrackedProcess,
+                    pinnedProcesses = pinnedProcesses,
+                    onPinProcess = onPinProcess,
+                    onUnpinProcess = onUnpinProcess,
                 )
             }
 
@@ -370,6 +371,60 @@ private fun SnapshotBreakdown(
                 HorizontalDivider(
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
                     thickness = 0.5.dp,
+                )
+            }
+        }
+
+        // Frozen section (not double-counted in total)
+        if (snapshot.frozenCount > 0) {
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                thickness = 0.5.dp,
+            )
+            val isFrozenExpanded = expandedState == "__frozen__"
+            val frozenColor = ProcStateColors.get("Frozen", isDark)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggleState("__frozen__") }
+                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .size(10.dp)
+                        .clip(CircleShape)
+                        .background(frozenColor),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Frozen",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "${snapshot.frozenCount}",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(36.dp),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                )
+                Icon(
+                    if (isFrozenExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+
+            AnimatedVisibility(visible = isFrozenExpanded, enter = expandVertically(), exit = shrinkVertically()) {
+                ProcessList(
+                    entries = entries.filter { it.frozen },
+                    pinnedProcesses = pinnedProcesses,
+                    onPinProcess = onPinProcess,
+                    onUnpinProcess = onUnpinProcess,
                 )
             }
         }
@@ -447,9 +502,9 @@ private fun StateRow(
 @Composable
 private fun ProcessList(
     entries: List<ProcessEntryEntity>,
-    trackedProcesses: List<String>,
-    onAddTrackedProcess: (String) -> Unit,
-    onRemoveTrackedProcess: (String) -> Unit,
+    pinnedProcesses: List<ProcessKey>,
+    onPinProcess: (ProcessKey) -> Unit,
+    onUnpinProcess: (ProcessKey) -> Unit,
 ) {
     var searchQuery by remember { mutableStateOf("") }
     val filtered = remember(entries, searchQuery) {
@@ -483,17 +538,20 @@ private fun ProcessList(
         }
 
         val context = LocalContext.current
+        val pinnedKeys = remember(pinnedProcesses) { pinnedProcesses.toSet() }
         for (entry in filtered) {
-            val isTracked = entry.name in trackedProcesses
+            val key = ProcessKey(entry.name, entry.uid)
+            val isPinned = key in pinnedKeys
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable {
                         val details = buildString {
-                            append(entry.name)
-                            if (entry.uid.isNotEmpty()) append(" (${entry.uid})")
-                            append(" PID ${entry.pid}")
+                            append(entry.name.substringAfterLast('.'))
+                            if (entry.name.contains('.')) append(" (${entry.name})")
+                            append(" / ${entry.uid}")
+                            append(" / PID ${entry.pid}")
                             if (entry.frozen) append(" [frozen]")
                         }
                         Toast.makeText(context, details, Toast.LENGTH_SHORT).show()
@@ -515,9 +573,9 @@ private fun ProcessList(
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
                 Spacer(Modifier.width(6.dp))
-                if (!isTracked) {
+                if (!isPinned) {
                     IconButton(
-                        onClick = { onAddTrackedProcess(entry.name) },
+                        onClick = { onPinProcess(key) },
                         modifier = Modifier.size(22.dp),
                     ) {
                         Icon(
@@ -532,7 +590,7 @@ private fun ProcessList(
                         "pinned",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f),
-                        modifier = Modifier.clickable { onRemoveTrackedProcess(entry.name) },
+                        modifier = Modifier.clickable { onUnpinProcess(key) },
                     )
                 }
             }

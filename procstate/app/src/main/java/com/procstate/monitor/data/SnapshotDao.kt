@@ -15,7 +15,6 @@ interface SnapshotDao {
     @Insert
     suspend fun insertEntries(entries: List<ProcessEntryEntity>)
 
-    /** Atomic insert of snapshot + entries in a single transaction. */
     @Transaction
     suspend fun insertSnapshotWithEntries(snapshot: SnapshotEntity, entries: List<ProcessEntryEntity>): Long {
         val id = insertSnapshot(snapshot)
@@ -24,12 +23,7 @@ interface SnapshotDao {
         return id
     }
 
-    /**
-     * Snapshots with per-state counts since a start time.
-     * No upper bound — Room's InvalidationTracker re-emits on every insert,
-     * so new snapshots appear immediately without needing a ticker.
-     * Limited to 500 most recent to prevent OOM.
-     */
+    /** Snapshots with per-state counts. Limited to 500 most recent. */
     @Query("""
         SELECT s.id, s.timestamp, pe.procState, COUNT(*) as count
         FROM snapshots s
@@ -45,13 +39,28 @@ interface SnapshotDao {
     """)
     fun getSnapshotStateCounts(start: Long): Flow<List<SnapshotStateRow>>
 
-    /** All process entries for a single snapshot (for expanded breakdown). */
+    /** Frozen count per snapshot. */
+    @Query("""
+        SELECT s.id, COUNT(*) as frozenCount
+        FROM snapshots s
+        JOIN process_entries pe ON s.id = pe.snapshotId
+        WHERE pe.frozen = 1 AND s.id IN (
+            SELECT id FROM snapshots
+            WHERE timestamp >= :start
+            ORDER BY timestamp DESC
+            LIMIT 500
+        )
+        GROUP BY s.id
+    """)
+    fun getSnapshotFrozenCounts(start: Long): Flow<List<SnapshotFrozenRow>>
+
+    /** All process entries for a single snapshot. */
     @Query("SELECT * FROM process_entries WHERE snapshotId = :snapshotId ORDER BY procState, name")
     suspend fun getEntriesForSnapshot(snapshotId: Long): List<ProcessEntryEntity>
 
     /**
-     * Process state timeline for specific process names since a start time.
-     * Limited to 500 most recent snapshots.
+     * Process state timeline filtered by names. UID filtering done in Kotlin
+     * since Room doesn't support composite IN clauses.
      */
     @Query("""
         SELECT s.timestamp, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
@@ -67,19 +76,19 @@ interface SnapshotDao {
     """)
     fun getProcessTimeline(names: List<String>, start: Long): Flow<List<ProcessTimelineRow>>
 
-    /** All distinct process names ever seen (for search/selection). */
-    @Query("SELECT DISTINCT name FROM process_entries ORDER BY name")
-    fun getDistinctProcessNames(): Flow<List<String>>
+    /** All distinct process name+uid pairs ever seen. */
+    @Query("SELECT DISTINCT name, uid FROM process_entries ORDER BY name")
+    fun getDistinctProcessKeys(): Flow<List<ProcessKeyRow>>
 
-    /** Total snapshot count (for stats display). */
     @Query("SELECT COUNT(*) FROM snapshots")
     fun getSnapshotCount(): Flow<Int>
 
-    /** Delete old snapshots before a cutoff timestamp. */
     @Query("DELETE FROM snapshots WHERE timestamp < :cutoff")
     suspend fun deleteOlderThan(cutoff: Long)
 
-    /** Delete all data. */
     @Query("DELETE FROM snapshots")
     suspend fun deleteAll()
 }
+
+/** Raw row from getDistinctProcessKeys. */
+data class ProcessKeyRow(val name: String, val uid: String)

@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.procstate.monitor.data.AppDatabase
 import com.procstate.monitor.data.ProcessEntryEntity
+import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.ShellHelper
 import com.procstate.monitor.data.SnapshotEntity
 import com.procstate.monitor.data.SnapshotWithCounts
@@ -96,11 +97,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setTimeRange(range: TimeRange) { _timeRange.value = range }
 
-    /**
-     * Ticker that periodically slides the start boundary forward.
-     * Room's InvalidationTracker handles new inserts automatically (no upper bound),
-     * but the start boundary needs periodic refresh so old data drops off.
-     */
     private val _ticker = MutableStateFlow(System.currentTimeMillis())
 
     // ── Capture controls ────────────────────────────────────────────────────
@@ -156,7 +152,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _captureStartMs.value = 0
     }
 
-    /** Pull-to-refresh: capture a snapshot on demand. */
     fun pullToRefresh() {
         if (_isRefreshing.value) return
         viewModelScope.launch {
@@ -178,7 +173,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                     dao.insertSnapshotWithEntries(snapshot, entries)
-                    Log.d("MainVM", "Pull-to-refresh: ${processes.size} processes")
                 }
             } catch (e: Exception) {
                 Log.e("MainVM", "Pull-to-refresh failed", e)
@@ -193,24 +187,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Proc State tab data ─────────────────────────────────────────────────
 
-    /**
-     * Snapshots with state counts. Room re-emits on every insert (no upper bound),
-     * so new bars appear in realtime. The ticker only slides the start boundary.
-     */
     val snapshotsWithCounts: StateFlow<List<SnapshotWithCounts>> =
-        combine(_timeRange, _ticker) { range, tick ->
-            tick - range.millis
-        }.flatMapLatest { start ->
-            dao.getSnapshotStateCounts(start)
-        }.map { rows ->
-            rows.groupBy { it.id }.map { (id, group) ->
-                SnapshotWithCounts(
-                    id = id,
-                    timestamp = group.first().timestamp,
-                    stateCounts = group.associate { it.procState to it.count },
-                )
-            }.sortedByDescending { it.timestamp }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        combine(_timeRange, _ticker) { range, tick -> tick - range.millis }
+            .flatMapLatest { start ->
+                combine(
+                    dao.getSnapshotStateCounts(start),
+                    dao.getSnapshotFrozenCounts(start),
+                ) { stateRows, frozenRows ->
+                    val frozenMap = frozenRows.associate { it.id to it.frozenCount }
+                    stateRows.groupBy { it.id }.map { (id, group) ->
+                        SnapshotWithCounts(
+                            id = id,
+                            timestamp = group.first().timestamp,
+                            stateCounts = group.associate { it.procState to it.count },
+                            frozenCount = frozenMap[id] ?: 0,
+                        )
+                    }.sortedByDescending { it.timestamp }
+                }
+            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val visibleStates: StateFlow<Set<String>> =
         snapshotsWithCounts.map { snapshots ->
@@ -220,18 +214,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun getSnapshotEntries(snapshotId: Long): List<ProcessEntryEntity> =
         dao.getEntriesForSnapshot(snapshotId)
 
-    // ── Process tab data ────────────────────────────────────────────────────
+    // ── Process tab data (pinned by ProcessKey = name+uid) ──────────────────
 
-    private val _trackedProcesses = MutableStateFlow<List<String>>(emptyList())
-    val trackedProcesses: StateFlow<List<String>> = _trackedProcesses.asStateFlow()
+    private val _pinnedProcesses = MutableStateFlow<List<ProcessKey>>(emptyList())
+    val pinnedProcesses: StateFlow<List<ProcessKey>> = _pinnedProcesses.asStateFlow()
 
     init {
-        loadTrackedProcesses()
+        loadPinnedProcesses()
         viewModelScope.launch(Dispatchers.IO) {
             ShellHelper.detectRoot()
             _permissionState.value = ShellHelper.checkPermissions(ctx)
         }
-        // Ticker: slide the start boundary forward every 30s
         viewModelScope.launch {
             while (isActive) {
                 delay(30_000)
@@ -240,34 +233,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addTrackedProcess(name: String) {
-        val current = _trackedProcesses.value
-        if (name in current) return
-        _trackedProcesses.value = current + name
-        saveTrackedProcesses()
+    fun pinProcess(key: ProcessKey) {
+        val current = _pinnedProcesses.value
+        if (key in current) return
+        _pinnedProcesses.value = current + key
+        savePinnedProcesses()
     }
 
-    fun removeTrackedProcess(name: String) {
-        _trackedProcesses.value = _trackedProcesses.value - name
-        saveTrackedProcesses()
+    fun unpinProcess(key: ProcessKey) {
+        _pinnedProcesses.value = _pinnedProcesses.value - key
+        savePinnedProcesses()
     }
 
-    fun clearAllTrackedProcesses() {
-        _trackedProcesses.value = emptyList()
-        saveTrackedProcesses()
+    fun clearAllPinnedProcesses() {
+        _pinnedProcesses.value = emptyList()
+        savePinnedProcesses()
     }
 
+    /** Timeline rows, filtered by pinned names then by uid in Kotlin. */
     val processTimeline =
-        combine(_trackedProcesses, _timeRange, _ticker) { names, range, tick ->
-            Triple(names, range, tick)
-        }.flatMapLatest { (names, range, tick) ->
-            if (names.isEmpty()) flowOf(emptyList())
-            else dao.getProcessTimeline(names, tick - range.millis)
+        combine(_pinnedProcesses, _timeRange, _ticker) { keys, range, tick ->
+            Triple(keys, range, tick)
+        }.flatMapLatest { (keys, range, tick) ->
+            if (keys.isEmpty()) flowOf(emptyList())
+            else {
+                val names = keys.map { it.name }.distinct()
+                val keySet = keys.toSet()
+                dao.getProcessTimeline(names, tick - range.millis).map { rows ->
+                    rows.filter { ProcessKey(it.name, it.uid) in keySet }
+                }
+            }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val allProcessNames: StateFlow<List<String>> =
-        dao.getDistinctProcessNames()
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** All distinct process keys for the picker. */
+    val allProcessKeys: StateFlow<List<ProcessKey>> =
+        dao.getDistinctProcessKeys().map { rows ->
+            rows.map { ProcessKey(it.name, it.uid) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val snapshotCount: StateFlow<Int> =
         dao.getSnapshotCount()
@@ -285,27 +287,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ── Tracked process persistence ─────────────────────────────────────────
+    // ── Pinned process persistence ──────────────────────────────────────────
 
-    private fun loadTrackedProcesses() {
-        val prefs = ctx.getSharedPreferences("tracked", Context.MODE_PRIVATE)
-        val oldFormat = prefs.getString("processes", null)
-        if (oldFormat != null) {
-            val list = oldFormat.split("\u0000").filter { it.isNotEmpty() }
-            _trackedProcesses.value = list
-            prefs.edit()
-                .remove("processes")
-                .putString("process_list", list.joinToString("|"))
-                .apply()
+    private fun loadPinnedProcesses() {
+        val prefs = ctx.getSharedPreferences("pinned", Context.MODE_PRIVATE)
+        val listStr = prefs.getString("keys_v2", null)
+        if (listStr != null) {
+            _pinnedProcesses.value = listStr.split("\n")
+                .filter { it.isNotEmpty() }
+                .map { ProcessKey.deserialize(it) }
             return
         }
-        val listStr = prefs.getString("process_list", null) ?: return
-        _trackedProcesses.value = listStr.split("|").filter { it.isNotEmpty() }
+        // Migrate from old name-only format
+        val oldPrefs = ctx.getSharedPreferences("tracked", Context.MODE_PRIVATE)
+        val oldList = oldPrefs.getString("process_list", null)
+        if (oldList != null) {
+            _pinnedProcesses.value = oldList.split("|")
+                .filter { it.isNotEmpty() }
+                .map { ProcessKey(it, "") }
+            savePinnedProcesses()
+            oldPrefs.edit().clear().apply()
+        }
     }
 
-    private fun saveTrackedProcesses() {
-        ctx.getSharedPreferences("tracked", Context.MODE_PRIVATE).edit()
-            .putString("process_list", _trackedProcesses.value.joinToString("|"))
+    private fun savePinnedProcesses() {
+        ctx.getSharedPreferences("pinned", Context.MODE_PRIVATE).edit()
+            .putString("keys_v2", _pinnedProcesses.value.joinToString("\n") { it.serialize() })
             .apply()
     }
 }
