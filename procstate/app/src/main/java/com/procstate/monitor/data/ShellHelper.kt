@@ -291,7 +291,10 @@ object ShellHelper {
             }
         }
 
-        return MemInfo(totalPss, totalRss, javaHeap, nativeHeap, code, stack, graphics, system, totalSwap)
+        // Subtract System from Total PSS — System includes shared libraries
+        // that are not exclusively owned by this process
+        val adjustedPss = if (system > 0 && totalPss > system) totalPss - system else totalPss
+        return MemInfo(adjustedPss, totalRss, javaHeap, nativeHeap, code, stack, graphics, system, totalSwap)
     }
 
     fun getMemInfo(pid: Int): MemInfo {

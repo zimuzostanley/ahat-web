@@ -38,7 +38,7 @@ class MemInfoParseTest {
         assertEquals(789, info.stackKb)
         assertEquals(23456, info.graphicsKb)
         assertEquals(5678, info.systemKb)
-        assertEquals(85432, info.totalPssKb)
+        assertEquals(85432 - 5678, info.totalPssKb) // PSS minus System
         assertEquals(123456, info.totalRssKb)
         assertEquals(567, info.totalSwapKb)
     }
@@ -152,7 +152,7 @@ Uptime: 529296826 Realtime: 744273467
         assertEquals(15216, info.codeKb)
         assertEquals(2756, info.stackKb)
         assertEquals(89308, info.systemKb)
-        assertEquals(449800, info.totalPssKb)
+        assertEquals(449800 - 89308, info.totalPssKb) // PSS minus System
         assertEquals(570204, info.totalRssKb)
         assertEquals(66777, info.totalSwapKb)
     }
@@ -178,7 +178,7 @@ Uptime: 529296826 Realtime: 744273467
         assertEquals("Graphics should be 99256", 99256, info.graphicsKb)
         assertEquals(128116, info.javaHeapKb)
         assertEquals(97252, info.nativeHeapKb)
-        assertEquals(458067, info.totalPssKb)
+        assertEquals(458067 - 84015, info.totalPssKb) // PSS minus System
     }
 
     @Test
@@ -204,7 +204,7 @@ Uptime: 529296826 Realtime: 744273467
         assertEquals(16264, info.codeKb)
         assertEquals(2892, info.stackKb)
         assertEquals(84015, info.systemKb)
-        assertEquals(458067, info.totalPssKb)
+        assertEquals(458067 - 84015, info.totalPssKb) // PSS minus System
         assertEquals(583024, info.totalRssKb)
         assertEquals(61829, info.totalSwapKb)
     }
@@ -232,7 +232,7 @@ Uptime: 529296826 Realtime: 744273467
         assertEquals(444, info.stackKb)
         assertEquals(5555, info.graphicsKb)
         assertEquals(6666, info.systemKb)
-        assertEquals(19331, info.totalPssKb)
+        assertEquals(19331 - 6666, info.totalPssKb) // PSS minus System
         assertEquals(30000, info.totalRssKb)
     }
 }
