@@ -187,6 +187,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     var sortColumn by remember { mutableStateOf("timestamp") }
     var sortAscending by remember { mutableStateOf(false) } // default: descending
     var showSortDialog by remember { mutableStateOf(false) }
+    var showTimeDropdown by remember { mutableStateOf(false) }
 
     val isCapturing by vm.isCapturing.collectAsState()
     val isRefreshing by vm.isRefreshing.collectAsState()
@@ -258,7 +259,6 @@ private fun ProcStateApp(vm: MainViewModel) {
             )
         },
         bottomBar = {
-            var showTimeDropdown by remember { mutableStateOf(false) }
             androidx.compose.material3.Surface(
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 tonalElevation = 3.dp,
@@ -270,31 +270,10 @@ private fun ProcStateApp(vm: MainViewModel) {
                         .padding(horizontal = 4.dp, vertical = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Time range dropdown
-                    Box {
-                        androidx.compose.material3.TextButton(onClick = { showTimeDropdown = true }) {
-                            Text(timeRange.label, style = MaterialTheme.typography.labelLarge)
-                            Icon(Icons.Default.KeyboardArrowDown, null)
-                        }
-                        DropdownMenu(
-                            expanded = showTimeDropdown,
-                            onDismissRequest = { showTimeDropdown = false },
-                        ) {
-                            for (range in TimeRange.entries) {
-                                DropdownMenuItem(
-                                    text = {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (timeRange == range) {
-                                                Icon(Icons.Default.Check, null, Modifier.size(16.dp))
-                                                Spacer(Modifier.width(8.dp))
-                                            }
-                                            Text(range.label)
-                                        }
-                                    },
-                                    onClick = { vm.setTimeRange(range); showTimeDropdown = false },
-                                )
-                            }
-                        }
+                    // Time range
+                    androidx.compose.material3.TextButton(onClick = { showTimeDropdown = true }) {
+                        Text(timeRange.label, style = MaterialTheme.typography.labelLarge)
+                        Icon(Icons.Default.KeyboardArrowDown, null)
                     }
 
                     // Left actions (next to time range)
@@ -506,6 +485,34 @@ private fun ProcStateApp(vm: MainViewModel) {
         }
     }
 
+    // Time range bottom sheet
+    if (showTimeDropdown) {
+        ModalBottomSheet(
+            onDismissRequest = { showTimeDropdown = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text("Time Range", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    for (range in TimeRange.entries) {
+                        FilterChip(
+                            selected = timeRange == range,
+                            onClick = { vm.setTimeRange(range); showTimeDropdown = false },
+                            label = { Text(range.label) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+
     // Record bottom sheet
     if (showRecordSheet) {
         ModalBottomSheet(
@@ -549,52 +556,49 @@ private fun ProcStateApp(vm: MainViewModel) {
                 visibleStates.sortedBy { ProcStateColors.label(it).lowercase() }
                     .map { it to ProcStateColors.label(it) }
         }
-        androidx.compose.material3.AlertDialog(
+        ModalBottomSheet(
             onDismissRequest = { showSortDialog = false },
-            title = { Text("Sort by") },
-            text = {
-                LazyColumn {
-                    items(sortOptions) { (key, label) ->
-                        val isDark = com.procstate.monitor.ui.theme.LocalIsDarkTheme.current
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(4.dp))
-                                .clickable {
-                                    sortColumn = key
-                                    showSortDialog = false
-                                }
-                                .padding(vertical = 8.dp, horizontal = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(
-                                selected = sortColumn == key,
-                                onClick = {
-                                    sortColumn = key
-                                    showSortDialog = false
-                                },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Text("Sort by", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                val isDark = com.procstate.monitor.ui.theme.LocalIsDarkTheme.current
+                for ((key, label) in sortOptions) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(4.dp))
+                            .clickable {
+                                sortColumn = key
+                                showSortDialog = false
+                            }
+                            .padding(vertical = 8.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RadioButton(
+                            selected = sortColumn == key,
+                            onClick = {
+                                sortColumn = key
+                                showSortDialog = false
+                            },
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        if (key != "timestamp" && key != "total" && key != "frozen") {
+                            Box(
+                                Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(ProcStateColors.get(key, isDark)),
                             )
                             Spacer(Modifier.width(8.dp))
-                            if (key != "timestamp" && key != "total" && key != "frozen") {
-                                Box(
-                                    Modifier
-                                        .size(10.dp)
-                                        .clip(CircleShape)
-                                        .background(ProcStateColors.get(key, isDark)),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                            }
-                            Text(label, style = MaterialTheme.typography.bodyMedium)
                         }
+                        Text(label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
-            },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = { showSortDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-        )
+                Spacer(Modifier.height(16.dp))
+            }
+        }
     }
 
     // Settings bottom sheet
