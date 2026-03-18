@@ -72,6 +72,7 @@ enum class StopAfter(val label: String, val minutes: Int) {
     HOUR_1("1h", 60),
     HOUR_2("2h", 120),
     HOUR_6("6h", 360),
+    HOUR_12("12h", 720),
     HOUR_24("24h", 1440),
 }
 
