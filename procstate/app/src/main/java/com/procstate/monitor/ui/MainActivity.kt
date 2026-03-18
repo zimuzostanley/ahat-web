@@ -111,9 +111,6 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri ->
         if (uri == null) return@registerForActivityResult
-        // Grant URI permission so the FGS can write to it
-        contentResolver.takePersistableUriPermission(uri,
-            Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         val intent = Intent(this, com.procstate.monitor.service.ExportService::class.java).apply {
             action = com.procstate.monitor.service.ExportService.ACTION_EXPORT
             putExtra(com.procstate.monitor.service.ExportService.EXTRA_RANGE_MS, pendingExportRange)
@@ -322,6 +319,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         isRefreshing = isRefreshing,
                         getAppLabel = vm::getAppLabel,
                         hasData = snapshotTimestamps.isNotEmpty(),
+                        hasStateFilter = stateFilter.isNotEmpty(),
                     )
                     1 -> {
                         val memDumpProgress by vm.memoryDumpProgress.collectAsState()
@@ -403,7 +401,19 @@ private fun ProcStateApp(vm: MainViewModel) {
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             val activity = LocalContext.current as MainActivity
-            val isExporting = com.procstate.monitor.service.ExportService.running
+            var isExporting by remember { mutableStateOf(com.procstate.monitor.service.ExportService.running) }
+            // Listen for export done
+            DisposableEffect(Unit) {
+                val r = object : android.content.BroadcastReceiver() {
+                    override fun onReceive(ctx: android.content.Context?, i: Intent?) {
+                        isExporting = com.procstate.monitor.service.ExportService.running
+                    }
+                }
+                val f = IntentFilter(com.procstate.monitor.service.ExportService.ACTION_DONE)
+                if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(r, f, Context.RECEIVER_NOT_EXPORTED)
+                else context.registerReceiver(r, f)
+                onDispose { context.unregisterReceiver(r) }
+            }
             val autoMemDump by vm.autoMemoryDump.collectAsState()
             SettingsSheet(
                 themeMode = themeMode,

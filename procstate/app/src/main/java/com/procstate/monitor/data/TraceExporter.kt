@@ -67,6 +67,7 @@ object TraceExporter {
         getAppLabel: (String) -> String,
         allTimestampsMs: List<Long>,
         memoryEntries: List<MemoryEntry> = emptyList(),
+        onProgress: ((String) -> Unit)? = null,
     ): String {
         val events = JSONArray()
         val sortedTimestamps = allTimestampsMs.sorted()
@@ -105,11 +106,19 @@ object TraceExporter {
             })
         }
 
+        onProgress?.invoke("Building counters (${sortedTimestamps.size} timestamps)")
+
         // ── Per-process tracks ──────────────────────────────────────────────
         val byProcess = entries.groupBy { it.name to it.uid }
         val memByProcess = memoryEntries.groupBy { it.name to it.uid }
 
+        var processCount = 0
+        val totalProcesses = byProcess.size
         for ((key, processEntries) in byProcess) {
+            processCount++
+            if (processCount % 20 == 0) {
+                onProgress?.invoke("Process $processCount/$totalProcesses")
+            }
             val (name, uid) = key
             val packageName = name.substringBefore(':')
             val appLabel = getAppLabel(name)

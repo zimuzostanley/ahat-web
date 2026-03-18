@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Foreground service for Perfetto trace export.
@@ -106,7 +107,9 @@ class ExportService : Service() {
                         pm.getApplicationLabel(pm.getApplicationInfo(pkgName, 0)).toString()
                     } catch (_: Exception) { name }
                 }
-                val json = TraceExporter.export(exportEntries, getAppLabel, timestamps, memEntries)
+                val json = TraceExporter.export(exportEntries, getAppLabel, timestamps, memEntries) { progress ->
+                    updateNotification(progress)
+                }
 
                 updateNotification("Writing file\u2026")
                 contentResolver.openOutputStream(uri)?.use { out ->
@@ -119,7 +122,7 @@ class ExportService : Service() {
                 Log.e(TAG, "Export failed", e)
                 showDoneNotification("Export failed: ${e.message}")
             } finally {
-                finish()
+                withContext(Dispatchers.Main) { finish() }
             }
         }
 

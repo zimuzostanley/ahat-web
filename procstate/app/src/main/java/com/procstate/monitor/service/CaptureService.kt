@@ -112,7 +112,12 @@ class CaptureService : Service() {
             val stopIntent = Intent(this, CaptureService::class.java).apply { action = ACTION_STOP }
             val stopPi = PendingIntent.getService(this, 1, stopIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, stopAtMs, stopPi)
+            if (Build.VERSION.SDK_INT < 31 || am.canScheduleExactAlarms()) {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, stopAtMs, stopPi)
+            } else {
+                // Fallback: inexact alarm (may fire a few minutes late)
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, stopAtMs, stopPi)
+            }
         }
 
         val dao = AppDatabase.get(this).snapshotDao()

@@ -82,10 +82,11 @@ fun ProcStateTab(
     isRefreshing: Boolean = false,
     getAppLabel: (String) -> String = { it.substringAfterLast('.') },
     hasData: Boolean = false,
+    hasStateFilter: Boolean = false,
 ) {
     if (snapshots.isEmpty()) {
-        if (hasData) {
-            // Data exists but snapshots haven't loaded yet
+        if (hasData && !hasStateFilter) {
+            // Data exists, no filter active, but snapshots haven't loaded yet
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
             }
