@@ -693,9 +693,9 @@ private fun ProcessPickerSheet(
         }
         Spacer(Modifier.height(4.dp))
         Text(
-            "Sort by",
+            "Sort by transitions or name",
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
         )
         Spacer(Modifier.height(4.dp))
         Row(
