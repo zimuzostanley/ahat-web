@@ -106,18 +106,22 @@ class MainActivity : ComponentActivity() {
 
     // For Perfetto export
     var pendingExportRange = 0L
-    var pendingVm: MainViewModel? = null
 
     val exportFileLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
     ) { uri ->
-        val vm = pendingVm ?: return@registerForActivityResult
         if (uri == null) return@registerForActivityResult
-        vm.exportTrace(pendingExportRange) { json ->
-            contentResolver.openOutputStream(uri)?.use { out ->
-                out.write(json.toByteArray())
-            }
+        // Grant URI permission so the FGS can write to it
+        contentResolver.takePersistableUriPermission(uri,
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        val intent = Intent(this, com.procstate.monitor.service.ExportService::class.java).apply {
+            action = com.procstate.monitor.service.ExportService.ACTION_EXPORT
+            putExtra(com.procstate.monitor.service.ExportService.EXTRA_RANGE_MS, pendingExportRange)
+            putExtra(com.procstate.monitor.service.ExportService.EXTRA_URI, uri.toString())
+            addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
+        if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent)
+        else startService(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -399,7 +403,7 @@ private fun ProcStateApp(vm: MainViewModel) {
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             val activity = LocalContext.current as MainActivity
-            val isExporting by vm.isExporting.collectAsState()
+            val isExporting = com.procstate.monitor.service.ExportService.running
             val autoMemDump by vm.autoMemoryDump.collectAsState()
             SettingsSheet(
                 themeMode = themeMode,
@@ -412,7 +416,6 @@ private fun ProcStateApp(vm: MainViewModel) {
                 onPrune = vm::pruneOlderThan,
                 onExport = { rangeMs ->
                     activity.pendingExportRange = rangeMs
-                    activity.pendingVm = vm
                     val filename = "procstate_${System.currentTimeMillis()}.json"
                     activity.exportFileLauncher.launch(filename)
                 },
