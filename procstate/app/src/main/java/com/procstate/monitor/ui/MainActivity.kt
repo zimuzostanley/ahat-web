@@ -98,6 +98,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.procstate.monitor.data.ProcessKey
@@ -166,6 +167,8 @@ private fun ProcStateApp(vm: MainViewModel) {
     var showSettings by remember { mutableStateOf(false) }
     var showProcessPicker by remember { mutableStateOf(false) }
     var showRecordSheet by remember { mutableStateOf(false) }
+
+    var showHelpDialog by remember { mutableStateOf(false) }
 
     // Temporary sort for By State tab (never persisted)
     var sortColumn by remember { mutableStateOf("total") }
@@ -579,8 +582,38 @@ private fun ProcStateApp(vm: MainViewModel) {
                 },
                 onExportRangeChange = vm::setExportRange,
                 onDismiss = { showSettings = false },
+                onShowHelp = { showSettings = false; showHelpDialog = true },
             )
         }
+    }
+
+    // Help dialog — dot shapes & symbols guide
+    if (showHelpDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showHelpDialog = false },
+            title = { Text("By Process — Dot Guide") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HelpRow("\u25CF", "Circle", "Same state as previous snapshot")
+                    HelpRow("\u25A0", "Square", "State or frozen status changed")
+                    HelpRow("\u25B2", "Triangle", "Process restarted (new PID)")
+                    HelpRow("\u2715", "Cross overlay", "Process is frozen")
+                    HelpRow("\u25CB", "Empty circle", "Process not running")
+                    HelpRow("\u2504", "Dashed border", "Has memory dump data")
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Colors correspond to process state (see legend). Tap a dot for details, long-press a timestamp to set a diff anchor.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showHelpDialog = false }) {
+                    Text("Got it")
+                }
+            },
+        )
     }
 }
 
@@ -890,5 +923,26 @@ private fun StateFilterSheet(
             }
         }
         Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun HelpRow(symbol: String, name: String, description: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            symbol,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.width(24.dp),
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column {
+            Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

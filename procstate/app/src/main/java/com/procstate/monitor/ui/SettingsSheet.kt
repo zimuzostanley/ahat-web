@@ -46,6 +46,7 @@ fun SettingsSheet(
     onExport: (Long) -> Unit,
     onExportRangeChange: (Long) -> Unit,
     onDismiss: () -> Unit,
+    onShowHelp: () -> Unit = {},
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     var confirmPrune by remember { mutableStateOf<Long?>(null) }
@@ -197,6 +198,14 @@ fun SettingsSheet(
         }
 
         Spacer(Modifier.height(16.dp))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+        Spacer(Modifier.height(16.dp))
+
+        TextButton(onClick = onShowHelp) {
+            Text("Dot shapes & symbols guide")
+        }
+
+        Spacer(Modifier.height(8.dp))
 
         TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
             Text("Done")
