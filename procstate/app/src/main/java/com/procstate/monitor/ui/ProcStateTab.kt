@@ -92,6 +92,11 @@ fun ProcStateTab(
             }
             return
         }
+        val (title, subtitle) = if (hasStateFilter) {
+            "No matching states" to "Adjust the state filter or tap the legend to change it"
+        } else {
+            "No snapshots yet" to "Pull down to capture, or tap Record above"
+        }
         // Use LazyColumn so pull-to-refresh overscroll detection works
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -108,13 +113,13 @@ fun ProcStateTab(
                     )
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        "No snapshots yet",
+                        title,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "Pull down to capture, or tap Record above",
+                        subtitle,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     )

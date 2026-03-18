@@ -638,21 +638,16 @@ private fun StateFilterSheet(
         }
     }
 
-    // All selected by default (empty filter = show all)
     val isShowAll = selectedStates.isEmpty()
 
     fun toggle(state: String) {
         if (isShowAll) {
             // Currently showing all — switching to filter with all except this one
-            onChanged((allStates - state))
+            onChanged(allStates - state)
         } else if (state in selectedStates) {
-            val next = selectedStates - state
-            if (next.isEmpty()) onShowAll() // deselecting last = show all
-            else onChanged(next)
+            onChanged(selectedStates - state)
         } else {
-            val next = selectedStates + state
-            if (next.size >= allStates.size) onShowAll() // selecting all = show all
-            else onChanged(next)
+            onChanged(selectedStates + state)
         }
     }
 
@@ -665,7 +660,11 @@ private fun StateFilterSheet(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Filter States", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
-            if (!isShowAll) {
+            if (isShowAll) {
+                androidx.compose.material3.TextButton(onClick = { onChanged(emptySet()) }) {
+                    Text("Clear all")
+                }
+            } else {
                 androidx.compose.material3.TextButton(onClick = onShowAll) {
                     Text("Show all")
                 }
