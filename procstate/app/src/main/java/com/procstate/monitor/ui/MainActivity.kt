@@ -313,20 +313,19 @@ private fun ProcStateApp(vm: MainViewModel) {
                                         "total" -> "Total"
                                         "frozen" -> "Frozen"
                                         else -> ProcStateColors.label(sortColumn)
-                                    } else "Sort",
+                                    } else "Timestamp",
                                     style = MaterialTheme.typography.labelLarge,
                                     color = if (sortPhase != 0) MaterialTheme.colorScheme.primary
                                            else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
-                        if (stateFilter != null) {
-                            IconButton(onClick = vm::clearStateFilter) {
-                                Icon(Icons.Default.Close, "Clear filter")
-                            }
-                        }
                         IconButton(onClick = { showStateFilterSheet = true }) {
-                            Icon(Icons.Default.FilterList, "States")
+                            Icon(
+                                Icons.Default.FilterList, "States",
+                                tint = if (stateFilter != null) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     } else {
                         if (pinnedProcesses.isNotEmpty()) {
@@ -340,18 +339,27 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 Icon(Icons.Default.Close, "Unpin all")
                             }
                         }
-                        IconButton(onClick = { showProcessPicker = !showProcessPicker }) {
-                            Icon(
-                                if (showProcessPicker) Icons.Default.Close else Icons.Default.Add,
-                                "Add process",
-                            )
-                        }
                         IconButton(onClick = { showHelpDialog = true }) {
                             Icon(Icons.Default.Info, "Guide")
                         }
                     }
-                    IconButton(onClick = { showStateFilterSheet = true }) {
-                        Icon(Icons.Default.FilterList, "States")
+                    // Filter button: state filter on tab 0, process picker on tab 1
+                    if (selectedTab == 0) {
+                        IconButton(onClick = { showStateFilterSheet = true }) {
+                            Icon(
+                                Icons.Default.FilterList, "States",
+                                tint = if (stateFilter != null) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = { showProcessPicker = !showProcessPicker }) {
+                            Icon(
+                                Icons.Default.FilterList, "Processes",
+                                tint = if (pinnedProcesses.isNotEmpty()) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
         },
