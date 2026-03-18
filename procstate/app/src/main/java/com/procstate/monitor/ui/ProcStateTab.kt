@@ -195,6 +195,12 @@ fun ProcStateTab(
         items(snapshots, key = { it.id }) { snapshot ->
             val isExpanded = snapshot.id in expandedSnapshots
 
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.surface),
+            ) {
             SnapshotRow(
                 snapshot = snapshot,
                 isExpanded = isExpanded,
@@ -203,12 +209,10 @@ fun ProcStateTab(
                 onTimestampTap = { ms ->
                     val anchor = diffAnchorMs
                     if (anchor != null) {
-                        // Second tap: show diff and clear
                         val diffMs = kotlin.math.abs(ms - anchor)
                         Toast.makeText(context, formatTimeDiff(diffMs), Toast.LENGTH_SHORT).show()
                         diffAnchorMs = null
                     } else {
-                        // Normal tap: show full date
                         Toast.makeText(context, formatTimestampFull(ms), Toast.LENGTH_SHORT).show()
                     }
                 },
@@ -257,6 +261,7 @@ fun ProcStateTab(
                     onShowDetail = { processDetail = it },
                 )
             }
+            } // wrapper Column
         }
     }
 
@@ -305,8 +310,6 @@ private fun SnapshotRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surface)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
@@ -448,10 +451,7 @@ private fun SnapshotBreakdown(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 8.dp, end = 8.dp, bottom = 8.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
-            .padding(8.dp),
+            .padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
     ) {
         // Search bar
         OutlinedTextField(
