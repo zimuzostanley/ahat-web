@@ -486,10 +486,13 @@ private fun SnapshotBreakdown(
             val (state, count) = pair
             val isStateExpanded = state in expandedStateSet || state in searchMatchingStates
 
+            val matchCount = if (debouncedSearch.isBlank()) null
+                else entries.count { it.procState == state && debouncedSearch.lowercase() in it.name.lowercase() }
             StateRow(
                 state = state,
                 count = count,
                 total = snapshot.totalProcesses,
+                matchCount = matchCount,
                 isExpanded = isStateExpanded,
                 isDark = isDark,
                 onClick = { onToggleState(state) },
@@ -528,6 +531,8 @@ private fun SnapshotBreakdown(
             )
             val isFrozenExpanded = "__frozen__" in expandedStateSet || "__frozen__" in searchMatchingStates
             val frozenColor = ProcStateColors.get("frzn", isDark)
+            val frozenMatchCount = if (debouncedSearch.isBlank()) null
+                else entries.count { it.frozen && debouncedSearch.lowercase() in it.name.lowercase() }
 
             Row(
                 modifier = Modifier
@@ -568,10 +573,11 @@ private fun SnapshotBreakdown(
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "${snapshot.frozenCount}",
+                    if (frozenMatchCount != null) "$frozenMatchCount/${snapshot.frozenCount}" else "${snapshot.frozenCount}",
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(36.dp),
+                    color = if (frozenMatchCount != null && frozenMatchCount > 0) MaterialTheme.colorScheme.primary
+                           else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(if (frozenMatchCount != null) 48.dp else 36.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.End,
                 )
                 Icon(
@@ -603,6 +609,7 @@ private fun StateRow(
     state: String,
     count: Int,
     total: Int,
+    matchCount: Int? = null,
     isExpanded: Boolean,
     isDark: Boolean,
     onClick: () -> Unit,
@@ -649,10 +656,11 @@ private fun StateRow(
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            "$count",
+            if (matchCount != null) "$matchCount/$count" else "$count",
             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.width(36.dp),
+            color = if (matchCount != null && matchCount > 0) MaterialTheme.colorScheme.primary
+                   else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.width(if (matchCount != null) 48.dp else 36.dp),
             textAlign = androidx.compose.ui.text.style.TextAlign.End,
         )
         Icon(
