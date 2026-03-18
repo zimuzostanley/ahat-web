@@ -95,6 +95,7 @@ private const val COL_WIDTH_DP = 80
 
 private enum class Marker { NORMAL, STARTED }
 private enum class RunType { SINGLE, START, MID, END }
+private data class RunInfo(val type: RunType, val runStartTs: Long, val runEndTs: Long)
 
 private data class ProcessDot(
     val procState: String,
@@ -304,42 +305,66 @@ fun ProcessTab(
             }
         }
 
-        // Compute run types: detect consecutive same-state dots per column
-        val runTypes = remember(timelineByTimestamp, memoryEnrichedDots) {
-            val result = mutableMapOf<Pair<String, Long>, RunType>() // (name, timestamp) -> RunType
+        // Compute run types + run start timestamps per dot
+        val runInfoMap = remember(timelineByTimestamp, memoryEnrichedDots) {
+            val result = mutableMapOf<Pair<String, Long>, RunInfo>()
             for (key in pinnedProcesses) {
-                // Walk timestamps in display order (descending)
                 val dots = timelineByTimestamp.mapNotNull { (ts, map) ->
                     map[key]?.let { dot -> ts to dot }
                 }
-                for (i in dots.indices) {
-                    val (ts, dot) = dots[i]
-                    val prev = dots.getOrNull(i - 1)
-                    val next = dots.getOrNull(i + 1)
+                // First pass: compute run types
+                data class DotWithType(val ts: Long, val dot: ProcessDot, var type: RunType = RunType.SINGLE)
+                val items = dots.map { (ts, dot) -> DotWithType(ts, dot) }
 
-                    val hasMemory = memoryEnrichedDots.contains(MemoryDotKey(ts, key.name, key.uid))
+                for (i in items.indices) {
+                    val cur = items[i]
+                    val prev = items.getOrNull(i - 1)
+                    val next = items.getOrNull(i + 1)
+                    val hasMemory = memoryEnrichedDots.contains(MemoryDotKey(cur.ts, key.name, key.uid))
 
-                    fun matches(other: Pair<Long, ProcessDot>?): Boolean {
+                    fun matches(other: DotWithType?): Boolean {
                         if (other == null) return false
-                        val (ots, od) = other
-                        if (od.procState != dot.procState) return false
-                        if (od.frozen != dot.frozen) return false
-                        if (dot.marker == Marker.STARTED) return false
-                        if (od.marker == Marker.STARTED) return false
+                        if (other.dot.procState != cur.dot.procState) return false
+                        if (other.dot.frozen != cur.dot.frozen) return false
+                        if (cur.dot.marker == Marker.STARTED) return false
+                        if (other.dot.marker == Marker.STARTED) return false
                         if (hasMemory) return false
-                        if (memoryEnrichedDots.contains(MemoryDotKey(ots, key.name, key.uid))) return false
+                        if (memoryEnrichedDots.contains(MemoryDotKey(other.ts, key.name, key.uid))) return false
                         return true
                     }
 
                     val matchesPrev = matches(prev)
                     val matchesNext = matches(next)
-                    val runType = when {
+                    cur.type = when {
                         matchesPrev && matchesNext -> RunType.MID
                         !matchesPrev && matchesNext -> RunType.START
                         matchesPrev && !matchesNext -> RunType.END
                         else -> RunType.SINGLE
                     }
-                    result[key.name to ts] = runType
+                }
+
+                // Second pass: assign run start/end timestamps
+                var runStart = 0L
+                var runEnd = 0L
+                for (i in items.indices) {
+                    val cur = items[i]
+                    when (cur.type) {
+                        RunType.START -> { runStart = cur.ts; runEnd = cur.ts }
+                        RunType.MID -> { runEnd = cur.ts }
+                        RunType.END -> { runEnd = cur.ts }
+                        RunType.SINGLE -> { runStart = cur.ts; runEnd = cur.ts }
+                    }
+                    // When we hit END or SINGLE, finalize the run
+                    if (cur.type == RunType.END || cur.type == RunType.SINGLE) {
+                        // Walk back and set runStart/runEnd for all items in this run
+                        var j = i
+                        while (j >= 0 && (items[j].type != RunType.SINGLE || j == i) &&
+                            (items[j].ts >= runStart)) {
+                            result[key.name to items[j].ts] = RunInfo(items[j].type, runStart, runEnd)
+                            if (items[j].type == RunType.START) break
+                            j--
+                        }
+                    }
                 }
             }
             result
@@ -408,7 +433,7 @@ fun ProcessTab(
                         selectedDotId = selectedDotId,
                         allTimelineRows = timelineRows,
                         memoryEnrichedDots = memoryEnrichedDots,
-                        runTypes = runTypes,
+                        runInfoMap = runInfoMap,
                         diffAnchorMs = diffAnchorMs,
                         onTimestampTap = { ms ->
                             val anchor = diffAnchorMs
@@ -468,13 +493,14 @@ private fun TimelineRow(
     selectedDotId: Triple<String, Long, Int>?,
     allTimelineRows: List<ProcessTimelineRow>,
     memoryEnrichedDots: Set<MemoryDotKey>,
-    runTypes: Map<Pair<String, Long>, RunType>,
+    runInfoMap: Map<Pair<String, Long>, RunInfo>,
     diffAnchorMs: Long?,
     onTimestampTap: (Long) -> Unit,
     onTimestampLongPress: (Long) -> Unit,
     onShowDetail: (DotDetail, String, Long, Int) -> Unit,
 ) {
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
+    val context = LocalContext.current
     val isAnchor = diffAnchorMs == timestamp
     Row(
         modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
@@ -510,7 +536,8 @@ private fun TimelineRow(
             for (key in pinnedProcesses) {
                 val dot = stateMap[key]
 
-                val runType = runTypes[key.name to timestamp] ?: RunType.SINGLE
+                val runInfo = runInfoMap[key.name to timestamp]
+                val runType = runInfo?.type ?: RunType.SINGLE
                 val isInRun = runType != RunType.SINGLE
 
                 Box(
@@ -522,6 +549,8 @@ private fun TimelineRow(
                     if (dot != null) {
                         val dotColor = ProcStateColors.get(dot.procState, isDark)
                         val isTriangle = dot.marker == Marker.STARTED
+                        val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
+                        val hasMemory = memoryEnrichedDots.contains(MemoryDotKey(timestamp, key.name, key.uid))
 
                         val isSelected = selectedDotId == Triple(key.name, timestamp, dot.pid)
                         val scale by androidx.compose.animation.core.animateFloatAsState(
@@ -529,37 +558,41 @@ private fun TimelineRow(
                             animationSpec = androidx.compose.animation.core.tween(200),
                             label = "dotScale",
                         )
-                        val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
-                        val onTap: () -> Unit = {
-                            val relevant = allTimelineRows
-                                .filter { it.name == key.name && it.uid == key.uid && it.timestamp <= timestamp }
-                            val history = relevant
-                                .groupBy { it.procState }
-                                .map { (state, rows) -> state to rows.size }
-                                .sortedByDescending { it.second }
-                            val frozen = relevant.count { it.frozen }
-                            val sorted = relevant.sortedBy { it.timestamp }
-                            val restarts = (1 until sorted.size).count {
-                                sorted[it].pid != sorted[it - 1].pid &&
-                                sorted[it].pid != 0 && sorted[it - 1].pid != 0
-                            }
-                            onShowDetail(DotDetail(
-                                name = key.name,
-                                uid = dot.uid,
-                                pid = dot.pid,
-                                state = dot.procState,
-                                stateLabel = ProcStateColors.label(dot.procState),
-                                frozen = dot.frozen,
-                                started = dot.marker == Marker.STARTED,
-                                timestamp = fullTimeStr,
-                                timestampMs = timestamp,
-                                stateHistory = history,
-                                frozenCount = frozen,
-                                restartCount = restarts,
-                            ), key.name, timestamp, dot.pid)
-                        }
 
-                        if (isTriangle) {
+                        if (isInRun && runInfo != null) {
+                            // ── Pill segment ──────────────────────────────────
+                            val pillShape = when (runType) {
+                                RunType.START -> RoundedCornerShape(topStart = 7.dp, topEnd = 7.dp)
+                                RunType.MID -> RoundedCornerShape(0.dp)
+                                RunType.END -> RoundedCornerShape(bottomStart = 7.dp, bottomEnd = 7.dp)
+                                else -> CircleShape
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .width(14.dp)
+                                    .fillMaxHeight()
+                                    .graphicsLayer { scaleX = scale; scaleY = scale }
+                                    .clip(pillShape)
+                                    .background(dotColor)
+                                    .clickable {
+                                        val startStr = formatTimestampFull(runInfo.runStartTs)
+                                        val endStr = formatTimestampFull(runInfo.runEndTs)
+                                        val diffMs = kotlin.math.abs(runInfo.runEndTs - runInfo.runStartTs)
+                                        Toast.makeText(context,
+                                            "${ProcStateColors.label(dot.procState)}\n$startStr\n$endStr\n${formatTimeDiff(diffMs)}",
+                                            Toast.LENGTH_LONG).show()
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (dot.frozen) {
+                                    Text("\u2715",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
+                                        color = Color.White.copy(alpha = 0.8f))
+                                }
+                            }
+                        } else if (isTriangle) {
+                            // ── Triangle (process start) ──────────────────────
+                            val onTap = { openDotDetail(key, dot, timestamp, fullTimeStr, allTimelineRows, onShowDetail) }
                             Box(
                                 modifier = Modifier
                                     .size(14.dp)
@@ -576,25 +609,11 @@ private fun TimelineRow(
                                     .clickable { onTap() },
                             )
                         } else {
-                            val hasMemory = memoryEnrichedDots.contains(
-                                MemoryDotKey(timestamp, key.name, key.uid)
-                            )
-
-                            // Shape based on run type
-                            val dotShape = when (runType) {
-                                RunType.START -> RoundedCornerShape(topStart = 7.dp, topEnd = 7.dp)
-                                RunType.MID -> RoundedCornerShape(0.dp)
-                                RunType.END -> RoundedCornerShape(bottomStart = 7.dp, bottomEnd = 7.dp)
-                                RunType.SINGLE -> CircleShape
-                            }
-                            val dotSize = if (isInRun) {
-                                Modifier.width(14.dp).fillMaxHeight()
-                            } else {
-                                Modifier.size(14.dp)
-                            }
-
+                            // ── Normal circle dot ─────────────────────────────
+                            val onTap = { openDotDetail(key, dot, timestamp, fullTimeStr, allTimelineRows, onShowDetail) }
                             Box(
-                                modifier = dotSize
+                                modifier = Modifier
+                                    .size(14.dp)
                                     .graphicsLayer { scaleX = scale; scaleY = scale }
                                     .then(if (hasMemory) {
                                         Modifier.drawBehind {
@@ -603,25 +622,21 @@ private fun TimelineRow(
                                                 radius = size.minDimension / 2,
                                                 style = androidx.compose.ui.graphics.drawscope.Stroke(
                                                     width = 1.5.dp.toPx(),
-                                                    pathEffect = PathEffect.dashPathEffect(
-                                                        floatArrayOf(3f, 3f),
-                                                    ),
+                                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 3f)),
                                                 ),
                                             )
                                         }
                                     } else Modifier)
-                                    .clip(dotShape)
+                                    .clip(CircleShape)
                                     .background(dotColor)
-                                    .border(1.dp, dotColor.copy(alpha = 0.3f), dotShape)
+                                    .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
                                     .clickable { onTap() },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (dot.frozen && !isInRun) {
-                                    Text(
-                                        "\u2715",
+                                if (dot.frozen) {
+                                    Text("\u2715",
                                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
-                                        color = Color.White.copy(alpha = 0.8f),
-                                    )
+                                        color = Color.White.copy(alpha = 0.8f))
                                 }
                             }
                         }
@@ -882,6 +897,33 @@ private fun ProcessPickerSheet(
         }
         Spacer(Modifier.height(16.dp))
     }
+}
+
+private fun openDotDetail(
+    key: ProcessKey,
+    dot: ProcessDot,
+    timestamp: Long,
+    fullTimeStr: String,
+    allTimelineRows: List<ProcessTimelineRow>,
+    onShowDetail: (DotDetail, String, Long, Int) -> Unit,
+) {
+    val relevant = allTimelineRows
+        .filter { it.name == key.name && it.uid == key.uid && it.timestamp <= timestamp }
+    val history = relevant.groupBy { it.procState }
+        .map { (state, rows) -> state to rows.size }
+        .sortedByDescending { it.second }
+    val frozen = relevant.count { it.frozen }
+    val sorted = relevant.sortedBy { it.timestamp }
+    val restarts = (1 until sorted.size).count {
+        sorted[it].pid != sorted[it - 1].pid && sorted[it].pid != 0 && sorted[it - 1].pid != 0
+    }
+    onShowDetail(DotDetail(
+        name = key.name, uid = dot.uid, pid = dot.pid,
+        state = dot.procState, stateLabel = ProcStateColors.label(dot.procState),
+        frozen = dot.frozen, started = dot.marker == Marker.STARTED,
+        timestamp = fullTimeStr, timestampMs = timestamp,
+        stateHistory = history, frozenCount = frozen, restartCount = restarts,
+    ), key.name, timestamp, dot.pid)
 }
 
 // ── Process detail sheet (shared) ────────────────────────────────────────────
