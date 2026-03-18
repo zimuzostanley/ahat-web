@@ -234,7 +234,20 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 .size(48.dp)
                                 .clip(CircleShape)
                                 .combinedClickable(
-                                    onClick = { sortPhase = (sortPhase + 1) % 3 },
+                                    onClick = {
+                                        sortPhase = (sortPhase + 1) % 3
+                                        val colLabel = when (sortColumn) {
+                                            "total" -> "Total"
+                                            "frozen" -> "Frozen"
+                                            else -> ProcStateColors.label(sortColumn)
+                                        }
+                                        val msg = when (sortPhase) {
+                                            1 -> "$colLabel \u2191"
+                                            2 -> "$colLabel \u2193"
+                                            else -> "Timestamp"
+                                        }
+                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                    },
                                     onLongClick = { showSortDialog = true },
                                 ),
                             contentAlignment = Alignment.Center,
@@ -500,6 +513,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                                     sortColumn = key
                                     sortPhase = 1
                                     showSortDialog = false
+                                    android.widget.Toast.makeText(context, "$label \u2191", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                                 .padding(vertical = 8.dp, horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -510,6 +524,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                                     sortColumn = key
                                     sortPhase = 1
                                     showSortDialog = false
+                                    android.widget.Toast.makeText(context, "$label \u2191", android.widget.Toast.LENGTH_SHORT).show()
                                 },
                             )
                             Spacer(Modifier.width(8.dp))
