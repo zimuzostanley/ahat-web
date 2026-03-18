@@ -404,7 +404,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text("By State")
+                        Text("State")
                         if (stateFilter != null) {
                             Box(
                                 Modifier
@@ -416,7 +416,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     }
                 }
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
-                    Text("By Process", Modifier.padding(12.dp))
+                    Text("Process", Modifier.padding(12.dp))
                 }
             }
 

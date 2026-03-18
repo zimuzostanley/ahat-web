@@ -131,10 +131,11 @@ fun ProcStateTab(
 
     val context = LocalContext.current
     val expandedSnapshots = remember { mutableStateMapOf<Long, List<ProcessEntryEntity>>() }
-    val expandedStates = remember { mutableStateMapOf<Long, String>() }
+    val expandedStates = remember { mutableStateMapOf<Long, Set<String>>() }
     val scope = rememberCoroutineScope()
     val isDark = LocalIsDarkTheme.current
     var processDetail by remember { mutableStateOf<DotDetail?>(null) }
+    var searchQuery by remember { mutableStateOf("") }
     // Long-press timestamp for time diff measurement
     var diffAnchorMs by remember { mutableStateOf<Long?>(null) }
 
@@ -159,6 +160,62 @@ fun ProcStateTab(
     val scrolledFromTop by remember {
         androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 2 }
     }
+
+    Column(Modifier.fillMaxSize()) {
+    // Search bar
+    OutlinedTextField(
+        value = searchQuery,
+        onValueChange = { query ->
+            searchQuery = query
+            if (query.isNotBlank()) {
+                // Auto-expand snapshots that have matching processes
+                for (snapshot in snapshots) {
+                    val entries = expandedSnapshots[snapshot.id]
+                    if (entries == null) {
+                        scope.launch {
+                            val loaded = onLoadEntries(snapshot.id)
+                            expandedSnapshots[snapshot.id] = loaded
+                            // Auto-expand matching state groups + frozen
+                            val matchingStates = loaded
+                                .filter { query.lowercase() in it.name.lowercase() }
+                                .map { it.procState }.toSet() +
+                                (if (loaded.any { it.frozen && query.lowercase() in it.name.lowercase() }) setOf("__frozen__") else emptySet())
+                            if (matchingStates.isNotEmpty()) {
+                                expandedStates[snapshot.id] = matchingStates
+                            }
+                        }
+                    } else {
+                        val matchingStates = entries
+                            .filter { query.lowercase() in it.name.lowercase() }
+                            .map { it.procState }.toSet() +
+                            (if (entries.any { it.frozen && query.lowercase() in it.name.lowercase() }) setOf("__frozen__") else emptySet())
+                        if (matchingStates.isNotEmpty()) {
+                            expandedStates[snapshot.id] = matchingStates
+                        } else {
+                            expandedStates.remove(snapshot.id)
+                        }
+                    }
+                }
+            } else {
+                expandedStates.clear()
+                expandedSnapshots.clear()
+            }
+        },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        placeholder = { Text("Search processes\u2026") },
+        leadingIcon = { Icon(Icons.Default.Search, null) },
+        trailingIcon = {
+            if (searchQuery.isNotEmpty()) {
+                IconButton(onClick = {
+                    searchQuery = ""
+                    expandedStates.clear()
+                    expandedSnapshots.clear()
+                }) { Icon(Icons.Default.Close, null) }
+            }
+        },
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium,
+    )
 
     Box(Modifier.fillMaxSize()) {
     LazyColumn(
@@ -203,25 +260,29 @@ fun ProcStateTab(
                 },
             )
 
-            AnimatedVisibility(
+            androidx.compose.animation.AnimatedVisibility(
                 visible = isExpanded,
                 enter = expandVertically(),
                 exit = shrinkVertically(),
             ) {
                 val entries = expandedSnapshots[snapshot.id] ?: emptyList()
-                val expandedState = expandedStates[snapshot.id]
+                val expandedStateSet = expandedStates[snapshot.id] ?: emptySet()
 
                 SnapshotBreakdown(
                     snapshot = snapshot,
                     entries = entries,
-                    expandedState = expandedState,
+                    expandedStateSet = expandedStateSet,
+                    searchQuery = searchQuery,
                     pinnedProcesses = pinnedProcesses,
                     isDark = isDark,
                     onToggleState = { state ->
-                        if (expandedState == state) {
-                            expandedStates.remove(snapshot.id)
+                        val current = expandedStates[snapshot.id] ?: emptySet()
+                        if (state in current) {
+                            val next = current - state
+                            if (next.isEmpty()) expandedStates.remove(snapshot.id)
+                            else expandedStates[snapshot.id] = next
                         } else {
-                            expandedStates[snapshot.id] = state
+                            expandedStates[snapshot.id] = current + state
                         }
                     },
                     onPinProcess = onPinProcess,
@@ -255,6 +316,7 @@ fun ProcStateTab(
         }
     }
     } // Box
+    } // Column
 }
 
 // ── Snapshot row with stacked bar ───────────────────────────────────────────
@@ -389,7 +451,8 @@ private fun StackedBar(stateCounts: Map<String, Int>, total: Int, isDark: Boolea
 private fun SnapshotBreakdown(
     snapshot: SnapshotWithCounts,
     entries: List<ProcessEntryEntity>,
-    expandedState: String?,
+    expandedStateSet: Set<String>,
+    searchQuery: String = "",
     pinnedProcesses: List<ProcessKey>,
     isDark: Boolean,
     onToggleState: (String) -> Unit,
@@ -413,7 +476,7 @@ private fun SnapshotBreakdown(
     ) {
         for ((index, pair) in sorted.withIndex()) {
             val (state, count) = pair
-            val isStateExpanded = expandedState == state
+            val isStateExpanded = state in expandedStateSet
 
             StateRow(
                 state = state,
@@ -429,8 +492,11 @@ private fun SnapshotBreakdown(
                 enter = expandVertically(),
                 exit = shrinkVertically(),
             ) {
+                val stateEntries = entries.filter { it.procState == state }
+                val filtered = if (searchQuery.isBlank()) stateEntries
+                    else stateEntries.filter { searchQuery.lowercase() in it.name.lowercase() }
                 ProcessList(
-                    entries = entries.filter { it.procState == state },
+                    entries = filtered,
                     pinnedProcesses = pinnedProcesses,
                     onPinProcess = onPinProcess,
                     onUnpinProcess = onUnpinProcess,
@@ -452,7 +518,7 @@ private fun SnapshotBreakdown(
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
                 thickness = 0.5.dp,
             )
-            val isFrozenExpanded = expandedState == "__frozen__"
+            val isFrozenExpanded = "__frozen__" in expandedStateSet
             val frozenColor = ProcStateColors.get("frzn", isDark)
 
             Row(
@@ -509,8 +575,11 @@ private fun SnapshotBreakdown(
             }
 
             AnimatedVisibility(visible = isFrozenExpanded, enter = expandVertically(), exit = shrinkVertically()) {
+                val frozenEntries = entries.filter { it.frozen }
+                val filtered = if (searchQuery.isBlank()) frozenEntries
+                    else frozenEntries.filter { searchQuery.lowercase() in it.name.lowercase() }
                 ProcessList(
-                    entries = entries.filter { it.frozen },
+                    entries = filtered,
                     pinnedProcesses = pinnedProcesses,
                     onPinProcess = onPinProcess,
                     onUnpinProcess = onUnpinProcess,
