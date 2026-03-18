@@ -174,6 +174,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     var showRecordSheet by remember { mutableStateOf(false) }
 
     var showHelpDialog by remember { mutableStateOf(false) }
+    var showColorLegendDialog by remember { mutableStateOf(false) }
 
     // Temporary sort for By State tab (never persisted)
     var sortColumn by remember { mutableStateOf("total") }
@@ -244,13 +245,8 @@ private fun ProcStateApp(vm: MainViewModel) {
         },
         bottomBar = {
             var showTimeDropdown by remember { mutableStateOf(false) }
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.surfaceContainer)
-                    .padding(horizontal = 4.dp, vertical = 4.dp)
-                    .navigationBarsPadding(),
-                verticalAlignment = Alignment.CenterVertically,
+            androidx.compose.material3.BottomAppBar(
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
             ) {
                     // Time range dropdown
                     Box {
@@ -271,10 +267,9 @@ private fun ProcStateApp(vm: MainViewModel) {
                         }
                     }
 
-                    Spacer(Modifier.weight(1f))
-
-                    // Tab-specific actions
+                    // Left actions (next to time range)
                     if (selectedTab == 0) {
+                        // Sort: click cycles, long-press picks column
                         Box(
                             modifier = Modifier
                                 .combinedClickable(
@@ -320,46 +315,44 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 )
                             }
                         }
-                        IconButton(onClick = { showStateFilterSheet = true }) {
+                    } else if (pinnedProcesses.isNotEmpty()) {
+                        // Collapse toggle
+                        IconButton(onClick = vm::toggleCollapseTimeline) {
                             Icon(
-                                Icons.Default.FilterList, "States",
-                                tint = if (stateFilter != null) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                                if (collapseTimeline) Icons.Default.UnfoldMore else Icons.Default.UnfoldLess,
+                                if (collapseTimeline) "Expand" else "Collapse",
                             )
-                        }
-                    } else {
-                        if (pinnedProcesses.isNotEmpty()) {
-                            IconButton(onClick = vm::toggleCollapseTimeline) {
-                                Icon(
-                                    if (collapseTimeline) Icons.Default.UnfoldMore else Icons.Default.UnfoldLess,
-                                    if (collapseTimeline) "Expand" else "Collapse",
-                                )
-                            }
-                            IconButton(onClick = vm::clearAllPinnedProcesses) {
-                                Icon(Icons.Default.Close, "Unpin all")
-                            }
-                        }
-                        IconButton(onClick = { showHelpDialog = true }) {
-                            Icon(Icons.Default.Info, "Guide")
                         }
                     }
-                    // Filter button: state filter on tab 0, process picker on tab 1
-                    if (selectedTab == 0) {
-                        IconButton(onClick = { showStateFilterSheet = true }) {
-                            Icon(
-                                Icons.Default.FilterList, "States",
-                                tint = if (stateFilter != null) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+
+                    Spacer(Modifier.weight(1f))
+
+                    // Right actions
+                    if (selectedTab == 1 && pinnedProcesses.isNotEmpty()) {
+                        IconButton(onClick = vm::clearAllPinnedProcesses) {
+                            Icon(Icons.Default.Close, "Unpin all")
                         }
-                    } else {
-                        IconButton(onClick = { showProcessPicker = !showProcessPicker }) {
-                            Icon(
-                                Icons.Default.FilterList, "Processes",
-                                tint = if (pinnedProcesses.isNotEmpty()) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                    }
+                    // Filter: state filter (tab 0) or process picker (tab 1)
+                    IconButton(onClick = {
+                        if (selectedTab == 0) showStateFilterSheet = true
+                        else showProcessPicker = !showProcessPicker
+                    }) {
+                        Icon(
+                            Icons.Default.FilterList,
+                            if (selectedTab == 0) "States" else "Processes",
+                            tint = if ((selectedTab == 0 && stateFilter != null) ||
+                                       (selectedTab == 1 && pinnedProcesses.isNotEmpty()))
+                                MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    // Info: color legend (tab 0) or shape guide (tab 1)
+                    IconButton(onClick = {
+                        if (selectedTab == 0) showColorLegendDialog = true
+                        else showHelpDialog = true
+                    }) {
+                        Icon(Icons.Default.Info, "Guide")
                     }
                 }
         },
@@ -652,6 +645,53 @@ private fun ProcStateApp(vm: MainViewModel) {
             },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = { showHelpDialog = false }) {
+                    Text("Got it")
+                }
+            },
+        )
+    }
+
+    // Color legend dialog (By State tab)
+    if (showColorLegendDialog) {
+        val isDark = com.procstate.monitor.ui.theme.LocalIsDarkTheme.current
+        val states = remember(visibleStates) {
+            visibleStates.sortedBy { ProcStateColors.label(it).lowercase() }
+        }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showColorLegendDialog = false },
+            title = { Text("State Colors") },
+            text = {
+                LazyColumn {
+                    items(states) { state ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(12.dp)
+                                    .clip(CircleShape)
+                                    .background(ProcStateColors.get(state, isDark)),
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                ProcStateColors.label(state),
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                state,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showColorLegendDialog = false }) {
                     Text("Got it")
                 }
             },
