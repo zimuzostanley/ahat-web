@@ -486,8 +486,8 @@ private fun SnapshotBreakdown(
             val (state, count) = pair
             val isStateExpanded = state in expandedStateSet || state in searchMatchingStates
 
-            val matchCount = if (debouncedSearch.isBlank()) null
-                else entries.count { it.procState == state && debouncedSearch.lowercase() in it.name.lowercase() }
+            val matchCount = if (localSearch.isBlank()) null
+                else entries.count { it.procState == state && localSearch.lowercase() in it.name.lowercase() }
             StateRow(
                 state = state,
                 count = count,
@@ -531,8 +531,8 @@ private fun SnapshotBreakdown(
             )
             val isFrozenExpanded = "__frozen__" in expandedStateSet || "__frozen__" in searchMatchingStates
             val frozenColor = ProcStateColors.get("frzn", isDark)
-            val frozenMatchCount = if (debouncedSearch.isBlank()) null
-                else entries.count { it.frozen && debouncedSearch.lowercase() in it.name.lowercase() }
+            val frozenMatchCount = if (localSearch.isBlank()) null
+                else entries.count { it.frozen && localSearch.lowercase() in it.name.lowercase() }
 
             Row(
                 modifier = Modifier
