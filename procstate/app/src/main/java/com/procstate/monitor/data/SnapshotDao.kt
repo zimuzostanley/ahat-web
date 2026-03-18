@@ -134,7 +134,7 @@ interface SnapshotDao {
     """)
     fun getMemoryEnrichedDots(start: Long): Flow<List<MemoryDotKey>>
 
-    /** Memory summary stats for a process in a time range. */
+    /** Memory summary stats for a process, from start up to a specific timestamp. */
     @Query("""
         SELECT
             COUNT(*) as count,
@@ -148,9 +148,9 @@ interface SnapshotDao {
             MIN(systemKb) as minSystem, MAX(systemKb) as maxSystem, AVG(systemKb) as avgSystem,
             MIN(totalSwapKb) as minSwap, MAX(totalSwapKb) as maxSwap, AVG(totalSwapKb) as avgSwap
         FROM memory_snapshots
-        WHERE name = :name AND uid = :uid AND timestamp >= :start
+        WHERE name = :name AND uid = :uid AND timestamp >= :start AND timestamp <= :end
     """)
-    suspend fun getMemoryStats(name: String, uid: String, start: Long): MemoryStatsAggregate?
+    suspend fun getMemoryStats(name: String, uid: String, start: Long, end: Long): MemoryStatsAggregate?
 
     /** All memory snapshots for export. */
     @Query("""

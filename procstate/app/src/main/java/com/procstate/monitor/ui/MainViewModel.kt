@@ -456,9 +456,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun getMemoryForDot(name: String, uid: String, pid: Int, timestamp: Long): MemorySnapshotEntity? =
         dao.getMemoryForDot(name, uid, pid, timestamp)
 
-    suspend fun getMemoryStats(name: String, uid: String): MemoryStatsAggregate? {
+    suspend fun getMemoryStats(name: String, uid: String, upToMs: Long): MemoryStatsAggregate? {
         val start = System.currentTimeMillis() - _timeRange.value.millis
-        return dao.getMemoryStats(name, uid, start)
+        return dao.getMemoryStats(name, uid, start, upToMs)
     }
 
     /** Set of (timestamp, name, uid) for dots with memory data. */

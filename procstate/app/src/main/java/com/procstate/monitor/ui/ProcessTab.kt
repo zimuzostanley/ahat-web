@@ -119,7 +119,7 @@ fun ProcessTab(
     getAppLabel: (String) -> String = { it.substringAfterLast('.') },
     onDumpMemory: ((pid: Int, name: String, uid: String, onDone: () -> Unit) -> Unit)? = null,
     getMemoryForDot: (suspend (name: String, uid: String, pid: Int, timestamp: Long) -> MemorySnapshotEntity?)? = null,
-    getMemoryStats: (suspend (name: String, uid: String) -> MemoryStatsAggregate?)? = null,
+    getMemoryStats: (suspend (name: String, uid: String, upToMs: Long) -> MemoryStatsAggregate?)? = null,
     memoryDumpProgress: String? = null,
     memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
     pinnedProcesses: List<ProcessKey>,
@@ -149,8 +149,8 @@ fun ProcessTab(
             if (getMemoryForDot != null && detail.pid > 0) {
                 memData = getMemoryForDot(detail.name, detail.uid, detail.pid, detail.timestampMs)
             }
-            if (getMemoryStats != null) {
-                memStats = getMemoryStats(detail.name, detail.uid)
+            if (getMemoryStats != null && detail.timestampMs > 0) {
+                memStats = getMemoryStats(detail.name, detail.uid, detail.timestampMs)
             }
         }
 
