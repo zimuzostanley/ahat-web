@@ -401,18 +401,13 @@ private fun ProcStateApp(vm: MainViewModel) {
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             val activity = LocalContext.current as MainActivity
+            // Poll ExportService.running every 500ms for reactive button state
             var isExporting by remember { mutableStateOf(com.procstate.monitor.service.ExportService.running) }
-            // Listen for export done
-            DisposableEffect(Unit) {
-                val r = object : android.content.BroadcastReceiver() {
-                    override fun onReceive(ctx: android.content.Context?, i: Intent?) {
-                        isExporting = com.procstate.monitor.service.ExportService.running
-                    }
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                while (true) {
+                    isExporting = com.procstate.monitor.service.ExportService.running
+                    kotlinx.coroutines.delay(500)
                 }
-                val f = IntentFilter(com.procstate.monitor.service.ExportService.ACTION_DONE)
-                if (Build.VERSION.SDK_INT >= 33) context.registerReceiver(r, f, Context.RECEIVER_NOT_EXPORTED)
-                else context.registerReceiver(r, f)
-                onDispose { context.unregisterReceiver(r) }
             }
             val autoMemDump by vm.autoMemoryDump.collectAsState()
             val exportRange by vm.exportRange.collectAsState()
