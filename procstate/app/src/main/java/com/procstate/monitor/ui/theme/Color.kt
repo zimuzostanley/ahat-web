@@ -71,45 +71,27 @@ object ProcStateColors {
     // 0=blue 1=orange 2=green 3=red 4=purple 5=brown 6=pink 7=cyan
     // 8=yellow 9=lime 10=indigo 11=coral 12=dark teal 13=magenta 14=gray
     // 15=wine 16=teal-green 17=rose
+    // Only the 17 canonical states from ProcessList.makeOomAdjString() + frzn.
+    // Each gets a unique color. Unknown states hash into palette.
     private val STATE_MAP = mapOf(
-        // 17 canonical states from ProcessList.makeOomAdjString() — each unique color
-        "ntv" to StateInfo("Native", 10),             // indigo
-        "sys" to StateInfo("System", 0),              // blue
-        "pers" to StateInfo("Persistent", 12),        // dark teal
-        "psvc" to StateInfo("Persistent Svc", 15),    // wine
-        "fg" to StateInfo("Foreground", 2),            // green
-        "vis" to StateInfo("Visible", 7),              // cyan
-        "prcp" to StateInfo("Perceptible", 1),         // orange
-        "prcm" to StateInfo("Perceptible Med", 8),     // yellow
-        "prcl" to StateInfo("Perceptible Low", 9),     // lime
-        "bkup" to StateInfo("Backup", 16),             // teal-green
-        "hvy" to StateInfo("Heavy", 3),                // red
-        "svc" to StateInfo("Service", 6),              // pink
-        "home" to StateInfo("Home", 11),               // coral
-        "prev" to StateInfo("Previous", 5),            // brown
-        "svcb" to StateInfo("Service B", 13),          // magenta
-        "cch" to StateInfo("Cached", 14),              // gray
-        "frzn" to StateInfo("Frozen", 4),              // purple
-        // Aliases (map to same color as canonical)
-        "top" to StateInfo("Top", 2),                  // = fg green
-        "fore" to StateInfo("Foreground", 2),          // = fg green
-        "fgs" to StateInfo("FG Service", 17),          // rose
-        "bfgs" to StateInfo("Bound FG", 17),           // = fgs rose
-        "btop" to StateInfo("Bound Top", 2),           // = fg green
-        "impfg" to StateInfo("Imp FG", 1),             // = prcp orange
-        "impbg" to StateInfo("Imp BG", 8),             // = prcm yellow
-        "backup" to StateInfo("Backup", 16),           // = bkup teal-green
-        "service" to StateInfo("Service", 6),          // = svc pink
-        "service-rs" to StateInfo("Svc Restart", 3),   // = hvy red
-        "svcrst" to StateInfo("Svc Restart", 3),       // = hvy red
-        "receiver" to StateInfo("Receiver", 11),       // = home coral
-        "heavy" to StateInfo("Heavy", 3),              // = hvy red
-        "lastact" to StateInfo("Last Activity", 5),    // = prev brown
-        "lstact" to StateInfo("Last Activity", 5),     // = prev brown
-        "cached" to StateInfo("Cached", 14),           // = cch gray
-        "native" to StateInfo("Native", 10),           // = ntv indigo
-        "percep" to StateInfo("Perceptible", 1),       // = prcp orange
-        "perceptible" to StateInfo("Perceptible", 1),  // = prcp orange
+        "ntv" to StateInfo("Native", 10),              // indigo
+        "sys" to StateInfo("System", 0),               // blue
+        "pers" to StateInfo("Persistent", 12),         // dark teal
+        "psvc" to StateInfo("Persistent Svc", 15),     // wine
+        "fg" to StateInfo("Foreground", 2),             // green
+        "vis" to StateInfo("Visible", 7),               // cyan
+        "prcp" to StateInfo("Perceptible", 1),          // orange
+        "prcm" to StateInfo("Perceptible Med", 8),      // yellow
+        "prcl" to StateInfo("Perceptible Low", 9),      // lime
+        "bkup" to StateInfo("Backup", 16),              // teal-green
+        "hvy" to StateInfo("Heavy", 3),                 // red
+        "svc" to StateInfo("Service", 6),               // pink
+        "home" to StateInfo("Home", 11),                // coral
+        "prev" to StateInfo("Previous", 5),             // brown
+        "svcb" to StateInfo("Service B", 13),           // magenta
+        "cch" to StateInfo("Cached", 14),               // gray
+        "frzn" to StateInfo("Frozen", 4),               // purple
+        "fgs" to StateInfo("FG Service", 17),           // rose
     )
 
     private val fallback = DualColor(Color(0xFF636363), Color(0xFF969696))
