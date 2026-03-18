@@ -4,7 +4,9 @@ import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -133,9 +135,11 @@ fun ProcessTab(
     onDismissPicker: () -> Unit = {},
 ) {
     val isDark = LocalIsDarkTheme.current
+    val context = LocalContext.current
     var dotDetail by remember { mutableStateOf<DotDetail?>(null) }
     val timelineListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+    var diffAnchorMs by remember { mutableStateOf<Long?>(null) }
     // Track which dot is selected (name, timestamp, pid) for enlarged state
     var selectedDotId by remember { mutableStateOf<Triple<String, Long, Int>?>(null) }
 
@@ -347,6 +351,21 @@ fun ProcessTab(
                         selectedDotId = selectedDotId,
                         allTimelineRows = timelineRows,
                         memoryEnrichedDots = memoryEnrichedDots,
+                        diffAnchorMs = diffAnchorMs,
+                        onTimestampTap = { ms ->
+                            val anchor = diffAnchorMs
+                            if (anchor != null) {
+                                val diffMs = kotlin.math.abs(ms - anchor)
+                                Toast.makeText(context, formatTimeDiff(diffMs), Toast.LENGTH_SHORT).show()
+                                diffAnchorMs = null
+                            } else {
+                                Toast.makeText(context, formatTimestampFull(ms), Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        onTimestampLongPress = { ms ->
+                            diffAnchorMs = ms
+                            Toast.makeText(context, "Anchor set. Tap another for diff.", Toast.LENGTH_SHORT).show()
+                        },
                         onShowDetail = { detail, name, ts, pid ->
                             dotDetail = detail
                             selectedDotId = Triple(name, ts, pid)
@@ -391,23 +410,31 @@ private fun TimelineRow(
     selectedDotId: Triple<String, Long, Int>?,
     allTimelineRows: List<ProcessTimelineRow>,
     memoryEnrichedDots: Set<MemoryDotKey>,
+    diffAnchorMs: Long?,
+    onTimestampTap: (Long) -> Unit,
+    onTimestampLongPress: (Long) -> Unit,
     onShowDetail: (DotDetail, String, Long, Int) -> Unit,
 ) {
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
-    val fullTimeStr = remember(timestamp) { formatTimestampFull(timestamp) }
-    val context = LocalContext.current
+    val isAnchor = diffAnchorMs == timestamp
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        @OptIn(ExperimentalFoundationApi::class)
         Text(
             timeStr,
             style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (isAnchor) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = if (isAnchor) FontWeight.Bold else null,
             modifier = Modifier
                 .width(72.dp)
                 .padding(start = 12.dp, top = 6.dp, bottom = 6.dp)
-                .clickable { Toast.makeText(context, fullTimeStr, Toast.LENGTH_SHORT).show() },
+                .combinedClickable(
+                    onClick = { onTimestampTap(timestamp) },
+                    onLongClick = { onTimestampLongPress(timestamp) },
+                ),
         )
 
         val hLineColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.06f)
