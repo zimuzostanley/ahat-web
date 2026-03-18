@@ -712,7 +712,9 @@ private fun ProcessPickerSheet(
     hasData: Boolean = true,
 ) {
     var search by remember { mutableStateOf("") }
-    val pinnedSet = remember(pinnedKeys) { pinnedKeys.toSet() }
+    // Local pinned state for immediate UI feedback inside ModalBottomSheet
+    var localPinned by remember { mutableStateOf(pinnedKeys.toSet()) }
+    val pinnedSet = localPinned
 
     // Track sort direction: false = descending (default), true = ascending
     var sortAscending by remember { mutableStateOf(false) }
@@ -747,7 +749,11 @@ private fun ProcessPickerSheet(
             val unpinnedCount = sorted.count { it.key !in pinnedSet }
             if (unpinnedCount > 0) {
                 androidx.compose.material3.TextButton(
-                    onClick = { sorted.filter { it.key !in pinnedSet }.forEach { onSelect(it.key) } },
+                    onClick = {
+                        val toPins = sorted.filter { it.key !in pinnedSet }.map { it.key }
+                        localPinned = localPinned + toPins
+                        toPins.forEach { onSelect(it) }
+                    },
                 ) {
                     Text("Pin all $unpinnedCount")
                 }
@@ -816,7 +822,13 @@ private fun ProcessPickerSheet(
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(4.dp))
                         .clickable {
-                            if (isPinned) onUnpin(item.key) else onSelect(item.key)
+                            if (isPinned) {
+                                localPinned = localPinned - item.key
+                                onUnpin(item.key)
+                            } else {
+                                localPinned = localPinned + item.key
+                                onSelect(item.key)
+                            }
                         }
                         .then(if (isPinned) Modifier.background(
                             MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
@@ -845,7 +857,13 @@ private fun ProcessPickerSheet(
                     androidx.compose.material3.Checkbox(
                         checked = isPinned,
                         onCheckedChange = {
-                            if (isPinned) onUnpin(item.key) else onSelect(item.key)
+                            if (isPinned) {
+                                localPinned = localPinned - item.key
+                                onUnpin(item.key)
+                            } else {
+                                localPinned = localPinned + item.key
+                                onSelect(item.key)
+                            }
                         },
                         modifier = Modifier.size(24.dp),
                     )
