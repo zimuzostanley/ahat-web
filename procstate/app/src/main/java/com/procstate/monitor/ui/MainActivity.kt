@@ -431,9 +431,13 @@ private fun ProcStateApp(vm: MainViewModel) {
             val activity = LocalContext.current as MainActivity
             val autoMemDump by vm.autoMemoryDump.collectAsState()
             val exportRange by vm.exportRange.collectAsState()
+            val isExporting by com.procstate.monitor.service.ExportService.runningFlow.collectAsState()
+            val exportProgress by com.procstate.monitor.service.ExportService.progressFlow.collectAsState()
             SettingsSheet(
                 themeMode = themeMode,
                 snapshotCount = snapshotCount,
+                isExporting = isExporting,
+                exportProgress = exportProgress,
                 autoMemoryDump = autoMemDump,
                 exportRange = exportRange,
                 onSetAutoMemoryDump = vm::setAutoMemoryDump,

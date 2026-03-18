@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +35,8 @@ import com.procstate.monitor.ui.theme.ThemeMode
 fun SettingsSheet(
     themeMode: ThemeMode,
     snapshotCount: Int,
+    isExporting: Boolean,
+    exportProgress: String?,
     autoMemoryDump: Boolean,
     exportRange: Long,
     onSetAutoMemoryDump: (Boolean) -> Unit,
@@ -148,10 +151,16 @@ fun SettingsSheet(
 
         OutlinedButton(
             onClick = { onExport(exportRange) },
-            enabled = hasData,
+            enabled = hasData && !isExporting,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Export to Perfetto")
+            if (isExporting) {
+                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                Spacer(Modifier.size(8.dp))
+                Text(exportProgress ?: "Exporting\u2026")
+            } else {
+                Text("Export to Perfetto")
+            }
         }
 
         Spacer(Modifier.height(16.dp))

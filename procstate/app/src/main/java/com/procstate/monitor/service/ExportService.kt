@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -39,10 +41,12 @@ class ExportService : Service() {
         const val EXTRA_RANGE_MS = "range_ms"
         const val EXTRA_URI = "uri"
 
-        @Volatile var running = false
-            private set
-        @Volatile var progressText: String? = null
-            private set
+        private val _running = MutableStateFlow(false)
+        val runningFlow = _running.asStateFlow()
+        val running: Boolean get() = _running.value
+
+        private val _progress = MutableStateFlow<String?>(null)
+        val progressFlow = _progress.asStateFlow()
     }
 
     private var serviceScope: CoroutineScope? = null
@@ -69,7 +73,7 @@ class ExportService : Service() {
             startForeground(NOTIFICATION_ID, notification)
         }
 
-        running = true
+        _running.value = true
         val dao = AppDatabase.get(this).snapshotDao()
         val pm = packageManager
 
@@ -133,8 +137,8 @@ class ExportService : Service() {
     }
 
     private fun finish() {
-        running = false
-        progressText = null
+        _running.value = false
+        _progress.value = null
         serviceScope?.cancel()
         serviceScope = null
         sendBroadcast(Intent(ACTION_DONE))
@@ -144,8 +148,8 @@ class ExportService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
-        running = false
-        progressText = null
+        _running.value = false
+        _progress.value = null
         serviceScope?.cancel()
         serviceScope = null
     }
@@ -178,7 +182,7 @@ class ExportService : Service() {
     }
 
     private fun updateNotification(text: String) {
-        progressText = text
+        _progress.value = text
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, buildNotification(text))
     }
