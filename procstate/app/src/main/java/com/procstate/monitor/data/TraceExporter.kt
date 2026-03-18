@@ -311,7 +311,7 @@ object TraceExporter {
         }
 
         writer.write("],\"displayTimeUnit\":\"ms\",\"otherData\":{\"source\":\"ProcState Monitor\"}}")
-        writer.flush()
+        writer.close()
         onProgress?.invoke("Done")
     }
 

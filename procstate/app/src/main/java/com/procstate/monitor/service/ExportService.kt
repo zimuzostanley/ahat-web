@@ -108,11 +108,13 @@ class ExportService : Service() {
                     } catch (_: Exception) { name }
                 }
 
+                val json = TraceExporter.export(exportEntries, getAppLabel, timestamps, memEntries) { progress ->
+                    updateNotification(progress)
+                }
+
                 updateNotification("Writing file\u2026")
                 contentResolver.openOutputStream(uri)?.use { out ->
-                    TraceExporter.exportToStream(out, exportEntries, getAppLabel, timestamps, memEntries) { progress ->
-                        updateNotification(progress)
-                    }
+                    out.write(json.toByteArray())
                 }
 
                 showDoneNotification("Export complete")
