@@ -79,6 +79,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val dao = AppDatabase.get(app).snapshotDao()
     private val ctx: Context get() = getApplication()
+    private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     // ── App label cache ────────────────────────────────────────────────────
 
@@ -87,15 +88,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Auto memory dump ──────────────────────────────────────────────────
 
     private val _autoMemoryDump = MutableStateFlow(
-        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
-            .getBoolean("auto_memory_dump", false)
+        prefs.getBoolean("auto_memory_dump", false)
     )
     val autoMemoryDump: StateFlow<Boolean> = _autoMemoryDump.asStateFlow()
 
     fun setAutoMemoryDump(enabled: Boolean) {
         _autoMemoryDump.value = enabled
-        ctx.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
-            .putBoolean("auto_memory_dump", enabled).apply()
+        prefs.edit().putBoolean("auto_memory_dump", enabled).apply()
         syncAutoMemoryList()
     }
 
@@ -134,19 +133,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Time range ──────────────────────────────────────────────────────────
 
-    private val _timeRange = MutableStateFlow(TimeRange.MIN_30)
+    private val _timeRange = MutableStateFlow(
+        prefs.getString("time_range", null)?.let { name ->
+            try { TimeRange.valueOf(name) } catch (_: Exception) { null }
+        } ?: TimeRange.MIN_30
+    )
     val timeRange: StateFlow<TimeRange> = _timeRange.asStateFlow()
 
-    fun setTimeRange(range: TimeRange) { _timeRange.value = range }
+    fun setTimeRange(range: TimeRange) {
+        _timeRange.value = range
+        prefs.edit().putString("time_range", range.name).apply()
+    }
 
     private val _ticker = MutableStateFlow(System.currentTimeMillis())
 
     // ── Capture controls ────────────────────────────────────────────────────
 
-    private val _captureInterval = MutableStateFlow(CaptureInterval.SEC_30)
+    private val _captureInterval = MutableStateFlow(
+        prefs.getString("capture_interval", null)?.let { name ->
+            try { CaptureInterval.valueOf(name) } catch (_: Exception) { null }
+        } ?: CaptureInterval.SEC_30
+    )
     val captureInterval: StateFlow<CaptureInterval> = _captureInterval.asStateFlow()
 
-    private val _stopAfter = MutableStateFlow(StopAfter.NEVER)
+    private val _stopAfter = MutableStateFlow(
+        prefs.getString("stop_after", null)?.let { name ->
+            try { StopAfter.valueOf(name) } catch (_: Exception) { null }
+        } ?: StopAfter.NEVER
+    )
     val stopAfter: StateFlow<StopAfter> = _stopAfter.asStateFlow()
 
     private val _isCapturing = MutableStateFlow(CaptureService.running)
@@ -161,8 +175,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _captureError = MutableStateFlow<String?>(null)
     val captureError: StateFlow<String?> = _captureError.asStateFlow()
 
-    fun setCaptureInterval(v: CaptureInterval) { _captureInterval.value = v }
-    fun setStopAfter(v: StopAfter) { _stopAfter.value = v }
+    fun setCaptureInterval(v: CaptureInterval) {
+        _captureInterval.value = v
+        prefs.edit().putString("capture_interval", v.name).apply()
+    }
+    fun setStopAfter(v: StopAfter) {
+        _stopAfter.value = v
+        prefs.edit().putString("stop_after", v.name).apply()
+    }
 
     fun refreshCaptureStatus() {
         val running = CaptureService.running
@@ -286,13 +306,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val visibleStates: StateFlow<Set<String>> = _seenStates.asStateFlow()
 
     /** State filter: empty = show all, non-empty = only these states. */
-    private val _stateFilter = MutableStateFlow<Set<String>>(emptySet())
+    private val _stateFilter = MutableStateFlow<Set<String>>(
+        prefs.getStringSet("state_filter", null) ?: emptySet()
+    )
     val stateFilter: StateFlow<Set<String>> = _stateFilter.asStateFlow()
 
     val hasStateFilter: Boolean get() = _stateFilter.value.isNotEmpty()
 
-    fun setStateFilter(states: Set<String>) { _stateFilter.value = states }
-    fun clearStateFilter() { _stateFilter.value = emptySet() }
+    /** Persisted sort key for process picker. */
+    private val _pickerSort = MutableStateFlow(prefs.getString("picker_sort", "transitions") ?: "transitions")
+    val pickerSort: StateFlow<String> = _pickerSort.asStateFlow()
+    fun setPickerSort(sort: String) {
+        _pickerSort.value = sort
+        prefs.edit().putString("picker_sort", sort).apply()
+    }
+
+    fun setStateFilter(states: Set<String>) {
+        _stateFilter.value = states
+        prefs.edit().putStringSet("state_filter", states).apply()
+    }
+    fun clearStateFilter() {
+        _stateFilter.value = emptySet()
+        prefs.edit().remove("state_filter").apply()
+    }
 
     /** Snapshots filtered by selected states (for By State tab only). */
     val filteredSnapshots: StateFlow<List<SnapshotWithCounts>> =

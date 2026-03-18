@@ -127,6 +127,8 @@ fun ProcessTab(
     memoryDumpProgress: String? = null,
     memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
     allProcessKeysWithTransitions: List<ProcessKeyWithTransitions> = emptyList(),
+    pickerSort: String = "transitions",
+    onPickerSortChange: (String) -> Unit = {},
     pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
     allSnapshotTimestamps: List<Long>,
@@ -192,6 +194,8 @@ fun ProcessTab(
                 allKeysWithTransitions = allProcessKeysWithTransitions,
                 pinnedKeys = pinnedProcesses,
                 onSelect = onPinProcess,
+                sortBy = pickerSort,
+                onSortChange = onPickerSortChange,
             )
         }
     }
@@ -647,9 +651,10 @@ private fun ProcessPickerSheet(
     allKeysWithTransitions: List<ProcessKeyWithTransitions>,
     pinnedKeys: List<ProcessKey>,
     onSelect: (ProcessKey) -> Unit,
+    sortBy: String = "transitions",
+    onSortChange: (String) -> Unit = {},
 ) {
     var search by remember { mutableStateOf("") }
-    var sortBy by remember { mutableStateOf("transitions") }
     val pinnedSet = remember(pinnedKeys) { pinnedKeys.toSet() }
     val filtered = remember(allKeysWithTransitions, search, pinnedSet, sortBy) {
         val available = allKeysWithTransitions.filter { it.key !in pinnedSet }
@@ -694,7 +699,7 @@ private fun ProcessPickerSheet(
             )) {
                 FilterChip(
                     selected = sortBy == key,
-                    onClick = { sortBy = key },
+                    onClick = { onSortChange(key) },
                     label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                 )
             }
