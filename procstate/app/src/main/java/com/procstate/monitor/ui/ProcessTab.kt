@@ -114,6 +114,8 @@ data class DotDetail(
     val frozen: Boolean,
     val started: Boolean,
     val timestamp: String,
+    val timestampEnd: String = "",
+    val durationStr: String = "",
     val timestampMs: Long = 0,
     val stateHistory: List<Pair<String, Int>> = emptyList(),
     val frozenCount: Int = 0,
@@ -575,12 +577,24 @@ private fun TimelineRow(
                                     .clip(pillShape)
                                     .background(dotColor)
                                     .clickable {
-                                        val startStr = formatTimestampFull(runInfo.runStartTs)
-                                        val endStr = formatTimestampFull(runInfo.runEndTs)
                                         val diffMs = kotlin.math.abs(runInfo.runEndTs - runInfo.runStartTs)
-                                        Toast.makeText(context,
-                                            "${ProcStateColors.label(dot.procState)}\n$startStr\n$endStr\n${formatTimeDiff(diffMs)}",
-                                            Toast.LENGTH_LONG).show()
+                                        val relevant = allTimelineRows
+                                            .filter { it.name == key.name && it.uid == key.uid && it.timestamp <= runInfo.runEndTs }
+                                        val history = relevant.groupBy { it.procState }
+                                            .map { (s, r) -> s to r.size }.sortedByDescending { it.second }
+                                        onShowDetail(DotDetail(
+                                            name = key.name, uid = dot.uid, pid = dot.pid,
+                                            state = dot.procState,
+                                            stateLabel = ProcStateColors.label(dot.procState),
+                                            frozen = dot.frozen, started = false,
+                                            timestamp = formatTimestampFull(runInfo.runStartTs),
+                                            timestampEnd = formatTimestampFull(runInfo.runEndTs),
+                                            durationStr = formatTimeDiff(diffMs),
+                                            timestampMs = runInfo.runStartTs,
+                                            stateHistory = history,
+                                            frozenCount = relevant.count { it.frozen },
+                                            restartCount = 0,
+                                        ), key.name, runInfo.runStartTs, dot.pid)
                                     },
                                 contentAlignment = Alignment.Center,
                             ) {
@@ -987,11 +1001,25 @@ fun ProcessDetailSheet(
                 )
                 if (detail.timestamp.isNotEmpty()) {
                     Spacer(Modifier.weight(1f))
-                    Text(
-                        detail.timestamp,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            detail.timestamp,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (detail.timestampEnd.isNotEmpty()) {
+                            Text(
+                                detail.timestampEnd,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text(
+                                detail.durationStr,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
                 }
             }
 
