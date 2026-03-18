@@ -789,12 +789,26 @@ private fun ProcessPickerSheet(
         }
 
         if (filtered.isEmpty()) {
-            Text(
-                if (allKeysWithTransitions.isEmpty()) "No processes captured yet" else "No processes match your search",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(16.dp),
-            )
+            if (allKeysWithTransitions.isEmpty() && search.isBlank()) {
+                // Could be loading — show spinner
+                Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Loading processes\u2026", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                Text(
+                    "No processes match your search",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp),
+                )
+            }
         }
         Spacer(Modifier.height(16.dp))
     }
