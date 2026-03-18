@@ -110,9 +110,9 @@ fun ProcStateTheme(
             }
             AppCompatDelegate.setDefaultNightMode(nightMode)
 
+            // Let enableEdgeToEdge() handle system bar colors.
+            // Only set light/dark appearance for status bar icons.
             val window = (view.context as Activity).window
-            window.statusBarColor = colorScheme.background.toArgb()
-            window.navigationBarColor = colorScheme.background.toArgb()
             val ctrl = WindowCompat.getInsetsController(window, view)
             ctrl.isAppearanceLightStatusBars = !darkTheme
             ctrl.isAppearanceLightNavigationBars = !darkTheme
