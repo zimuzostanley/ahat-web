@@ -564,6 +564,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .map { rows -> rows.toSet() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
+    // ── Collapse timeline ─────────────────────────────────────────────────────
+
+    private val _collapseTimeline = MutableStateFlow(prefs.getBoolean("collapse_timeline", false))
+    val collapseTimeline: StateFlow<Boolean> = _collapseTimeline.asStateFlow()
+
+    fun toggleCollapseTimeline() {
+        val next = !_collapseTimeline.value
+        _collapseTimeline.value = next
+        prefs.edit().putBoolean("collapse_timeline", next).apply()
+    }
+
     // ── Export ────────────────────────────────────────────────────────────────
 
     private val _exportRange = MutableStateFlow(prefs.getLong("export_range", 0L))

@@ -118,7 +118,7 @@ data class DotDetail(
     val restartCount: Int = 0,
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun ProcessTab(
     getAppLabel: (String) -> String = { it.substringAfterLast('.') },
@@ -137,6 +137,7 @@ fun ProcessTab(
     allProcessKeys: List<ProcessKey>,
     onPinProcess: (ProcessKey) -> Unit,
     onUnpinProcess: (ProcessKey) -> Unit,
+    collapsed: Boolean = false,
     showPicker: Boolean = false,
     onOpenPicker: () -> Unit = {},
     onDismissPicker: () -> Unit = {},
@@ -308,6 +309,30 @@ fun ProcessTab(
             }
         }
 
+        // Collapse: hide rows where no pinned process changed state/frozen/presence
+        val displayRows = remember(timelineByTimestamp, collapsed, pinnedProcesses) {
+            if (!collapsed) timelineByTimestamp
+            else {
+                val pinnedSet = pinnedProcesses.toSet()
+                // Walk chronologically (reversed since timelineByTimestamp is newest-first)
+                val chrono = timelineByTimestamp.asReversed()
+                val kept = mutableListOf<Pair<Long, Map<ProcessKey, ProcessDot>>>()
+                var prevPresent: Set<ProcessKey>? = null
+                for ((ts, stateMap) in chrono) {
+                    val present = stateMap.keys.filter { it in pinnedSet }.toSet()
+                    val hasChange = stateMap.values.any {
+                        it.stateChanged || it.marker == Marker.STARTED
+                    }
+                    val presenceChanged = prevPresent != null && present != prevPresent
+                    if (kept.isEmpty() || hasChange || presenceChanged) {
+                        kept.add(ts to stateMap)
+                    }
+                    prevPresent = present
+                }
+                kept.asReversed() // back to newest-first
+            }
+        }
+
         val scrollState = rememberScrollState()
 
         // Column headers
@@ -360,8 +385,11 @@ fun ProcessTab(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = 4.dp),
             ) {
-                items(timelineByTimestamp, key = { it.first }) { (timestamp, stateMap) ->
+                items(displayRows, key = { it.first }) { (timestamp, stateMap) ->
                     TimelineRow(
+                        modifier = Modifier.animateItemPlacement(
+                            androidx.compose.animation.core.tween(300)
+                        ),
                         timestamp = timestamp,
                         pinnedProcesses = pinnedProcesses,
                         stateMap = stateMap,
@@ -421,6 +449,7 @@ fun ProcessTab(
 
 @Composable
 private fun TimelineRow(
+    modifier: Modifier = Modifier,
     timestamp: Long,
     pinnedProcesses: List<ProcessKey>,
     stateMap: Map<ProcessKey, ProcessDot>,
@@ -437,7 +466,7 @@ private fun TimelineRow(
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
     val isAnchor = diffAnchorMs == timestamp
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         @OptIn(ExperimentalFoundationApi::class)

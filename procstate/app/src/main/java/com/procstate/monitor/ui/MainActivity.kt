@@ -51,6 +51,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.UnfoldLess
+import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.pullrefresh.PullRefreshIndicator
 import androidx.compose.material.pullrefresh.pullRefresh
@@ -179,6 +181,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     val allProcessKeysWithTransitions by vm.allProcessKeysWithTransitions.collectAsState()
     val visibleStates by vm.visibleStates.collectAsState()
     val stateFilter by vm.stateFilter.collectAsState()
+    val collapseTimeline by vm.collapseTimeline.collectAsState()
     var showStateFilterSheet by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -222,6 +225,14 @@ private fun ProcStateApp(vm: MainViewModel) {
                     // Process tab actions
                     if (selectedTab == 1) {
                         if (pinnedProcesses.isNotEmpty()) {
+                            IconButton(onClick = vm::toggleCollapseTimeline) {
+                                Icon(
+                                    if (collapseTimeline) Icons.Default.UnfoldMore
+                                    else Icons.Default.UnfoldLess,
+                                    if (collapseTimeline) "Expand" else "Collapse",
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
                             IconButton(onClick = vm::clearAllPinnedProcesses) {
                                 Icon(Icons.Default.Close, "Unpin all",
                                     modifier = Modifier.size(20.dp))
@@ -357,6 +368,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                             onPickerSortChange = vm::setPickerSort,
                             onPinProcess = vm::pinProcess,
                             onUnpinProcess = vm::unpinProcess,
+                            collapsed = collapseTimeline,
                             showPicker = showProcessPicker,
                             onOpenPicker = { showProcessPicker = true },
                             onDismissPicker = { showProcessPicker = false },
