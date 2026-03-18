@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -299,6 +300,10 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 if (showProcessPicker) Icons.Default.Close else Icons.Default.Add,
                                 "Add process",
                             )
+                        }
+                        IconButton(onClick = { showHelpDialog = true }) {
+                            Icon(Icons.Default.Info, "Dot guide",
+                                modifier = Modifier.size(20.dp))
                         }
                     }
                     IconButton(onClick = { showSettings = true }) {
@@ -582,7 +587,6 @@ private fun ProcStateApp(vm: MainViewModel) {
                 },
                 onExportRangeChange = vm::setExportRange,
                 onDismiss = { showSettings = false },
-                onShowHelp = { showSettings = false; showHelpDialog = true },
             )
         }
     }
