@@ -23,7 +23,9 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -45,12 +47,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.ExperimentalMaterialApi
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Warning
@@ -70,6 +75,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
@@ -138,7 +144,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterialApi::class, ExperimentalFoundationApi::class)
 @Composable
 private fun ProcStateApp(vm: MainViewModel) {
     val context = LocalContext.current
@@ -160,6 +166,11 @@ private fun ProcStateApp(vm: MainViewModel) {
     var showSettings by remember { mutableStateOf(false) }
     var showProcessPicker by remember { mutableStateOf(false) }
     var showRecordSheet by remember { mutableStateOf(false) }
+
+    // Temporary sort for By State tab (never persisted)
+    var sortColumn by remember { mutableStateOf("total") }
+    var sortPhase by remember { mutableIntStateOf(0) } // 0=timestamp, 1=asc, 2=desc
+    var showSortDialog by remember { mutableStateOf(false) }
 
     val isCapturing by vm.isCapturing.collectAsState()
     val isRefreshing by vm.isRefreshing.collectAsState()
@@ -215,11 +226,40 @@ private fun ProcStateApp(vm: MainViewModel) {
                             Icon(Icons.Default.PlayArrow, "Record")
                         }
                     }
-                    // State tab: clear filter button
-                    if (selectedTab == 0 && stateFilter != null) {
-                        IconButton(onClick = vm::clearStateFilter) {
-                            Icon(Icons.Default.Close, "Clear state filter",
-                                modifier = Modifier.size(20.dp))
+                    // State tab actions
+                    if (selectedTab == 0) {
+                        // Sort button: click cycles asc/desc/timestamp, long-press picks column
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(CircleShape)
+                                .combinedClickable(
+                                    onClick = { sortPhase = (sortPhase + 1) % 3 },
+                                    onLongClick = { showSortDialog = true },
+                                ),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                when (sortPhase) {
+                                    1 -> Icons.Default.ArrowUpward
+                                    2 -> Icons.Default.ArrowDownward
+                                    else -> Icons.Default.SwapVert
+                                },
+                                contentDescription = when (sortPhase) {
+                                    1 -> "Ascending"
+                                    2 -> "Descending"
+                                    else -> "Sort"
+                                },
+                                modifier = Modifier.size(20.dp),
+                                tint = if (sortPhase != 0) MaterialTheme.colorScheme.primary
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (stateFilter != null) {
+                            IconButton(onClick = vm::clearStateFilter) {
+                                Icon(Icons.Default.Close, "Clear state filter",
+                                    modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
                     // Process tab actions
@@ -333,10 +373,26 @@ private fun ProcStateApp(vm: MainViewModel) {
             // Pull-to-refresh wraps tab content
             val pullState = rememberPullRefreshState(isRefreshing, vm::pullToRefresh)
 
+            // Apply temporary sort to By State snapshots
+            val sortedSnapshots = remember(filteredSnapshots, sortColumn, sortPhase) {
+                if (sortPhase == 0) filteredSnapshots
+                else {
+                    val selector: (com.procstate.monitor.data.SnapshotWithCounts) -> Int = { snap ->
+                        when (sortColumn) {
+                            "total" -> snap.totalProcesses
+                            "frozen" -> snap.frozenCount
+                            else -> snap.stateCounts[sortColumn] ?: 0
+                        }
+                    }
+                    if (sortPhase == 1) filteredSnapshots.sortedBy(selector)
+                    else filteredSnapshots.sortedByDescending(selector)
+                }
+            }
+
             Box(Modifier.fillMaxSize().pullRefresh(pullState)) {
                 when (selectedTab) {
                     0 -> ProcStateTab(
-                        snapshots = filteredSnapshots,
+                        snapshots = sortedSnapshots,
                         pinnedProcesses = pinnedProcesses,
                         onPinProcess = vm::pinProcess,
                         onUnpinProcess = vm::unpinProcess,
@@ -420,6 +476,63 @@ private fun ProcStateApp(vm: MainViewModel) {
                 onShowAll = { vm.clearStateFilter() },
             )
         }
+    }
+
+    // Sort column picker dialog
+    if (showSortDialog) {
+        val sortOptions = remember(visibleStates) {
+            listOf("total" to "Total processes", "frozen" to "Frozen count") +
+                visibleStates.sortedBy { ProcStateColors.label(it).lowercase() }
+                    .map { it to ProcStateColors.label(it) }
+        }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showSortDialog = false },
+            title = { Text("Sort by") },
+            text = {
+                LazyColumn {
+                    items(sortOptions) { (key, label) ->
+                        val isDark = com.procstate.monitor.ui.theme.LocalIsDarkTheme.current
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable {
+                                    sortColumn = key
+                                    sortPhase = 1
+                                    showSortDialog = false
+                                }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = sortColumn == key,
+                                onClick = {
+                                    sortColumn = key
+                                    sortPhase = 1
+                                    showSortDialog = false
+                                },
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            if (key != "total" && key != "frozen") {
+                                Box(
+                                    Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(ProcStateColors.get(key, isDark)),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showSortDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     // Settings bottom sheet
