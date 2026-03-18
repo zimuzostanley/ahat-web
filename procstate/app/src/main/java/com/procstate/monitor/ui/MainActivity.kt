@@ -326,6 +326,11 @@ private fun ProcStateApp(vm: MainViewModel) {
                             Icon(Icons.Default.Close, "Unpin all")
                         }
                     }
+                    if (selectedTab == 0 && stateFilter != null) {
+                        IconButton(onClick = vm::clearStateFilter) {
+                            Icon(Icons.Default.Close, "Clear filter")
+                        }
+                    }
                     // Filter: state filter (tab 0) or process picker (tab 1)
                     IconButton(onClick = {
                         if (selectedTab == 0) showStateFilterSheet = true
