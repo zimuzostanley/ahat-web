@@ -416,7 +416,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     activity.pendingExportRange = rangeMs
                     val filename = "procstate_${System.currentTimeMillis()}.json"
                     activity.exportFileLauncher.launch(filename)
-                    android.widget.Toast.makeText(activity, "Exporting\u2026 check notification for progress", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(activity, "Check notification for progress after saving", android.widget.Toast.LENGTH_SHORT).show()
                 },
                 onExportRangeChange = vm::setExportRange,
                 onDismiss = { showSettings = false },
