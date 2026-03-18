@@ -36,11 +36,13 @@ class EntitiesTest {
 
     @Test
     fun `CaptureInterval values are correct`() {
-        assertEquals(10, CaptureInterval.SEC_10.seconds)
-        assertEquals(30, CaptureInterval.SEC_30.seconds)
-        assertEquals(60, CaptureInterval.MIN_1.seconds)
-        assertEquals(300, CaptureInterval.MIN_5.seconds)
-        assertEquals(900, CaptureInterval.MIN_15.seconds)
+        assertEquals(100L, CaptureInterval.MS_100.millis)
+        assertEquals(500L, CaptureInterval.MS_500.millis)
+        assertEquals(10_000L, CaptureInterval.SEC_10.millis)
+        assertEquals(30_000L, CaptureInterval.SEC_30.millis)
+        assertEquals(60_000L, CaptureInterval.MIN_1.millis)
+        assertEquals(300_000L, CaptureInterval.MIN_5.millis)
+        assertEquals(900_000L, CaptureInterval.MIN_15.millis)
     }
 
     @Test

@@ -42,7 +42,7 @@ class CaptureService : Service() {
 
         const val ACTION_STOP = "com.procstate.monitor.STOP_CAPTURE"
         const val ACTION_SNAPSHOT_SAVED = "com.procstate.monitor.SNAPSHOT_SAVED"
-        const val EXTRA_INTERVAL_SECONDS = "interval_seconds"
+        const val EXTRA_INTERVAL_MS = "interval_ms"
         const val EXTRA_STOP_AFTER_MINUTES = "stop_after_minutes"
 
         @Volatile var running = false
@@ -72,7 +72,7 @@ class CaptureService : Service() {
         serviceScope?.cancel()
         serviceScope = null
 
-        val intervalSeconds = intent?.getIntExtra(EXTRA_INTERVAL_SECONDS, 30) ?: 30
+        val intervalMs = intent?.getLongExtra(EXTRA_INTERVAL_MS, 30_000L) ?: 30_000L
         val stopAfterMinutes = intent?.getIntExtra(EXTRA_STOP_AFTER_MINUTES, 0) ?: 0
 
         // Wake lock with safe Long arithmetic
@@ -88,7 +88,7 @@ class CaptureService : Service() {
         }
 
         val notifText = buildString {
-            append("Capturing every ${intervalSeconds}s")
+            append("Capturing every ${formatInterval(intervalMs)}")
             if (stopAfterMinutes > 0) append(" \u00b7 stop in ${stopAfterMinutes}m")
         }
         val notification = buildNotification(notifText)
@@ -177,7 +177,7 @@ class CaptureService : Service() {
                     }
 
                     Log.d(TAG, "Cycle #$cycleCount: ${processes.size} processes saved")
-                    updateNotification("#$cycleCount \u00b7 ${processes.size} procs \u00b7 every ${intervalSeconds}s")
+                    updateNotification("#$cycleCount \u00b7 ${processes.size} procs \u00b7 every ${formatInterval(intervalMs)}")
                     sendBroadcast(Intent(ACTION_SNAPSHOT_SAVED))
                 } catch (e: CancellationException) {
                     throw e
@@ -185,7 +185,7 @@ class CaptureService : Service() {
                     Log.e(TAG, "Cycle #$cycleCount failed", e)
                     updateNotification("#$cycleCount failed: ${e.message}")
                 }
-                delay(intervalSeconds * 1000L)
+                delay(intervalMs)
             }
             showDoneNotification("Stopped after $cycleCount snapshots")
             finish()
@@ -268,5 +268,11 @@ class CaptureService : Service() {
             .setAutoCancel(true)
             .build()
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID + 1, n)
+    }
+
+    private fun formatInterval(ms: Long): String = when {
+        ms < 1000 -> "${ms}ms"
+        ms % 60_000 == 0L -> "${ms / 60_000}m"
+        else -> "${ms / 1000}s"
     }
 }

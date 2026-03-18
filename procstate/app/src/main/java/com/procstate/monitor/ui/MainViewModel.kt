@@ -51,16 +51,19 @@ enum class TimeRange(val label: String, val millis: Long) {
 }
 
 @Immutable
-enum class CaptureInterval(val label: String, val seconds: Int) {
-    SEC_1("1s", 1),
-    SEC_2("2s", 2),
-    SEC_5("5s", 5),
-    SEC_10("10s", 10),
-    SEC_30("30s", 30),
-    MIN_1("1m", 60),
-    MIN_5("5m", 300),
-    MIN_15("15m", 900),
+enum class CaptureInterval(val label: String, val millis: Long) {
+    MS_100("100ms", 100),
+    MS_500("500ms", 500),
+    SEC_1("1s", 1_000),
+    SEC_2("2s", 2_000),
+    SEC_5("5s", 5_000),
+    SEC_10("10s", 10_000),
+    SEC_30("30s", 30_000),
+    MIN_1("1m", 60_000),
+    MIN_5("5m", 300_000),
+    MIN_15("15m", 900_000),
 }
+
 
 @Immutable
 enum class StopAfter(val label: String, val minutes: Int) {
@@ -201,7 +204,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } else emptyList()
 
         val intent = Intent(ctx, CaptureService::class.java).apply {
-            putExtra(CaptureService.EXTRA_INTERVAL_SECONDS, _captureInterval.value.seconds)
+            putExtra(CaptureService.EXTRA_INTERVAL_MS, _captureInterval.value.millis)
             putExtra(CaptureService.EXTRA_STOP_AFTER_MINUTES, _stopAfter.value.minutes)
         }
         if (Build.VERSION.SDK_INT >= 26) {
