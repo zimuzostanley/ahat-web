@@ -393,15 +393,17 @@ private fun ProcStateApp(vm: MainViewModel) {
         }
     }
 
-    // State filter sheet
+    // State filter sheet — collect stateFilter inside the sheet's composition
+    // so changes from callbacks (Clear all, toggle) trigger recomposition here
     if (showStateFilterSheet) {
         ModalBottomSheet(
             onDismissRequest = { showStateFilterSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
+            val sheetFilter by vm.stateFilter.collectAsState()
             StateFilterSheet(
                 allStates = visibleStates,
-                selectedStates = stateFilter,
+                selectedStates = sheetFilter,
                 onChanged = { vm.setStateFilter(it) },
                 onShowAll = { vm.clearStateFilter() },
             )
