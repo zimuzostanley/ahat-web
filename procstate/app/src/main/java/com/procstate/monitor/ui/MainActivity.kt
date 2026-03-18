@@ -449,6 +449,9 @@ private fun ProcStateApp(vm: MainViewModel) {
                         getAppLabel = vm::getAppLabel,
                         hasData = snapshotTimestamps.isNotEmpty(),
                         hasStateFilter = stateFilter != null,
+                        visibleStates = visibleStates,
+                        stateFilter = stateFilter ?: emptySet(),
+                        onOpenFilterSheet = { showStateFilterSheet = true },
                     )
                     1 -> {
                         val memDumpProgress by vm.memoryDumpProgress.collectAsState()

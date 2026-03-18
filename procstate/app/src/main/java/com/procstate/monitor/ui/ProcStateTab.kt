@@ -83,6 +83,9 @@ fun ProcStateTab(
     getAppLabel: (String) -> String = { it.substringAfterLast('.') },
     hasData: Boolean = false,
     hasStateFilter: Boolean = false,
+    visibleStates: Set<String> = emptySet(),
+    stateFilter: Set<String> = emptySet(),
+    onOpenFilterSheet: () -> Unit = {},
 ) {
     if (snapshots.isEmpty()) {
         if (hasData && !hasStateFilter) {
@@ -160,7 +163,17 @@ fun ProcStateTab(
         androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 2 }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize()) {
+    // Fixed legend row
+    if (visibleStates.isNotEmpty()) {
+        ProcStateLegend(
+            visibleStates = visibleStates,
+            stateFilter = stateFilter,
+            onTap = onOpenFilterSheet,
+        )
+    }
+
+    Box(Modifier.fillMaxSize().weight(1f)) {
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
@@ -258,6 +271,7 @@ fun ProcStateTab(
         }
     }
     } // Box
+    } // Column
 }
 
 // ── Snapshot row with stacked bar ───────────────────────────────────────────
