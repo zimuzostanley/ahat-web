@@ -686,7 +686,7 @@ fun ProcStateLegend(
     if (visibleStates.isEmpty()) return
 
     val isDark = LocalIsDarkTheme.current
-    val states = ProcStateColors.order.filter { it in visibleStates }
+    val states = visibleStates.sortedBy { ProcStateColors.label(it) }
     val hasFilter = stateFilter.isNotEmpty()
 
     Row(
