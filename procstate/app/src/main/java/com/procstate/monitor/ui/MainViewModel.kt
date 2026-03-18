@@ -621,7 +621,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             totalSwapKb = m.totalSwapKb,
                         )
                     }
-                    TraceExporter.export(exportEntries, ::getAppLabel, timestamps, memEntries)
+                    TraceExporter.export(
+                        exportEntries, ::getAppLabel, timestamps, memEntries,
+                        getStateLabel = { com.procstate.monitor.ui.theme.ProcStateColors.label(it) },
+                    )
                 }
                 writeOutput(json)
             } catch (e: Exception) {

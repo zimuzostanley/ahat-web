@@ -67,6 +67,7 @@ object TraceExporter {
         getAppLabel: (String) -> String,
         allTimestampsMs: List<Long>,
         memoryEntries: List<MemoryEntry> = emptyList(),
+        getStateLabel: (String) -> String = { it },
         onProgress: ((String) -> Unit)? = null,
     ): String {
         val events = JSONArray()
@@ -81,7 +82,7 @@ object TraceExporter {
         val byTimestamp = entries.groupBy { it.timestampMs }
         for (ts in sortedTimestamps) {
             val entriesAtTs = byTimestamp[ts] ?: continue
-            val stateCounts = entriesAtTs.groupBy { it.procState }
+            val stateCounts = entriesAtTs.groupBy { getStateLabel(it.procState) }
                 .mapValues { it.value.size }
             // Emit one counter event with all state counts as series
             events.put(JSONObject().apply {
@@ -122,7 +123,7 @@ object TraceExporter {
             val (name, uid) = key
             val packageName = name.substringBefore(':')
             val appLabel = getAppLabel(name)
-            val trackName = "$name / $packageName / $uid / $appLabel"
+            val trackName = "$appLabel / $name / $uid"
 
             // Use stable pid for the process in the trace (hash of name+uid)
             val tracePid = (name + uid).hashCode() and 0x7FFFFFFF
@@ -139,7 +140,7 @@ object TraceExporter {
             val stateSlices = mergeStateSlices(sorted, sortedTimestamps)
             for (slice in stateSlices) {
                 events.put(completeEvent(
-                    name = slice.name,
+                    name = getStateLabel(slice.name),
                     cat = "state",
                     pid = tracePid,
                     tid = 1,
@@ -159,6 +160,7 @@ object TraceExporter {
                     tid = 2,
                     tsUs = slice.startUs,
                     durUs = slice.durUs,
+                    args = slice.args,
                 ))
             }
 
@@ -217,6 +219,7 @@ object TraceExporter {
         getAppLabel: (String) -> String,
         allTimestampsMs: List<Long>,
         memoryEntries: List<MemoryEntry> = emptyList(),
+        getStateLabel: (String) -> String = { it },
         onProgress: ((String) -> Unit)? = null,
     ) {
         val writer = java.io.BufferedWriter(java.io.OutputStreamWriter(out, Charsets.UTF_8), 64 * 1024)
@@ -242,7 +245,7 @@ object TraceExporter {
         val byTimestamp = entries.groupBy { it.timestampMs }
         for (ts in sortedTimestamps) {
             val entriesAtTs = byTimestamp[ts] ?: continue
-            val stateCounts = entriesAtTs.groupBy { it.procState }.mapValues { it.value.size }
+            val stateCounts = entriesAtTs.groupBy { getStateLabel(it.procState) }.mapValues { it.value.size }
             writeEvent(JSONObject().apply {
                 put("ph", "C"); put("name", "processes"); put("cat", "state_counts")
                 put("pid", globalPid); put("tid", 0); put("ts", ts * 1000)
@@ -267,7 +270,7 @@ object TraceExporter {
 
             val (name, uid) = key
             val appLabel = getAppLabel(name)
-            val trackName = "$name / ${name.substringBefore(':')} / $uid / $appLabel"
+            val trackName = "$appLabel / $name / $uid"
             val tracePid = (name + uid).hashCode() and 0x7FFFFFFF
 
             writeEvent(metadataEvent("process_name", tracePid, 0, trackName))
@@ -277,10 +280,10 @@ object TraceExporter {
 
             val sorted = processEntries.sortedBy { it.timestampMs }
             for (slice in mergeStateSlices(sorted, sortedTimestamps)) {
-                writeEvent(completeEvent("${slice.name}", "state", tracePid, 1, slice.startUs, slice.durUs, slice.args))
+                writeEvent(completeEvent(getStateLabel(slice.name), "state", tracePid, 1, slice.startUs, slice.durUs, slice.args))
             }
             for (slice in mergeFrozenSlices(sorted, sortedTimestamps)) {
-                writeEvent(completeEvent("frozen", "frozen", tracePid, 2, slice.startUs, slice.durUs))
+                writeEvent(completeEvent("frozen", "frozen", tracePid, 2, slice.startUs, slice.durUs, slice.args))
             }
             for (instant in detectLifecycleEvents(sorted)) {
                 writeEvent(instantEvent(instant.name, "lifecycle", tracePid, 3, instant.tsUs, instant.args))
@@ -375,16 +378,21 @@ object TraceExporter {
 
         val slices = mutableListOf<Slice>()
         var frozenStart: Long? = null
+        var frozenPid = 0
 
         for (entry in sorted) {
             if (entry.frozen) {
-                if (frozenStart == null) frozenStart = entry.timestampMs
+                if (frozenStart == null) {
+                    frozenStart = entry.timestampMs
+                    frozenPid = entry.pid
+                }
             } else {
                 if (frozenStart != null) {
                     slices.add(Slice(
                         name = "frozen",
                         startUs = frozenStart * 1000,
                         durUs = (entry.timestampMs - frozenStart) * 1000,
+                        args = mapOf("pid" to frozenPid),
                     ))
                     frozenStart = null
                 }
@@ -399,6 +407,7 @@ object TraceExporter {
                 name = "frozen",
                 startUs = frozenStart * 1000,
                 durUs = (endMs - frozenStart) * 1000,
+                args = mapOf("pid" to frozenPid),
             ))
         }
 

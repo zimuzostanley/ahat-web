@@ -114,7 +114,10 @@ class ExportService : Service() {
                     } catch (_: Exception) { name }
                 }
 
-                val json = TraceExporter.export(exportEntries, getAppLabel, timestamps, memEntries) { progress ->
+                val json = TraceExporter.export(
+                    exportEntries, getAppLabel, timestamps, memEntries,
+                    getStateLabel = { com.procstate.monitor.ui.theme.ProcStateColors.label(it) },
+                ) { progress ->
                     updateNotification(progress)
                 }
 
