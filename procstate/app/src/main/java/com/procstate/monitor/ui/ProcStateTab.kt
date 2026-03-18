@@ -47,6 +47,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -432,6 +433,17 @@ private fun SnapshotBreakdown(
     }
 
     var localSearch by remember { mutableStateOf("") }
+    var debouncedSearch by remember { mutableStateOf("") }
+
+    // Debounce search to avoid animating on every keystroke
+    LaunchedEffect(localSearch) {
+        if (localSearch.isBlank()) {
+            debouncedSearch = ""
+        } else {
+            kotlinx.coroutines.delay(200)
+            debouncedSearch = localSearch
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -460,10 +472,10 @@ private fun SnapshotBreakdown(
         )
 
         // When searching, auto-expand states that have matching processes
-        val searchMatchingStates = remember(localSearch, entries) {
-            if (localSearch.isBlank()) emptySet()
+        val searchMatchingStates = remember(debouncedSearch, entries) {
+            if (debouncedSearch.isBlank()) emptySet()
             else {
-                val q = localSearch.lowercase()
+                val q = debouncedSearch.lowercase()
                 val states = entries.filter { q in it.name.lowercase() }.map { it.procState }.toMutableSet()
                 if (entries.any { it.frozen && q in it.name.lowercase() }) states.add("__frozen__")
                 states
@@ -489,8 +501,8 @@ private fun SnapshotBreakdown(
                 exit = shrinkVertically(),
             ) {
                 val stateEntries = entries.filter { it.procState == state }
-                val filtered = if (localSearch.isBlank()) stateEntries
-                    else stateEntries.filter { localSearch.lowercase() in it.name.lowercase() }
+                val filtered = if (debouncedSearch.isBlank()) stateEntries
+                    else stateEntries.filter { debouncedSearch.lowercase() in it.name.lowercase() }
                 ProcessList(
                     entries = filtered,
                     pinnedProcesses = pinnedProcesses,
@@ -572,8 +584,8 @@ private fun SnapshotBreakdown(
 
             AnimatedVisibility(visible = isFrozenExpanded, enter = expandVertically(), exit = shrinkVertically()) {
                 val frozenEntries = entries.filter { it.frozen }
-                val filtered = if (localSearch.isBlank()) frozenEntries
-                    else frozenEntries.filter { localSearch.lowercase() in it.name.lowercase() }
+                val filtered = if (debouncedSearch.isBlank()) frozenEntries
+                    else frozenEntries.filter { debouncedSearch.lowercase() in it.name.lowercase() }
                 ProcessList(
                     entries = filtered,
                     pinnedProcesses = pinnedProcesses,
