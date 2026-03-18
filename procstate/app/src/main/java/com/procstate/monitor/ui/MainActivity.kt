@@ -95,7 +95,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -172,9 +171,7 @@ private fun ProcStateApp(vm: MainViewModel) {
         onDispose { context.unregisterReceiver(receiver) }
     }
 
-    val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { 2 })
-    val selectedTab = pagerState.currentPage
-    val pagerScope = rememberCoroutineScope()
+    var selectedTab by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
     var showProcessPicker by remember { mutableStateOf(false) }
     var showRecordSheet by remember { mutableStateOf(false) }
@@ -399,7 +396,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.background,
             ) {
-                Tab(selected = selectedTab == 0, onClick = { pagerScope.launch { pagerState.animateScrollToPage(0) } }) {
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
                     Row(
                         Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -416,7 +413,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         }
                     }
                 }
-                Tab(selected = selectedTab == 1, onClick = { pagerScope.launch { pagerState.animateScrollToPage(1) } }) {
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
                     Text("Process", Modifier.padding(12.dp))
                 }
             }
@@ -471,10 +468,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         )
                     }
                 } else {
-                androidx.compose.foundation.pager.HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.fillMaxSize(),
-                ) { page -> when (page) {
+                when (selectedTab) {
                     0 -> ProcStateTab(
                         snapshots = sortedSnapshots,
                         pinnedProcesses = pinnedProcesses,
@@ -518,7 +512,6 @@ private fun ProcStateApp(vm: MainViewModel) {
                             onDismissPicker = { showProcessPicker = false },
                         )
                     }
-                }
                 }
                 } // else (has data)
 
