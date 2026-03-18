@@ -778,15 +778,15 @@ private fun ProcessPickerSheet(
                 if (sortBy == "name") sortAscending = !sortAscending
                 else { onSortChange("name"); sortAscending = true }
             }
-            PickerColumnHeader("Restarts", "starts", sortBy, sortAscending, Modifier.width(colWidth)) {
+            PickerColumnHeader("Starts", "starts", sortBy, sortAscending, Modifier.width(colWidth)) {
                 if (sortBy == "starts") sortAscending = !sortAscending
                 else { onSortChange("starts"); sortAscending = false }
             }
-            PickerColumnHeader("State \u0394", "transitions", sortBy, sortAscending, Modifier.width(colWidth)) {
+            PickerColumnHeader("States", "transitions", sortBy, sortAscending, Modifier.width(colWidth)) {
                 if (sortBy == "transitions") sortAscending = !sortAscending
                 else { onSortChange("transitions"); sortAscending = false }
             }
-            PickerColumnHeader("Freeze \u0394", "frozen", sortBy, sortAscending, Modifier.width(colWidth)) {
+            PickerColumnHeader("Freezes", "frozen", sortBy, sortAscending, Modifier.width(colWidth)) {
                 if (sortBy == "frozen") sortAscending = !sortAscending
                 else { onSortChange("frozen"); sortAscending = false }
             }

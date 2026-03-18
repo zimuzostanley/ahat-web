@@ -32,6 +32,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -233,6 +234,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     } else {
                         IconButton(onClick = { showRecordSheet = true }) {
                             Icon(Icons.Default.FiberManualRecord, "Record",
+                                modifier = Modifier.size(20.dp),
                                 tint = MaterialTheme.colorScheme.error)
                         }
                     }
@@ -249,6 +251,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                 ),
+                windowInsets = WindowInsets(0.dp),
             )
         },
         bottomBar = {
