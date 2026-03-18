@@ -401,20 +401,11 @@ private fun ProcStateApp(vm: MainViewModel) {
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         ) {
             val activity = LocalContext.current as MainActivity
-            // Poll ExportService.running every 500ms for reactive button state
-            var isExporting by remember { mutableStateOf(com.procstate.monitor.service.ExportService.running) }
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-                while (true) {
-                    isExporting = com.procstate.monitor.service.ExportService.running
-                    kotlinx.coroutines.delay(500)
-                }
-            }
             val autoMemDump by vm.autoMemoryDump.collectAsState()
             val exportRange by vm.exportRange.collectAsState()
             SettingsSheet(
                 themeMode = themeMode,
                 snapshotCount = snapshotCount,
-                isExporting = isExporting,
                 autoMemoryDump = autoMemDump,
                 exportRange = exportRange,
                 onSetAutoMemoryDump = vm::setAutoMemoryDump,
@@ -425,6 +416,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     activity.pendingExportRange = rangeMs
                     val filename = "procstate_${System.currentTimeMillis()}.json"
                     activity.exportFileLauncher.launch(filename)
+                    android.widget.Toast.makeText(activity, "Exporting\u2026 check notification for progress", android.widget.Toast.LENGTH_SHORT).show()
                 },
                 onExportRangeChange = vm::setExportRange,
                 onDismiss = { showSettings = false },

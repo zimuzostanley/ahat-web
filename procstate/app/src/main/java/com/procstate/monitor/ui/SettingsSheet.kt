@@ -13,7 +13,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -22,13 +21,10 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.procstate.monitor.service.ExportService
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -38,7 +34,6 @@ import com.procstate.monitor.ui.theme.ThemeMode
 fun SettingsSheet(
     themeMode: ThemeMode,
     snapshotCount: Int,
-    isExporting: Boolean,
     autoMemoryDump: Boolean,
     exportRange: Long,
     onSetAutoMemoryDump: (Boolean) -> Unit,
@@ -151,31 +146,12 @@ fun SettingsSheet(
         }
         Spacer(Modifier.height(8.dp))
 
-        // Poll export progress from FGS
-        var exportProgress by remember { mutableStateOf<String?>(null) }
-        LaunchedEffect(isExporting) {
-            if (isExporting) {
-                while (true) {
-                    exportProgress = ExportService.progressText
-                    delay(500)
-                }
-            } else {
-                exportProgress = null
-            }
-        }
-
         OutlinedButton(
             onClick = { onExport(exportRange) },
-            enabled = hasData && !isExporting,
+            enabled = hasData,
             modifier = Modifier.fillMaxWidth(),
         ) {
-            if (isExporting) {
-                CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.size(8.dp))
-                Text(exportProgress ?: "Exporting\u2026")
-            } else {
-                Text("Export to Perfetto")
-            }
+            Text("Export to Perfetto")
         }
 
         Spacer(Modifier.height(16.dp))
