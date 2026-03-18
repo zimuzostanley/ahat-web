@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.RadioButtonChecked
 import androidx.compose.material.icons.filled.FilterList
@@ -278,11 +279,18 @@ private fun ProcStateApp(vm: MainViewModel) {
                         DropdownMenu(
                             expanded = showTimeDropdown,
                             onDismissRequest = { showTimeDropdown = false },
-                            offset = androidx.compose.ui.unit.DpOffset(0.dp, 0.dp),
                         ) {
                             for (range in TimeRange.entries) {
                                 DropdownMenuItem(
-                                    text = { Text(range.label) },
+                                    text = {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (timeRange == range) {
+                                                Icon(Icons.Default.Check, null, Modifier.size(16.dp))
+                                                Spacer(Modifier.width(8.dp))
+                                            }
+                                            Text(range.label)
+                                        }
+                                    },
                                     onClick = { vm.setTimeRange(range); showTimeDropdown = false },
                                 )
                             }
