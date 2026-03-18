@@ -317,6 +317,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         onLoadEntries = vm::getSnapshotEntries,
                         isRefreshing = isRefreshing,
                         getAppLabel = vm::getAppLabel,
+                        hasData = snapshotTimestamps.isNotEmpty(),
                     )
                     1 -> {
                         val memDumpProgress by vm.memoryDumpProgress.collectAsState()

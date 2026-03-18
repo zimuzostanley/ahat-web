@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,8 +81,16 @@ fun ProcStateTab(
     onLoadEntries: suspend (Long) -> List<ProcessEntryEntity>,
     isRefreshing: Boolean = false,
     getAppLabel: (String) -> String = { it.substringAfterLast('.') },
+    hasData: Boolean = false,
 ) {
     if (snapshots.isEmpty()) {
+        if (hasData) {
+            // Data exists but snapshots haven't loaded yet
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+            return
+        }
         // Use LazyColumn so pull-to-refresh overscroll detection works
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
