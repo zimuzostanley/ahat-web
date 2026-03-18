@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -220,7 +221,6 @@ private fun ProcStateApp(vm: MainViewModel) {
                     }
                 },
                 actions = {
-                    // Record / Stop button in top bar
                     if (isCapturing) {
                         IconButton(onClick = vm::stopCapture) {
                             Icon(Icons.Default.Stop, "Stop recording",
@@ -231,119 +231,8 @@ private fun ProcStateApp(vm: MainViewModel) {
                             Icon(Icons.Default.PlayArrow, "Record")
                         }
                     }
-                    // State tab actions
-                    if (selectedTab == 0) {
-                        // Sort button: click cycles asc/desc/timestamp, long-press picks column
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(CircleShape)
-                                .combinedClickable(
-                                    onClick = {
-                                        sortPhase = (sortPhase + 1) % 3
-                                        val colLabel = when (sortColumn) {
-                                            "total" -> "Total"
-                                            "frozen" -> "Frozen"
-                                            else -> ProcStateColors.label(sortColumn)
-                                        }
-                                        val msg = when (sortPhase) {
-                                            1 -> "$colLabel \u2191"
-                                            2 -> "$colLabel \u2193"
-                                            else -> "Timestamp"
-                                        }
-                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                                    },
-                                    onLongClick = { showSortDialog = true },
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                when (sortPhase) {
-                                    1 -> Icons.Default.ArrowUpward
-                                    2 -> Icons.Default.ArrowDownward
-                                    else -> Icons.Default.SwapVert
-                                },
-                                contentDescription = when (sortPhase) {
-                                    1 -> "Ascending"
-                                    2 -> "Descending"
-                                    else -> "Sort"
-                                },
-                                modifier = Modifier.size(20.dp),
-                                tint = if (sortPhase != 0) MaterialTheme.colorScheme.primary
-                                       else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        if (stateFilter != null) {
-                            IconButton(onClick = vm::clearStateFilter) {
-                                Icon(Icons.Default.Close, "Clear state filter",
-                                    modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
-                    // Process tab actions
-                    if (selectedTab == 1) {
-                        if (pinnedProcesses.isNotEmpty()) {
-                            IconButton(onClick = vm::toggleCollapseTimeline) {
-                                Icon(
-                                    if (collapseTimeline) Icons.Default.UnfoldMore
-                                    else Icons.Default.UnfoldLess,
-                                    if (collapseTimeline) "Expand" else "Collapse",
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
-                            if (!isCapturing) {
-                                IconButton(onClick = vm::clearAllPinnedProcesses) {
-                                    Icon(Icons.Default.Close, "Unpin all",
-                                        modifier = Modifier.size(20.dp))
-                                }
-                            }
-                        }
-                        IconButton(onClick = { showProcessPicker = !showProcessPicker }) {
-                            Icon(
-                                if (showProcessPicker) Icons.Default.Close else Icons.Default.Add,
-                                "Add process",
-                            )
-                        }
-                        if (!isCapturing) {
-                            IconButton(onClick = { showHelpDialog = true }) {
-                                Icon(Icons.Default.Info, "Dot guide",
-                                    modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
-                    // Settings / overflow
-                    if (isCapturing) {
-                        var showOverflow by remember { mutableStateOf(false) }
-                        Box {
-                            IconButton(onClick = { showOverflow = true }) {
-                                Icon(Icons.Default.MoreVert, "More")
-                            }
-                            DropdownMenu(
-                                expanded = showOverflow,
-                                onDismissRequest = { showOverflow = false },
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Settings") },
-                                    onClick = { showOverflow = false; showSettings = true },
-                                )
-                                if (selectedTab == 1 && pinnedProcesses.isNotEmpty()) {
-                                    DropdownMenuItem(
-                                        text = { Text("Unpin all") },
-                                        onClick = { showOverflow = false; vm.clearAllPinnedProcesses() },
-                                    )
-                                }
-                                if (selectedTab == 1) {
-                                    DropdownMenuItem(
-                                        text = { Text("Dot guide") },
-                                        onClick = { showOverflow = false; showHelpDialog = true },
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        IconButton(onClick = { showSettings = true }) {
-                            Icon(Icons.Default.Settings, "Settings")
-                        }
+                    IconButton(onClick = { showSettings = true }) {
+                        Icon(Icons.Default.Settings, "Settings")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -390,16 +279,6 @@ private fun ProcStateApp(vm: MainViewModel) {
                 }
             }
 
-            // Time range filter
-            TimeRangeSelector(selected = timeRange, onSelect = vm::setTimeRange)
-
-            // Legend
-            ProcStateLegend(
-                visibleStates = visibleStates,
-                stateFilter = stateFilter ?: emptySet(),
-                onTap = { showStateFilterSheet = true },
-            )
-
             // Tabs
             TabRow(
                 selectedTabIndex = selectedTab,
@@ -426,6 +305,144 @@ private fun ProcStateApp(vm: MainViewModel) {
                     Text("By Process", Modifier.padding(12.dp))
                 }
             }
+
+            // Action strip: time range dropdown + contextual actions
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Time range dropdown
+                var showTimeDropdown by remember { mutableStateOf(false) }
+                Box {
+                    FilledTonalButton(
+                        onClick = { showTimeDropdown = true },
+                        modifier = Modifier.height(32.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                    ) {
+                        Text(timeRange.label, style = MaterialTheme.typography.labelSmall)
+                        Spacer(Modifier.width(2.dp))
+                        Icon(Icons.Default.KeyboardArrowDown, null, Modifier.size(16.dp))
+                    }
+                    DropdownMenu(
+                        expanded = showTimeDropdown,
+                        onDismissRequest = { showTimeDropdown = false },
+                    ) {
+                        for (range in TimeRange.entries) {
+                            DropdownMenuItem(
+                                text = { Text(range.label) },
+                                onClick = { vm.setTimeRange(range); showTimeDropdown = false },
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.width(4.dp))
+
+                // Tab-specific actions
+                if (selectedTab == 0) {
+                    // Sort button
+                    Box(
+                        modifier = Modifier
+                            .height(32.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .combinedClickable(
+                                onClick = {
+                                    sortPhase = (sortPhase + 1) % 3
+                                    val colLabel = when (sortColumn) {
+                                        "total" -> "Total"
+                                        "frozen" -> "Frozen"
+                                        else -> ProcStateColors.label(sortColumn)
+                                    }
+                                    val msg = when (sortPhase) {
+                                        1 -> "$colLabel \u2191"
+                                        2 -> "$colLabel \u2193"
+                                        else -> "Timestamp"
+                                    }
+                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                onLongClick = { showSortDialog = true },
+                            )
+                            .background(
+                                if (sortPhase != 0) MaterialTheme.colorScheme.primaryContainer
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            )
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                when (sortPhase) {
+                                    1 -> Icons.Default.ArrowUpward
+                                    2 -> Icons.Default.ArrowDownward
+                                    else -> Icons.Default.SwapVert
+                                },
+                                null,
+                                modifier = Modifier.size(14.dp),
+                                tint = if (sortPhase != 0) MaterialTheme.colorScheme.onPrimaryContainer
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                if (sortPhase != 0) when (sortColumn) {
+                                    "total" -> "Total"
+                                    "frozen" -> "Frozen"
+                                    else -> ProcStateColors.label(sortColumn)
+                                } else "Sort",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (sortPhase != 0) MaterialTheme.colorScheme.onPrimaryContainer
+                                       else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                    if (stateFilter != null) {
+                        Spacer(Modifier.width(4.dp))
+                        FilledTonalButton(
+                            onClick = vm::clearStateFilter,
+                            modifier = Modifier.height(32.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp),
+                        ) {
+                            Icon(Icons.Default.Close, null, Modifier.size(14.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Filter", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                } else {
+                    // By Process actions
+                    if (pinnedProcesses.isNotEmpty()) {
+                        ActionChip(
+                            icon = if (collapseTimeline) Icons.Default.UnfoldMore else Icons.Default.UnfoldLess,
+                            label = if (collapseTimeline) "Expand" else "Collapse",
+                            onClick = vm::toggleCollapseTimeline,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        ActionChip(
+                            icon = Icons.Default.Close,
+                            label = "Unpin",
+                            onClick = vm::clearAllPinnedProcesses,
+                        )
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    ActionChip(
+                        icon = if (showProcessPicker) Icons.Default.Close else Icons.Default.Add,
+                        label = if (showProcessPicker) "Close" else "Add",
+                        onClick = { showProcessPicker = !showProcessPicker },
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    ActionChip(
+                        icon = Icons.Default.Info,
+                        label = "Guide",
+                        onClick = { showHelpDialog = true },
+                    )
+                }
+            }
+
+            // Legend / state filter
+            ProcStateLegend(
+                visibleStates = visibleStates,
+                stateFilter = stateFilter ?: emptySet(),
+                onTap = { showStateFilterSheet = true },
+            )
 
             // Pull-to-refresh wraps tab content
             val pullState = rememberPullRefreshState(isRefreshing, vm::pullToRefresh)
@@ -828,26 +845,6 @@ private fun PulsingDot() {
     )
 }
 
-// ── Time range chips ────────────────────────────────────────────────────────
-
-@Composable
-private fun TimeRangeSelector(selected: TimeRange, onSelect: (TimeRange) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        for (range in TimeRange.entries) {
-            FilterChip(
-                selected = selected == range,
-                onClick = { onSelect(range) },
-                label = { Text(range.label, style = MaterialTheme.typography.labelSmall) },
-            )
-        }
-    }
-}
 
 // ── State filter sheet ──────────────────────────────────────────────────────
 
@@ -983,6 +980,31 @@ private fun HelpRow(symbol: String, name: String, description: String) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun ActionChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .height(32.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, modifier = Modifier.size(14.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(4.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
