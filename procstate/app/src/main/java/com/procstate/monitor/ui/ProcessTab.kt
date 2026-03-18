@@ -790,7 +790,13 @@ private fun ProcessPickerSheet(
                 if (sortBy == "frozen") sortAscending = !sortAscending
                 else { onSortChange("frozen"); sortAscending = false }
             }
-            Spacer(Modifier.width(18.dp)) // space for + icon
+            Text(
+                "Pin",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.width(28.dp),
+                textAlign = TextAlign.Center,
+            )
         }
 
         HorizontalDivider(
