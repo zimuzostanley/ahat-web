@@ -236,6 +236,12 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 tint = MaterialTheme.colorScheme.error)
                         }
                     }
+                    IconButton(onClick = {
+                        if (selectedTab == 0) showColorLegendDialog = true
+                        else showHelpDialog = true
+                    }) {
+                        Icon(Icons.Default.Info, "Guide")
+                    }
                     IconButton(onClick = { showSettings = true }) {
                         Icon(Icons.Default.Settings, "Settings")
                     }
@@ -348,13 +354,6 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                    }
-                    // Info: color legend (tab 0) or shape guide (tab 1)
-                    IconButton(onClick = {
-                        if (selectedTab == 0) showColorLegendDialog = true
-                        else showHelpDialog = true
-                    }) {
-                        Icon(Icons.Default.Info, "Guide")
                     }
                 }
         },
