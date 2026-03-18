@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -648,11 +649,18 @@ private fun ProcessPickerSheet(
     onSelect: (ProcessKey) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
+    var sortBy by remember { mutableStateOf("transitions") }
     val pinnedSet = remember(pinnedKeys) { pinnedKeys.toSet() }
-    val filtered = remember(allKeysWithTransitions, search, pinnedSet) {
+    val filtered = remember(allKeysWithTransitions, search, pinnedSet, sortBy) {
         val available = allKeysWithTransitions.filter { it.key !in pinnedSet }
-        if (search.isBlank()) available
-        else available.filter { search.lowercase() in it.key.name.lowercase() }
+        val searched = if (search.isBlank()) available
+            else available.filter { search.lowercase() in it.key.name.lowercase() }
+        when (sortBy) {
+            "name" -> searched.sortedBy { it.key.name.lowercase() }
+            "starts" -> searched.sortedByDescending { it.starts }
+            "frozen" -> searched.sortedByDescending { it.frozenCount }
+            else -> searched.sortedByDescending { it.transitions }
+        }
     }
 
     Column(
@@ -673,11 +681,24 @@ private fun ProcessPickerSheet(
             }
         }
         Spacer(Modifier.height(4.dp))
-        Text(
-            "Sorted by state transitions",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        // Sort chips
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            for ((key, label) in listOf(
+                "transitions" to "Transitions",
+                "starts" to "Starts",
+                "frozen" to "Frozen",
+                "name" to "Name",
+            )) {
+                FilterChip(
+                    selected = sortBy == key,
+                    onClick = { sortBy = key },
+                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                )
+            }
+        }
         Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
@@ -733,6 +754,13 @@ private fun ProcessPickerSheet(
                             if (item.starts > 0) {
                                 Text(
                                     "${item.starts} starts",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (item.frozenCount > 0) {
+                                Text(
+                                    "${item.frozenCount} frozen",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -907,47 +935,29 @@ fun ProcessDetailSheet(
 
                 // Restarts
                 if (detail.restartCount > 0) {
-                    Spacer(Modifier.height(4.dp))
+                    val pct = (detail.restartCount * 100f / total).let { "%.0f".format(it) }
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            "Process starts",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            "${detail.restartCount}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Text("Starts", style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f))
+                        Text("${detail.restartCount} ($pct%)", style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
 
                 // Frozen count
                 if (detail.frozenCount > 0) {
-                    Spacer(Modifier.height(4.dp))
+                    val pct = (detail.frozenCount * 100f / total).let { "%.0f".format(it) }
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 2.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            "Frozen",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            "${detail.frozenCount}/$total",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Text("Frozen", style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.weight(1f))
+                        Text("${detail.frozenCount} ($pct%)", style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
