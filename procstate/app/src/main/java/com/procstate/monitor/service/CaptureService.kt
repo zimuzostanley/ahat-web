@@ -1,5 +1,6 @@
 package com.procstate.monitor.service
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -98,13 +99,23 @@ class CaptureService : Service() {
         }
 
         running = true
-        val dao = AppDatabase.get(this).snapshotDao()
-        val startTimeMs = System.currentTimeMillis()
+
+        // Schedule exact alarm to stop service at wall-clock deadline
+        // This wakes the device from suspend so the stop happens on time
         val stopAtMs = if (stopAfterMinutes > 0) {
-            startTimeMs + stopAfterMinutes.toLong() * 60 * 1000
+            System.currentTimeMillis() + stopAfterMinutes.toLong() * 60 * 1000
         } else {
             Long.MAX_VALUE
         }
+        if (stopAfterMinutes > 0) {
+            val am = getSystemService(ALARM_SERVICE) as AlarmManager
+            val stopIntent = Intent(this, CaptureService::class.java).apply { action = ACTION_STOP }
+            val stopPi = PendingIntent.getService(this, 1, stopIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, stopAtMs, stopPi)
+        }
+
+        val dao = AppDatabase.get(this).snapshotDao()
 
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         serviceScope = scope
@@ -182,6 +193,14 @@ class CaptureService : Service() {
         running = false
         serviceScope?.cancel()
         serviceScope = null
+        // Cancel stop alarm if set
+        val stopIntent = Intent(this, CaptureService::class.java).apply { action = ACTION_STOP }
+        val stopPi = PendingIntent.getService(this, 1, stopIntent,
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
+        if (stopPi != null) {
+            (getSystemService(ALARM_SERVICE) as AlarmManager).cancel(stopPi)
+            stopPi.cancel()
+        }
         wakeLock?.let { if (it.isHeld) it.release() }
         wakeLock = null
         sendBroadcast(Intent(ACTION_SNAPSHOT_SAVED))
