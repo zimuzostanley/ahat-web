@@ -85,15 +85,17 @@ interface SnapshotDao {
     @Query("SELECT timestamp FROM snapshots WHERE timestamp >= :start ORDER BY timestamp")
     suspend fun getAllTimestampsForExport(start: Long): List<Long>
 
-    /** All entries in range for transition counting (lightweight: just name, uid, pid, procState, timestamp). */
+    /** Lightweight rows for transition counting — minimal fields, pre-sorted. */
+    data class TransitionRow(val name: String, val uid: String, val pid: Int, val procState: String, val frozen: Boolean)
+
     @Query("""
-        SELECT s.timestamp, 0 as snapshotId, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
-        FROM snapshots s
-        JOIN process_entries pe ON s.id = pe.snapshotId
+        SELECT pe.name, pe.uid, pe.pid, pe.procState, pe.frozen
+        FROM process_entries pe
+        JOIN snapshots s ON s.id = pe.snapshotId
         WHERE s.timestamp >= :start
         ORDER BY pe.name, pe.uid, s.timestamp
     """)
-    fun getAllEntriesInRange(start: Long): Flow<List<ProcessTimelineRow>>
+    fun getTransitionRows(start: Long): Flow<List<TransitionRow>>
 
     @Query("SELECT COUNT(*) FROM snapshots")
     fun getSnapshotCount(): Flow<Int>

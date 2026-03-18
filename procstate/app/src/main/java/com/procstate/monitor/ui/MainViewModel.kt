@@ -31,6 +31,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
@@ -425,25 +426,56 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .flatMapLatest { start -> dao.getSnapshotTimestamps(start) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** All distinct process keys for the picker. */
-    /** All process keys with transition counts, sorted by transitions descending. */
+    /** All process keys with transition counts, computed on IO thread. */
     val allProcessKeysWithTransitions: StateFlow<List<ProcessKeyWithTransitions>> =
         combine(_timeRange, _ticker) { range, tick -> tick - range.millis }
-            .flatMapLatest { start -> dao.getAllEntriesInRange(start) }
+            .flatMapLatest { start -> dao.getTransitionRows(start) }
             .map { rows ->
-                rows.groupBy { ProcessKey(it.name, it.uid) }.map { (key, entries) ->
-                    val sorted = entries.sortedBy { it.timestamp }
-                    var transitions = 0
-                    var starts = 0
-                    var frozenTransitions = 0
-                    for (i in 1 until sorted.size) {
-                        if (sorted[i].procState != sorted[i - 1].procState) transitions++
-                        if (sorted[i].frozen != sorted[i - 1].frozen) frozenTransitions++
-                        if (sorted[i].pid != sorted[i - 1].pid && sorted[i].pid != 0 && sorted[i - 1].pid != 0) starts++
+                // rows are pre-sorted by name, uid, timestamp from SQL
+                // Single pass: detect transitions by comparing consecutive rows for same process
+                val result = mutableListOf<ProcessKeyWithTransitions>()
+                var curName = ""
+                var curUid = ""
+                var prevState = ""
+                var prevFrozen = false
+                var prevPid = 0
+                var transitions = 0
+                var starts = 0
+                var frozenTransitions = 0
+
+                fun flush() {
+                    if (curName.isNotEmpty()) {
+                        result.add(ProcessKeyWithTransitions(
+                            ProcessKey(curName, curUid), transitions, starts, frozenTransitions,
+                        ))
                     }
-                    ProcessKeyWithTransitions(key, transitions, starts, frozenTransitions)
-                }.sortedByDescending { it.transitions }
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+                }
+
+                for (row in rows) {
+                    if (row.name != curName || row.uid != curUid) {
+                        flush()
+                        curName = row.name
+                        curUid = row.uid
+                        prevState = row.procState
+                        prevFrozen = row.frozen
+                        prevPid = row.pid
+                        transitions = 0
+                        starts = 0
+                        frozenTransitions = 0
+                    } else {
+                        if (row.procState != prevState) transitions++
+                        if (row.frozen != prevFrozen) frozenTransitions++
+                        if (row.pid != prevPid && row.pid != 0 && prevPid != 0) starts++
+                        prevState = row.procState
+                        prevFrozen = row.frozen
+                        prevPid = row.pid
+                    }
+                }
+                flush()
+                result.sortedByDescending { it.transitions }
+            }
+            .flowOn(Dispatchers.IO)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Just the keys (for backward compat). */
     val allProcessKeys: StateFlow<List<ProcessKey>> =
