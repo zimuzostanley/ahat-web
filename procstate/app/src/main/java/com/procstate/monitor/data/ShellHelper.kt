@@ -308,7 +308,15 @@ object ShellHelper {
     fun getMemInfo(pid: Int): MemInfo {
         // Use execRaw directly — DUMP permission is sufficient, and su wrapping
         // can alter the output format (e.g. stripping App Summary section)
-        val output = execRaw("sh", "-c", "dumpsys meminfo $pid")
+        Log.d("zim", "getMemInfo: starting for PID $pid")
+        val output = try {
+            execRaw("sh", "-c", "dumpsys meminfo $pid")
+        } catch (e: Exception) {
+            Log.e("zim", "getMemInfo execRaw failed: ${e.message}")
+            // Fallback to exec() which uses su if available
+            exec("dumpsys meminfo $pid")
+        }
+        Log.d("zim", "getMemInfo: output length=${output.length}, has Graphics=${"Graphics" in output}")
         val info = parseMemInfoOutput(output)
         Log.d(TAG, "MemInfo PID $pid: PSS=${info.totalPssKb} RSS=${info.totalRssKb} " +
             "Java=${info.javaHeapKb} Native=${info.nativeHeapKb} " +
