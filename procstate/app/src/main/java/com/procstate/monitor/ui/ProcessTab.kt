@@ -692,7 +692,12 @@ private fun ProcessPickerSheet(
             }
         }
         Spacer(Modifier.height(4.dp))
-        // Sort chips
+        Text(
+            "Sort by",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(4.dp))
         Row(
             Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
