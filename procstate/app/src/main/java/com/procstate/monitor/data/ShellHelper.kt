@@ -211,7 +211,7 @@ object ShellHelper {
                 if (pidStr.isEmpty()) continue
                 val pid = pidStr.split(Regex("\\s+"))[0].toInt()
                 if (pid !in pids) {
-                    list.add(0, ProcessEntry(pid, name, "System", "1000"))
+                    list.add(0, ProcessEntry(pid, name, "sys", "1000"))
                     Log.d(TAG, "Pinned: $name PID $pid")
                 }
             } catch (e: Exception) {

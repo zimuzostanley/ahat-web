@@ -96,7 +96,7 @@ object ProcStateColors {
 
     private val fallback = DualColor(Color(0xFF636363), Color(0xFF969696))
 
-    private val seenStates = java.util.Collections.synchronizedSet(mutableSetOf<String>())
+    private val seenStates = java.util.concurrent.CopyOnWriteArraySet<String>()
 
     /** All states seen so far. */
     val order: List<String> get() = seenStates.toList()

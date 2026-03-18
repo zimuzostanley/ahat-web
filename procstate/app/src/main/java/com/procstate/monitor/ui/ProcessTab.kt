@@ -344,7 +344,6 @@ fun ProcessTab(
 
         val listState = timelineListState
         val scope = coroutineScope
-        val totalItems = timelineByTimestamp.size
         val showFab by remember {
             androidx.compose.runtime.derivedStateOf { listState.firstVisibleItemIndex > 3 }
         }
@@ -577,7 +576,6 @@ private fun TimelineRow(
                                     CircleShape,
                                 )
                                 .clickable {
-                                    val fullTimeStr = formatTimestampFull(timestamp)
                                     val ts = formatTimestampFull(timestamp)
                                     onShowDetail(DotDetail(
                                         name = key.name,

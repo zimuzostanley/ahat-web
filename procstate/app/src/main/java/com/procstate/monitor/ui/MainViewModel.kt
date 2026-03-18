@@ -84,7 +84,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── App label cache ────────────────────────────────────────────────────
 
-    private val appLabelCache = mutableMapOf<String, String>()
+    private val appLabelCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     // ── Auto memory dump ──────────────────────────────────────────────────
 
