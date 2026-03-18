@@ -7,7 +7,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import com.procstate.monitor.ui.theme.LocalIsDarkTheme
@@ -112,11 +114,14 @@ fun ProcStateTab(
         return
     }
 
+    val context = LocalContext.current
     val expandedSnapshots = remember { mutableStateMapOf<Long, List<ProcessEntryEntity>>() }
     val expandedStates = remember { mutableStateMapOf<Long, String>() }
     val scope = rememberCoroutineScope()
     val isDark = LocalIsDarkTheme.current
     var processDetail by remember { mutableStateOf<DotDetail?>(null) }
+    // Long-press timestamp for time diff measurement
+    var diffAnchorMs by remember { mutableStateOf<Long?>(null) }
 
     // Process detail drawer
     processDetail?.let { detail ->
@@ -154,6 +159,23 @@ fun ProcStateTab(
                 snapshot = snapshot,
                 isExpanded = isExpanded,
                 isDark = isDark,
+                diffAnchorMs = diffAnchorMs,
+                onTimestampTap = { ms ->
+                    val anchor = diffAnchorMs
+                    if (anchor != null) {
+                        // Second tap: show diff and clear
+                        val diffMs = kotlin.math.abs(ms - anchor)
+                        Toast.makeText(context, formatTimeDiff(diffMs), Toast.LENGTH_SHORT).show()
+                        diffAnchorMs = null
+                    } else {
+                        // Normal tap: show full date
+                        Toast.makeText(context, formatTimestampFull(ms), Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onTimestampLongPress = { ms ->
+                    diffAnchorMs = ms
+                    Toast.makeText(context, "Anchor set. Tap another timestamp for diff.", Toast.LENGTH_SHORT).show()
+                },
                 onClick = {
                     if (isExpanded) {
                         expandedSnapshots.remove(snapshot.id)
@@ -222,16 +244,19 @@ fun ProcStateTab(
 
 // ── Snapshot row with stacked bar ───────────────────────────────────────────
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SnapshotRow(
     snapshot: SnapshotWithCounts,
     isExpanded: Boolean,
     isDark: Boolean,
+    diffAnchorMs: Long?,
+    onTimestampTap: (Long) -> Unit,
+    onTimestampLongPress: (Long) -> Unit,
     onClick: () -> Unit,
 ) {
     val timeStr = remember(snapshot.timestamp) { formatTimestamp(snapshot.timestamp) }
-    val fullTimeStr = remember(snapshot.timestamp) { formatTimestampFull(snapshot.timestamp) }
-    val context = LocalContext.current
+    val isAnchor = diffAnchorMs == snapshot.timestamp
 
     Column(
         modifier = Modifier
@@ -248,10 +273,14 @@ private fun SnapshotRow(
             Text(
                 timeStr,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.clickable {
-                    Toast.makeText(context, fullTimeStr, Toast.LENGTH_SHORT).show()
-                },
+                color = if (isAnchor) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = if (isAnchor) FontWeight.Bold else null,
+                modifier = Modifier
+                    .combinedClickable(
+                        onClick = { onTimestampTap(snapshot.timestamp) },
+                        onLongClick = { onTimestampLongPress(snapshot.timestamp) },
+                    ),
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -713,3 +742,16 @@ fun formatTimestamp(millis: Long): String {
 
 fun formatTimestampFull(millis: Long): String =
     fullDateTimeFormat.get()!!.format(Date(millis))
+
+fun formatTimeDiff(ms: Long): String {
+    val sec = ms / 1000
+    val min = sec / 60
+    val hr = min / 60
+    val day = hr / 24
+    return when {
+        day > 0 -> "${day}d ${hr % 24}h ${min % 60}m"
+        hr > 0 -> "${hr}h ${min % 60}m ${sec % 60}s"
+        min > 0 -> "${min}m ${sec % 60}s"
+        else -> "${sec}s"
+    }
+}
