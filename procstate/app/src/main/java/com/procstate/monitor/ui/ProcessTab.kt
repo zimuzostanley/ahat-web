@@ -692,7 +692,7 @@ private fun ProcessPickerSheet(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             for ((key, label) in listOf(
-                "transitions" to "Transitions",
+                "transitions" to "States",
                 "starts" to "Starts",
                 "frozen" to "Frozen",
                 "name" to "Name",
@@ -751,7 +751,7 @@ private fun ProcessPickerSheet(
                             }
                             if (item.transitions > 0) {
                                 Text(
-                                    "${item.transitions} transitions",
+                                    "${item.transitions} states",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.primary,
                                 )

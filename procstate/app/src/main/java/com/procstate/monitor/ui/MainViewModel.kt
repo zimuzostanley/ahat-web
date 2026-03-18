@@ -434,13 +434,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     val sorted = entries.sortedBy { it.timestamp }
                     var transitions = 0
                     var starts = 0
-                    var frozen = 0
+                    var frozenTransitions = 0
                     for (i in 1 until sorted.size) {
                         if (sorted[i].procState != sorted[i - 1].procState) transitions++
+                        if (sorted[i].frozen != sorted[i - 1].frozen) frozenTransitions++
                         if (sorted[i].pid != sorted[i - 1].pid && sorted[i].pid != 0 && sorted[i - 1].pid != 0) starts++
                     }
-                    frozen = sorted.count { it.frozen }
-                    ProcessKeyWithTransitions(key, transitions, starts, frozen)
+                    ProcessKeyWithTransitions(key, transitions, starts, frozenTransitions)
                 }.sortedByDescending { it.transitions }
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
