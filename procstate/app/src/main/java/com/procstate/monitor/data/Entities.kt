@@ -6,7 +6,10 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "snapshots")
+@Entity(
+    tableName = "snapshots",
+    indices = [Index("timestamp")],
+)
 data class SnapshotEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val timestamp: Long,
