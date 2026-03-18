@@ -28,11 +28,13 @@ data class SnapshotEntity(
         Index("name"),
         Index("name", "uid"),
         Index("snapshotId", "procState", "name"),
+        Index("timestamp", "name", "uid"),
     ],
 )
 data class ProcessEntryEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val snapshotId: Long,
+    val timestamp: Long = 0,
     val pid: Int,
     val name: String,
     val uid: String = "",

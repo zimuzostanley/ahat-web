@@ -18,7 +18,7 @@ interface SnapshotDao {
     @Transaction
     suspend fun insertSnapshotWithEntries(snapshot: SnapshotEntity, entries: List<ProcessEntryEntity>): Long {
         val id = insertSnapshot(snapshot)
-        val withId = entries.map { it.copy(snapshotId = id) }
+        val withId = entries.map { it.copy(snapshotId = id, timestamp = snapshot.timestamp) }
         insertEntries(withId)
         return id
     }
@@ -74,11 +74,10 @@ interface SnapshotDao {
     fun getSnapshotTimestamps(start: Long): Flow<List<Long>>
 
     @Query("""
-        SELECT s.timestamp, 0 as snapshotId, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
-        FROM snapshots s
-        JOIN process_entries pe ON s.id = pe.snapshotId
-        WHERE s.timestamp >= :start
-        ORDER BY pe.name, pe.uid, s.timestamp
+        SELECT timestamp, 0 as snapshotId, name, pid, uid, procState, frozen
+        FROM process_entries
+        WHERE timestamp >= :start
+        ORDER BY name, uid, timestamp
     """)
     suspend fun getAllEntriesForExport(start: Long): List<ProcessTimelineRow>
 
@@ -89,11 +88,10 @@ interface SnapshotDao {
     data class TransitionRow(val name: String, val uid: String, val pid: Int, val procState: String, val frozen: Boolean)
 
     @Query("""
-        SELECT pe.name, pe.uid, pe.pid, pe.procState, pe.frozen
-        FROM process_entries pe
-        JOIN snapshots s ON s.id = pe.snapshotId
-        WHERE s.timestamp >= :start
-        ORDER BY pe.name, pe.uid, s.timestamp
+        SELECT name, uid, pid, procState, frozen
+        FROM process_entries
+        WHERE timestamp >= :start
+        ORDER BY name, uid, timestamp
     """)
     fun getTransitionRows(start: Long): Flow<List<TransitionRow>>
 
