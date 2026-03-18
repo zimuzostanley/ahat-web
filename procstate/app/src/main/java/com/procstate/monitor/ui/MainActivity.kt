@@ -322,6 +322,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         val memDumpProgress by vm.memoryDumpProgress.collectAsState()
                         val memEnrichedDots by vm.memoryEnrichedDots.collectAsState()
                         ProcessTab(
+                            isRefreshing = isRefreshing,
                             getAppLabel = vm::getAppLabel,
                             onDumpMemory = { pid, name, uid, onDone ->
                                 vm.dumpMemory(pid, name, uid, onDone)

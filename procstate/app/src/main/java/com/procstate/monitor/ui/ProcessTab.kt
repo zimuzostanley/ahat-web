@@ -129,6 +129,7 @@ fun ProcessTab(
     allProcessKeysWithTransitions: List<ProcessKeyWithTransitions> = emptyList(),
     pickerSort: String = "transitions",
     onPickerSortChange: (String) -> Unit = {},
+    isRefreshing: Boolean = false,
     pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
     allSnapshotTimestamps: List<Long>,
@@ -144,6 +145,11 @@ fun ProcessTab(
     var dotDetail by remember { mutableStateOf<DotDetail?>(null) }
     val timelineListState = androidx.compose.foundation.lazy.rememberLazyListState()
     val coroutineScope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // Scroll to top after pull-to-refresh
+    androidx.compose.runtime.LaunchedEffect(isRefreshing) {
+        if (!isRefreshing) timelineListState.animateScrollToItem(0)
+    }
     var diffAnchorMs by remember { mutableStateOf<Long?>(null) }
     // Track which dot is selected (name, timestamp, pid) for enlarged state
     var selectedDotId by remember { mutableStateOf<Triple<String, Long, Int>?>(null) }
