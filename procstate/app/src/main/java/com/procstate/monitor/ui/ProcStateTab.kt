@@ -85,6 +85,7 @@ fun ProcStateTab(
     hasStateFilter: Boolean = false,
     visibleStates: Set<String> = emptySet(),
     stateFilter: Set<String> = emptySet(),
+    onSetStateFilter: (Set<String>) -> Unit = {},
     onOpenFilterSheet: () -> Unit = {},
 ) {
     if (snapshots.isEmpty()) {
@@ -164,11 +165,17 @@ fun ProcStateTab(
     }
 
     Column(Modifier.fillMaxSize()) {
-    // Fixed legend row
-    if (visibleStates.isNotEmpty()) {
-        ProcStateLegend(
-            visibleStates = visibleStates,
-            stateFilter = stateFilter,
+    // State filter chips (like pinned process chips in Process tab)
+    if (stateFilter.isNotEmpty()) {
+        StateFilterChips(
+            states = stateFilter,
+            isDark = isDark,
+            onRemoveState = { state ->
+                // Remove this state from the filter
+                val next = stateFilter - state
+                if (next.isEmpty()) onOpenFilterSheet() // if last one removed, open sheet
+                else onSetStateFilter(next)
+            },
             onTap = onOpenFilterSheet,
         )
     }
@@ -811,5 +818,49 @@ fun formatTimeDiff(ms: Long): String {
         hr > 0 -> "${hr}h ${min % 60}m ${sec % 60}s"
         min > 0 -> "${min}m ${sec % 60}s"
         else -> "${sec}s"
+    }
+}
+
+// ── State filter chips (same styling as ProcessChip in ProcessTab) ───────────
+
+@Composable
+private fun StateFilterChips(
+    states: Set<String>,
+    isDark: Boolean,
+    onRemoveState: (String) -> Unit,
+    onTap: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        for (state in states.sortedBy { ProcStateColors.label(it).lowercase() }) {
+            val color = ProcStateColors.get(state, isDark)
+            Row(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(color.copy(alpha = 0.1f))
+                    .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
+                    .clickable(onClick = onTap)
+                    .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(7.dp).clip(CircleShape).background(color))
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    ProcStateColors.label(state),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = color,
+                    maxLines = 1,
+                )
+                IconButton(onClick = { onRemoveState(state) }, modifier = Modifier.size(18.dp)) {
+                    Icon(Icons.Default.Close, null, Modifier.size(11.dp), tint = color)
+                }
+            }
+        }
     }
 }

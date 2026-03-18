@@ -451,6 +451,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         hasStateFilter = stateFilter != null,
                         visibleStates = visibleStates,
                         stateFilter = stateFilter ?: emptySet(),
+                        onSetStateFilter = { vm.setStateFilter(it) },
                         onOpenFilterSheet = { showStateFilterSheet = true },
                     )
                     1 -> {
