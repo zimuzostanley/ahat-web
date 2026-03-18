@@ -41,6 +41,8 @@ class ExportService : Service() {
 
         @Volatile var running = false
             private set
+        @Volatile var progressText: String? = null
+            private set
     }
 
     private var serviceScope: CoroutineScope? = null
@@ -132,6 +134,7 @@ class ExportService : Service() {
 
     private fun finish() {
         running = false
+        progressText = null
         serviceScope?.cancel()
         serviceScope = null
         sendBroadcast(Intent(ACTION_DONE))
@@ -142,6 +145,7 @@ class ExportService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         running = false
+        progressText = null
         serviceScope?.cancel()
         serviceScope = null
     }
@@ -174,6 +178,7 @@ class ExportService : Service() {
     }
 
     private fun updateNotification(text: String) {
+        progressText = text
         getSystemService(NotificationManager::class.java)
             .notify(NOTIFICATION_ID, buildNotification(text))
     }
