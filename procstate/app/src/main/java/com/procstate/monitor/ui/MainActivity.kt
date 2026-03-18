@@ -213,7 +213,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         }
                     }
                     // State tab: clear filter button
-                    if (selectedTab == 0 && stateFilter.isNotEmpty()) {
+                    if (selectedTab == 0 && stateFilter != null) {
                         IconButton(onClick = vm::clearStateFilter) {
                             Icon(Icons.Default.Close, "Clear state filter",
                                 modifier = Modifier.size(20.dp))
@@ -288,7 +288,7 @@ private fun ProcStateApp(vm: MainViewModel) {
             // Legend
             ProcStateLegend(
                 visibleStates = visibleStates,
-                stateFilter = stateFilter,
+                stateFilter = stateFilter ?: emptySet(),
                 onTap = { showStateFilterSheet = true },
             )
 
@@ -319,7 +319,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         isRefreshing = isRefreshing,
                         getAppLabel = vm::getAppLabel,
                         hasData = snapshotTimestamps.isNotEmpty(),
-                        hasStateFilter = stateFilter.isNotEmpty(),
+                        hasStateFilter = stateFilter != null,
                     )
                     1 -> {
                         val memDumpProgress by vm.memoryDumpProgress.collectAsState()
@@ -622,7 +622,7 @@ private fun TimeRangeSelector(selected: TimeRange, onSelect: (TimeRange) -> Unit
 @Composable
 private fun StateFilterSheet(
     allStates: Set<String>,
-    selectedStates: Set<String>,
+    selectedStates: Set<String>?,
     onChanged: (Set<String>) -> Unit,
     onShowAll: () -> Unit,
 ) {
@@ -638,13 +638,14 @@ private fun StateFilterSheet(
         }
     }
 
-    val isShowAll = selectedStates.isEmpty()
+    // null = show all (no filter active)
+    val isShowAll = selectedStates == null
 
     fun toggle(state: String) {
         if (isShowAll) {
-            // Currently showing all — switching to filter with all except this one
+            // Currently showing all — switch to filter with all except this one
             onChanged(allStates - state)
-        } else if (state in selectedStates) {
+        } else if (state in selectedStates!!) {
             onChanged(selectedStates - state)
         } else {
             onChanged(selectedStates + state)
@@ -694,7 +695,7 @@ private fun StateFilterSheet(
             items(filtered) { state ->
                 val isDark = com.procstate.monitor.ui.theme.LocalIsDarkTheme.current
                 val color = ProcStateColors.get(state, isDark)
-                val checked = isShowAll || state in selectedStates
+                val checked = isShowAll || state in (selectedStates ?: emptySet())
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()

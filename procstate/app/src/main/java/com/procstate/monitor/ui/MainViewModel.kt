@@ -309,13 +309,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     )
     val visibleStates: StateFlow<Set<String>> = _seenStates.asStateFlow()
 
-    /** State filter: empty = show all, non-empty = only these states. */
-    private val _stateFilter = MutableStateFlow<Set<String>>(
-        prefs.getStringSet("state_filter", null) ?: emptySet()
+    /** State filter: null = show all, empty = nothing selected, non-empty = only these states. */
+    private val _stateFilter = MutableStateFlow<Set<String>?>(
+        if (prefs.contains("state_filter")) prefs.getStringSet("state_filter", emptySet()) else null
     )
-    val stateFilter: StateFlow<Set<String>> = _stateFilter.asStateFlow()
+    val stateFilter: StateFlow<Set<String>?> = _stateFilter.asStateFlow()
 
-    val hasStateFilter: Boolean get() = _stateFilter.value.isNotEmpty()
+    val hasStateFilter: Boolean get() = _stateFilter.value != null
 
     /** Persisted sort key for process picker. */
     private val _pickerSort = MutableStateFlow(prefs.getString("picker_sort", "transitions") ?: "transitions")
@@ -330,14 +330,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putStringSet("state_filter", states).apply()
     }
     fun clearStateFilter() {
-        _stateFilter.value = emptySet()
+        _stateFilter.value = null
         prefs.edit().remove("state_filter").apply()
     }
 
     /** Snapshots filtered by selected states (for By State tab only). */
     val filteredSnapshots: StateFlow<List<SnapshotWithCounts>> =
         combine(snapshotsWithCounts, _stateFilter) { snapshots, filter ->
-            if (filter.isEmpty()) snapshots
+            if (filter == null) snapshots
             else snapshots.map { snapshot ->
                 val filtered = snapshot.stateCounts.filter { it.key in filter }
                 snapshot.copy(stateCounts = filtered)
