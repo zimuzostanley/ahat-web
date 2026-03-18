@@ -175,6 +175,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     val timelineRows by vm.processTimeline.collectAsState()
     val snapshotTimestamps by vm.snapshotTimestamps.collectAsState()
     val allProcessKeys by vm.allProcessKeys.collectAsState()
+    val allProcessKeysWithTransitions by vm.allProcessKeysWithTransitions.collectAsState()
     val visibleStates by vm.visibleStates.collectAsState()
     val stateFilter by vm.stateFilter.collectAsState()
     var showStateFilterSheet by remember { mutableStateOf(false) }
@@ -333,6 +334,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                             timelineRows = timelineRows,
                             allSnapshotTimestamps = snapshotTimestamps,
                             allProcessKeys = allProcessKeys,
+                            allProcessKeysWithTransitions = allProcessKeysWithTransitions,
                             onPinProcess = vm::pinProcess,
                             onUnpinProcess = vm::unpinProcess,
                             showPicker = showProcessPicker,

@@ -111,6 +111,14 @@ data class SnapshotWithCounts(
     val totalProcesses: Int get() = stateCounts.values.sum()
 }
 
+/** Process key with transition stats for the picker. */
+data class ProcessKeyWithTransitions(
+    val key: ProcessKey,
+    val transitions: Int,
+    val starts: Int,
+    val frozenCount: Int,
+)
+
 data class MemoryDotKey(
     val timestamp: Long,
     val name: String,

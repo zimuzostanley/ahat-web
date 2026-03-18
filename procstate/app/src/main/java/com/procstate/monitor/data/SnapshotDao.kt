@@ -85,6 +85,16 @@ interface SnapshotDao {
     @Query("SELECT timestamp FROM snapshots WHERE timestamp >= :start ORDER BY timestamp")
     suspend fun getAllTimestampsForExport(start: Long): List<Long>
 
+    /** All entries in range for transition counting (lightweight: just name, uid, pid, procState, timestamp). */
+    @Query("""
+        SELECT s.timestamp, 0 as snapshotId, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
+        FROM snapshots s
+        JOIN process_entries pe ON s.id = pe.snapshotId
+        WHERE s.timestamp >= :start
+        ORDER BY pe.name, pe.uid, s.timestamp
+    """)
+    fun getAllEntriesInRange(start: Long): Flow<List<ProcessTimelineRow>>
+
     @Query("SELECT COUNT(*) FROM snapshots")
     fun getSnapshotCount(): Flow<Int>
 

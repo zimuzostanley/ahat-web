@@ -10,6 +10,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.procstate.monitor.data.AppDatabase
 import com.procstate.monitor.data.MemoryDotKey
+import com.procstate.monitor.data.ProcessKeyWithTransitions
 import com.procstate.monitor.data.MemorySnapshotEntity
 import com.procstate.monitor.data.MemoryStatsAggregate
 import com.procstate.monitor.data.ProcessEntryEntity
@@ -384,10 +385,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** All distinct process keys for the picker. */
+    /** All process keys with transition counts, sorted by transitions descending. */
+    val allProcessKeysWithTransitions: StateFlow<List<ProcessKeyWithTransitions>> =
+        combine(_timeRange, _ticker) { range, tick -> tick - range.millis }
+            .flatMapLatest { start -> dao.getAllEntriesInRange(start) }
+            .map { rows ->
+                rows.groupBy { ProcessKey(it.name, it.uid) }.map { (key, entries) ->
+                    val sorted = entries.sortedBy { it.timestamp }
+                    var transitions = 0
+                    var starts = 0
+                    var frozen = 0
+                    for (i in 1 until sorted.size) {
+                        if (sorted[i].procState != sorted[i - 1].procState) transitions++
+                        if (sorted[i].pid != sorted[i - 1].pid && sorted[i].pid != 0 && sorted[i - 1].pid != 0) starts++
+                    }
+                    frozen = sorted.count { it.frozen }
+                    ProcessKeyWithTransitions(key, transitions, starts, frozen)
+                }.sortedByDescending { it.transitions }
+            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Just the keys (for backward compat). */
     val allProcessKeys: StateFlow<List<ProcessKey>> =
-        dao.getDistinctProcessKeys().map { rows ->
-            rows.map { ProcessKey(it.name, it.uid) }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        allProcessKeysWithTransitions.map { list -> list.map { it.key } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val snapshotCount: StateFlow<Int> =
         dao.getSnapshotCount()

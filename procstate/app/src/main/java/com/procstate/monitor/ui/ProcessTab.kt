@@ -70,6 +70,7 @@ import com.procstate.monitor.data.MemoryDotKey
 import com.procstate.monitor.data.MemorySnapshotEntity
 import com.procstate.monitor.data.MemoryStatsAggregate
 import com.procstate.monitor.data.ProcessKey
+import com.procstate.monitor.data.ProcessKeyWithTransitions
 import com.procstate.monitor.data.ProcessTimelineRow
 import com.procstate.monitor.ui.theme.LocalIsDarkTheme
 import com.procstate.monitor.ui.theme.ProcStateColors
@@ -124,6 +125,7 @@ fun ProcessTab(
     getMemoryStats: (suspend (name: String, uid: String, upToMs: Long) -> MemoryStatsAggregate?)? = null,
     memoryDumpProgress: String? = null,
     memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
+    allProcessKeysWithTransitions: List<ProcessKeyWithTransitions> = emptyList(),
     pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
     allSnapshotTimestamps: List<Long>,
@@ -186,7 +188,7 @@ fun ProcessTab(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
             ProcessPickerSheet(
-                allKeys = allProcessKeys,
+                allKeysWithTransitions = allProcessKeysWithTransitions,
                 pinnedKeys = pinnedProcesses,
                 onSelect = onPinProcess,
             )
@@ -641,16 +643,16 @@ private fun ProcessChip(label: String, key: ProcessKey, color: Color, onRemove: 
 
 @Composable
 private fun ProcessPickerSheet(
-    allKeys: List<ProcessKey>,
+    allKeysWithTransitions: List<ProcessKeyWithTransitions>,
     pinnedKeys: List<ProcessKey>,
     onSelect: (ProcessKey) -> Unit,
 ) {
     var search by remember { mutableStateOf("") }
     val pinnedSet = remember(pinnedKeys) { pinnedKeys.toSet() }
-    val filtered = remember(allKeys, search, pinnedSet) {
-        val available = allKeys.filter { it !in pinnedSet }
+    val filtered = remember(allKeysWithTransitions, search, pinnedSet) {
+        val available = allKeysWithTransitions.filter { it.key !in pinnedSet }
         if (search.isBlank()) available
-        else available.filter { search.lowercase() in it.name.lowercase() }
+        else available.filter { search.lowercase() in it.key.name.lowercase() }
     }
 
     Column(
@@ -664,19 +666,19 @@ private fun ProcessPickerSheet(
             Spacer(Modifier.weight(1f))
             if (filtered.isNotEmpty()) {
                 androidx.compose.material3.TextButton(
-                    onClick = { filtered.forEach { onSelect(it) } },
+                    onClick = { filtered.forEach { onSelect(it.key) } },
                 ) {
                     Text("Pin all ${filtered.size}")
                 }
-            } else {
-                Text(
-                    "0 available",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Sorted by state transitions",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
             value = search,
@@ -697,28 +699,44 @@ private fun ProcessPickerSheet(
             modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            items(filtered) { key ->
+            items(filtered) { item ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(4.dp))
-                        .clickable { onSelect(key) }
+                        .clickable { onSelect(item.key) }
                         .padding(vertical = 8.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            key.name,
+                            item.key.name,
                             style = MaterialTheme.typography.bodyMedium,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        if (key.uid.isNotEmpty()) {
-                            Text(
-                                key.uid,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (item.key.uid.isNotEmpty()) {
+                                Text(
+                                    item.key.uid,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            if (item.transitions > 0) {
+                                Text(
+                                    "${item.transitions} transitions",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            if (item.starts > 0) {
+                                Text(
+                                    "${item.starts} starts",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
                         }
                     }
                     Icon(Icons.Default.Add, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
@@ -728,7 +746,7 @@ private fun ProcessPickerSheet(
 
         if (filtered.isEmpty()) {
             Text(
-                if (allKeys.isEmpty()) "No processes captured yet" else "No processes match your search",
+                if (allKeysWithTransitions.isEmpty()) "No processes captured yet" else "No processes match your search",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(16.dp),
