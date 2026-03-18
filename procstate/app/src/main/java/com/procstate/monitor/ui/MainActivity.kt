@@ -556,49 +556,52 @@ private fun ProcStateApp(vm: MainViewModel) {
                 visibleStates.sortedBy { ProcStateColors.label(it).lowercase() }
                     .map { it to ProcStateColors.label(it) }
         }
-        ModalBottomSheet(
+        androidx.compose.material3.AlertDialog(
             onDismissRequest = { showSortDialog = false },
-            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        ) {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                Text("Sort by", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
+            title = { Text("Sort by") },
+            text = {
                 val isDark = com.procstate.monitor.ui.theme.LocalIsDarkTheme.current
-                for ((key, label) in sortOptions) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(4.dp))
-                            .clickable {
-                                sortColumn = key
-                                showSortDialog = false
-                            }
-                            .padding(vertical = 8.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = sortColumn == key,
-                            onClick = {
-                                sortColumn = key
-                                showSortDialog = false
-                            },
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        if (key != "timestamp" && key != "total" && key != "frozen") {
-                            Box(
-                                Modifier
-                                    .size(10.dp)
-                                    .clip(CircleShape)
-                                    .background(ProcStateColors.get(key, isDark)),
+                LazyColumn {
+                    items(sortOptions) { (key, label) ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(4.dp))
+                                .clickable {
+                                    sortColumn = key
+                                    showSortDialog = false
+                                }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(
+                                selected = sortColumn == key,
+                                onClick = {
+                                    sortColumn = key
+                                    showSortDialog = false
+                                },
                             )
                             Spacer(Modifier.width(8.dp))
+                            if (key != "timestamp" && key != "total" && key != "frozen") {
+                                Box(
+                                    Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(ProcStateColors.get(key, isDark)),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(label, style = MaterialTheme.typography.bodyMedium)
                         }
-                        Text(label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
-                Spacer(Modifier.height(16.dp))
-            }
-        }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showSortDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 
     // Settings bottom sheet
