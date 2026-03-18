@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -231,7 +232,8 @@ private fun ProcStateApp(vm: MainViewModel) {
                         }
                     } else {
                         IconButton(onClick = { showRecordSheet = true }) {
-                            Icon(Icons.Default.PlayArrow, "Record")
+                            Icon(Icons.Default.FiberManualRecord, "Record",
+                                tint = MaterialTheme.colorScheme.error)
                         }
                     }
                     IconButton(onClick = { showSettings = true }) {
