@@ -121,7 +121,7 @@ data class DotDetail(
     val restartCount: Int = 0,
 )
 
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProcessTab(
     getAppLabel: (String) -> String = { it.substringAfterLast('.') },
@@ -390,9 +390,6 @@ fun ProcessTab(
             ) {
                 items(displayRows, key = { it.first }) { (timestamp, stateMap) ->
                     TimelineRow(
-                        modifier = Modifier.animateItemPlacement(
-                            androidx.compose.animation.core.tween(300)
-                        ),
                         timestamp = timestamp,
                         pinnedProcesses = pinnedProcesses,
                         stateMap = stateMap,
@@ -452,7 +449,6 @@ fun ProcessTab(
 
 @Composable
 private fun TimelineRow(
-    modifier: Modifier = Modifier,
     timestamp: Long,
     pinnedProcesses: List<ProcessKey>,
     stateMap: Map<ProcessKey, ProcessDot>,
@@ -469,7 +465,7 @@ private fun TimelineRow(
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
     val isAnchor = diffAnchorMs == timestamp
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         @OptIn(ExperimentalFoundationApi::class)
