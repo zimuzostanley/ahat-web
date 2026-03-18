@@ -298,7 +298,21 @@ private fun ProcStateApp(vm: MainViewModel) {
                 containerColor = MaterialTheme.colorScheme.background,
             ) {
                 Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
-                    Text("By State", Modifier.padding(12.dp))
+                    Row(
+                        Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("By State")
+                        if (stateFilter != null) {
+                            Box(
+                                Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary),
+                            )
+                        }
+                    }
                 }
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
                     Text("By Process", Modifier.padding(12.dp))
