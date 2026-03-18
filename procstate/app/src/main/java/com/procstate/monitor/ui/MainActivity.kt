@@ -254,11 +254,17 @@ private fun ProcStateApp(vm: MainViewModel) {
         },
         bottomBar = {
             var showTimeDropdown by remember { mutableStateOf(false) }
-            androidx.compose.material3.BottomAppBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                contentPadding = PaddingValues(horizontal = 4.dp),
-                modifier = Modifier.height(56.dp),
+            androidx.compose.material3.Surface(
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                tonalElevation = 3.dp,
             ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     // Time range dropdown
                     Box {
                         androidx.compose.material3.TextButton(onClick = { showTimeDropdown = true }) {
@@ -346,6 +352,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         )
                     }
                 }
+            }
         },
     ) { paddingValues ->
         Column(
@@ -602,7 +609,6 @@ private fun ProcStateApp(vm: MainViewModel) {
                     activity.exportFileLauncher.launch(filename)
                 },
                 onExportRangeChange = vm::setExportRange,
-                onDismiss = { showSettings = false },
             )
         }
     }

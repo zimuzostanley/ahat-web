@@ -45,7 +45,6 @@ fun SettingsSheet(
     onPrune: (Long) -> Unit,
     onExport: (Long) -> Unit,
     onExportRangeChange: (Long) -> Unit,
-    onDismiss: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     var confirmPrune by remember { mutableStateOf<Long?>(null) }
@@ -198,10 +197,6 @@ fun SettingsSheet(
         }
 
         Spacer(Modifier.height(16.dp))
-
-        TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
-            Text("Done")
-        }
     }
 
     if (confirmClear) {
