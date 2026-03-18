@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
@@ -290,9 +291,11 @@ private fun ProcStateApp(vm: MainViewModel) {
                                     modifier = Modifier.size(20.dp),
                                 )
                             }
-                            IconButton(onClick = vm::clearAllPinnedProcesses) {
-                                Icon(Icons.Default.Close, "Unpin all",
-                                    modifier = Modifier.size(20.dp))
+                            if (!isCapturing) {
+                                IconButton(onClick = vm::clearAllPinnedProcesses) {
+                                    Icon(Icons.Default.Close, "Unpin all",
+                                        modifier = Modifier.size(20.dp))
+                                }
                             }
                         }
                         IconButton(onClick = { showProcessPicker = !showProcessPicker }) {
@@ -301,13 +304,46 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 "Add process",
                             )
                         }
-                        IconButton(onClick = { showHelpDialog = true }) {
-                            Icon(Icons.Default.Info, "Dot guide",
-                                modifier = Modifier.size(20.dp))
+                        if (!isCapturing) {
+                            IconButton(onClick = { showHelpDialog = true }) {
+                                Icon(Icons.Default.Info, "Dot guide",
+                                    modifier = Modifier.size(20.dp))
+                            }
                         }
                     }
-                    IconButton(onClick = { showSettings = true }) {
-                        Icon(Icons.Default.Settings, "Settings")
+                    // Settings / overflow
+                    if (isCapturing) {
+                        var showOverflow by remember { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { showOverflow = true }) {
+                                Icon(Icons.Default.MoreVert, "More")
+                            }
+                            DropdownMenu(
+                                expanded = showOverflow,
+                                onDismissRequest = { showOverflow = false },
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Settings") },
+                                    onClick = { showOverflow = false; showSettings = true },
+                                )
+                                if (selectedTab == 1 && pinnedProcesses.isNotEmpty()) {
+                                    DropdownMenuItem(
+                                        text = { Text("Unpin all") },
+                                        onClick = { showOverflow = false; vm.clearAllPinnedProcesses() },
+                                    )
+                                }
+                                if (selectedTab == 1) {
+                                    DropdownMenuItem(
+                                        text = { Text("Dot guide") },
+                                        onClick = { showOverflow = false; showHelpDialog = true },
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        IconButton(onClick = { showSettings = true }) {
+                            Icon(Icons.Default.Settings, "Settings")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
