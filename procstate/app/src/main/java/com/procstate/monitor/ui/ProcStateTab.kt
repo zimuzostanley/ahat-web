@@ -166,15 +166,19 @@ fun ProcStateTab(
 
     Column(Modifier.fillMaxSize()) {
     // State filter chips (like pinned process chips in Process tab)
-    if (stateFilter.isNotEmpty()) {
+    val displayedStates = if (stateFilter.isNotEmpty()) stateFilter else visibleStates
+    if (displayedStates.isNotEmpty()) {
         StateFilterChips(
-            states = stateFilter,
+            states = displayedStates,
             isDark = isDark,
             onRemoveState = { state ->
-                // Remove this state from the filter
-                val next = stateFilter - state
-                if (next.isEmpty()) onOpenFilterSheet() // if last one removed, open sheet
-                else onSetStateFilter(next)
+                if (stateFilter.isEmpty()) {
+                    // Currently showing all — switch to all except this one
+                    onSetStateFilter(visibleStates - state)
+                } else {
+                    val next = stateFilter - state
+                    onSetStateFilter(next)
+                }
             },
             onTap = onOpenFilterSheet,
         )
