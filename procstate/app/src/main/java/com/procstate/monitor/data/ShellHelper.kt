@@ -253,18 +253,7 @@ object ShellHelper {
         var javaHeap = 0L; var nativeHeap = 0L; var code = 0L
         var stack = 0L; var graphics = 0L; var system = 0L
 
-        Log.d("zim", "parseMemInfoOutput: ${output.length} chars, ${output.lines().size} lines")
-
-        // Parse all category lines — later ones (from App Summary) override earlier ones
         for (line in output.lines()) {
-            // Log lines that contain our target keywords
-            if ("Graphics" in line || "Java Heap" in line || "Native Heap" in line) {
-                val hex = line.map { String.format("%02x", it.code) }.joinToString("")
-                Log.d("zim", "MATCH LINE: [$line]")
-                Log.d("zim", "  HEX: $hex")
-                val m = SUMMARY_LINE.find(line)
-                Log.d("zim", "  REGEX MATCH: ${m != null} groups=${m?.groupValues}")
-            }
             SUMMARY_LINE.find(line)?.let { m ->
                 val kb = m.groupValues[2].toLong()
                 when (m.groupValues[1]) {
@@ -308,25 +297,15 @@ object ShellHelper {
     fun getMemInfo(pid: Int): MemInfo {
         // Use execRaw directly — DUMP permission is sufficient, and su wrapping
         // can alter the output format (e.g. stripping App Summary section)
-        Log.d("zim", "getMemInfo: starting for PID $pid")
         val output = try {
             execRaw("sh", "-c", "dumpsys meminfo $pid")
-        } catch (e: Exception) {
-            Log.e("zim", "getMemInfo execRaw failed: ${e.message}")
-            // Fallback to exec() which uses su if available
+        } catch (_: Exception) {
             exec("dumpsys meminfo $pid")
         }
-        Log.d("zim", "getMemInfo: output length=${output.length}, has Graphics=${"Graphics" in output}")
         val info = parseMemInfoOutput(output)
         Log.d(TAG, "MemInfo PID $pid: PSS=${info.totalPssKb} RSS=${info.totalRssKb} " +
             "Java=${info.javaHeapKb} Native=${info.nativeHeapKb} " +
             "Code=${info.codeKb} Graphics=${info.graphicsKb} System=${info.systemKb}")
-        if (info.graphicsKb == 0L) {
-            // Debug: log whether "Graphics:" appears in output at all
-            val hasGraphicsLine = output.lines().any { "Graphics:" in it }
-            Log.w(TAG, "Graphics=0 for PID $pid. Output has 'Graphics:' line: $hasGraphicsLine, " +
-                "output length: ${output.length}")
-        }
         return info
     }
 }
