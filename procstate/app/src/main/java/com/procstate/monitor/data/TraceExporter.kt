@@ -121,7 +121,6 @@ object TraceExporter {
                 onProgress?.invoke("Process $processCount/$totalProcesses")
             }
             val (name, uid) = key
-            val packageName = name.substringBefore(':')
             val appLabel = getAppLabel(name)
             val trackName = "$appLabel / $name / $uid"
 

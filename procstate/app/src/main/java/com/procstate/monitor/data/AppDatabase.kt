@@ -23,6 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "procstate.db",
                 )
+                    .fallbackToDestructiveMigration()
                     .build()
                     .also { instance = it }
             }

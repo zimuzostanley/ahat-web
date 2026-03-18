@@ -122,7 +122,9 @@ class ExportService : Service() {
                 }
 
                 updateNotification("Writing file\u2026")
-                contentResolver.openOutputStream(uri)?.use { out ->
+                val stream = contentResolver.openOutputStream(uri)
+                    ?: throw Exception("Failed to open output stream for $uri")
+                stream.use { out ->
                     out.write(json.toByteArray())
                 }
 

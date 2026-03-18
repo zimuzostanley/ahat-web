@@ -69,7 +69,7 @@ interface SnapshotDao {
 
     @Query("""
         SELECT timestamp FROM snapshots WHERE timestamp >= :start
-        ORDER BY timestamp DESC LIMIT 500
+        ORDER BY timestamp DESC
     """)
     fun getSnapshotTimestamps(start: Long): Flow<List<Long>>
 

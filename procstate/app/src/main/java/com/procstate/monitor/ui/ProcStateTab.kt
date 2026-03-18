@@ -482,12 +482,14 @@ private fun SnapshotBreakdown(
             }
         }
 
+        val query = localSearch.lowercase()
+
         for ((index, pair) in sorted.withIndex()) {
             val (state, count) = pair
             val isStateExpanded = state in expandedStateSet || state in searchMatchingStates
 
             val matchCount = if (localSearch.isBlank()) null
-                else entries.count { it.procState == state && localSearch.lowercase() in it.name.lowercase() }
+                else entries.count { it.procState == state && query in it.name.lowercase() }
             StateRow(
                 state = state,
                 count = count,
@@ -532,7 +534,7 @@ private fun SnapshotBreakdown(
             val isFrozenExpanded = "__frozen__" in expandedStateSet || "__frozen__" in searchMatchingStates
             val frozenColor = ProcStateColors.get("frzn", isDark)
             val frozenMatchCount = if (localSearch.isBlank()) null
-                else entries.count { it.frozen && localSearch.lowercase() in it.name.lowercase() }
+                else entries.count { it.frozen && query in it.name.lowercase() }
 
             Row(
                 modifier = Modifier
@@ -826,7 +828,8 @@ fun formatTimeDiff(ms: Long): String {
         day > 0 -> "${day}d ${hr % 24}h ${min % 60}m"
         hr > 0 -> "${hr}h ${min % 60}m ${sec % 60}s"
         min > 0 -> "${min}m ${sec % 60}s"
-        else -> "${sec}s"
+        sec > 0L -> "${sec}s"
+        else -> "< 1s"
     }
 }
 

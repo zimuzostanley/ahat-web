@@ -272,7 +272,7 @@ fun ProcessTab(
         }
 
         // Detect process starts and merge all snapshot timestamps
-        val timelineByTimestamp = remember(timelineRows, allSnapshotTimestamps, pinnedProcesses) {
+        val timelineByTimestamp = remember(timelineRows, allSnapshotTimestamps) {
             // Detect process starts and state changes per ProcessKey
             val markerMap = mutableMapOf<Pair<ProcessKey, Long>, Marker>()
             val stateChangedSet = mutableSetOf<Pair<ProcessKey, Long>>()
