@@ -438,7 +438,7 @@ private fun SnapshotBreakdown(
                 thickness = 0.5.dp,
             )
             val isFrozenExpanded = expandedState == "__frozen__"
-            val frozenColor = ProcStateColors.get("Frozen", isDark)
+            val frozenColor = ProcStateColors.get("frzn", isDark)
 
             Row(
                 modifier = Modifier

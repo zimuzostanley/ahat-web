@@ -48,8 +48,8 @@ class CaptureService : Service() {
             private set
 
         /** Set before starting service: process names to auto-dump memory for. */
-        var autoMemoryNames: List<Pair<String, String>> = emptyList() // (name, uid)
-        var autoMemoryEnabled = false
+        @Volatile var autoMemoryNames: List<Pair<String, String>> = emptyList()
+        @Volatile var autoMemoryEnabled = false
     }
 
     private var wakeLock: PowerManager.WakeLock? = null

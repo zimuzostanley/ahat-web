@@ -112,13 +112,22 @@ object ShellHelper {
 
     private fun execRaw(vararg cmd: String): String {
         val proc = ProcessBuilder(*cmd).redirectErrorStream(true).start()
-        val output = proc.inputStream.bufferedReader().use { it.readText() }
+        // Read stream in a separate thread to avoid deadlock when pipe buffer fills
+        val outputBuilder = StringBuilder()
+        val reader = Thread {
+            proc.inputStream.bufferedReader().use { br ->
+                br.forEachLine { outputBuilder.appendLine(it) }
+            }
+        }
+        reader.start()
         val finished = proc.waitFor(SHELL_TIMEOUT_SEC, TimeUnit.SECONDS)
         if (!finished) {
             proc.destroyForcibly()
-            throw Exception("Shell command timed out after ${SHELL_TIMEOUT_SEC}s: ${cmd.joinToString(" ")}")
+            reader.interrupt()
+            throw Exception("Shell command timed out after ${SHELL_TIMEOUT_SEC}s")
         }
-        return output
+        reader.join(2000) // wait for reader to finish draining
+        return outputBuilder.toString()
     }
 
     fun exec(command: String): String {
