@@ -100,6 +100,7 @@ private data class ProcessDot(
     val pid: Int,
     val uid: String,
     val marker: Marker,
+    val stateChanged: Boolean = false,
 )
 
 data class DotDetail(
@@ -268,8 +269,9 @@ fun ProcessTab(
 
         // Detect process starts and merge all snapshot timestamps
         val timelineByTimestamp = remember(timelineRows, allSnapshotTimestamps, pinnedProcesses) {
-            // Marker detection by ProcessKey (name+uid), not just name
+            // Detect process starts and state changes per ProcessKey
             val markerMap = mutableMapOf<Pair<ProcessKey, Long>, Marker>()
+            val stateChangedSet = mutableSetOf<Pair<ProcessKey, Long>>()
             val byKey = timelineRows.groupBy { ProcessKey(it.name, it.uid) }
             for ((pk, rows) in byKey) {
                 val sorted = rows.sortedBy { it.timestamp }
@@ -278,6 +280,9 @@ fun ProcessTab(
                     val curr = sorted[i]
                     if (curr.pid != prev.pid && prev.pid != 0 && curr.pid != 0) {
                         markerMap[pk to curr.timestamp] = Marker.STARTED
+                    }
+                    if (curr.procState != prev.procState || curr.frozen != prev.frozen) {
+                        stateChangedSet.add(pk to curr.timestamp)
                     }
                 }
             }
@@ -292,6 +297,7 @@ fun ProcessTab(
                             pid = row.pid,
                             uid = row.uid,
                             marker = markerMap[pk to ts] ?: Marker.NORMAL,
+                            stateChanged = (pk to ts) in stateChangedSet,
                         )
                     }
                 }
@@ -531,28 +537,41 @@ private fun TimelineRow(
                             val hasMemory = memoryEnrichedDots.contains(
                                 MemoryDotKey(timestamp, key.name, key.uid)
                             )
+                            // Square for state/frozen change, circle for same-state
+                            val dotShape = if (dot.stateChanged) RoundedCornerShape(2.dp) else CircleShape
                             Box(
                                 modifier = Modifier
                                     .size(14.dp)
                                     .graphicsLayer { scaleX = scale; scaleY = scale }
                                     .then(if (hasMemory) {
-                                        // Dotted white border for memory-enriched dots
                                         Modifier.drawBehind {
-                                            drawCircle(
-                                                color = if (isDark) Color.White else Color.Black,
-                                                radius = size.minDimension / 2,
-                                                style = androidx.compose.ui.graphics.drawscope.Stroke(
-                                                    width = 1.5.dp.toPx(),
-                                                    pathEffect = PathEffect.dashPathEffect(
-                                                        floatArrayOf(3f, 3f),
+                                            if (dot.stateChanged) {
+                                                drawRect(
+                                                    color = if (isDark) Color.White else Color.Black,
+                                                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                                        width = 1.5.dp.toPx(),
+                                                        pathEffect = PathEffect.dashPathEffect(
+                                                            floatArrayOf(3f, 3f),
+                                                        ),
                                                     ),
-                                                ),
-                                            )
+                                                )
+                                            } else {
+                                                drawCircle(
+                                                    color = if (isDark) Color.White else Color.Black,
+                                                    radius = size.minDimension / 2,
+                                                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                                                        width = 1.5.dp.toPx(),
+                                                        pathEffect = PathEffect.dashPathEffect(
+                                                            floatArrayOf(3f, 3f),
+                                                        ),
+                                                    ),
+                                                )
+                                            }
                                         }
                                     } else Modifier)
-                                    .clip(CircleShape)
+                                    .clip(dotShape)
                                     .background(dotColor)
-                                    .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
+                                    .border(1.dp, dotColor.copy(alpha = 0.3f), dotShape)
                                     .clickable { onTap() },
                                 contentAlignment = Alignment.Center,
                             ) {
