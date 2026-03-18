@@ -202,6 +202,7 @@ fun ProcessTab(
                 onSelect = onPinProcess,
                 sortBy = pickerSort,
                 onSortChange = onPickerSortChange,
+                hasData = allSnapshotTimestamps.isNotEmpty(),
             )
         }
     }
@@ -659,6 +660,7 @@ private fun ProcessPickerSheet(
     onSelect: (ProcessKey) -> Unit,
     sortBy: String = "transitions",
     onSortChange: (String) -> Unit = {},
+    hasData: Boolean = true,
 ) {
     var search by remember { mutableStateOf("") }
     val pinnedSet = remember(pinnedKeys) { pinnedKeys.toSet() }
@@ -790,13 +792,8 @@ private fun ProcessPickerSheet(
 
         if (filtered.isEmpty()) {
             if (allKeysWithTransitions.isEmpty() && search.isBlank()) {
-                // Show spinner briefly, then "no data" if still empty after 2s
-                var waited by remember { mutableStateOf(false) }
-                androidx.compose.runtime.LaunchedEffect(Unit) {
-                    kotlinx.coroutines.delay(2000)
-                    waited = true
-                }
-                if (!waited) {
+                if (hasData) {
+                    // Data exists but transitions haven't computed yet
                     Row(
                         Modifier.fillMaxWidth().padding(16.dp),
                         horizontalArrangement = Arrangement.Center,
