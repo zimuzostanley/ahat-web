@@ -309,7 +309,7 @@ fun ProcessTab(
 
         // Compute run types + run start timestamps per dot
         val runInfoMap = remember(timelineByTimestamp, memoryEnrichedDots) {
-            val result = mutableMapOf<Pair<String, Long>, RunInfo>()
+            val result = mutableMapOf<Pair<ProcessKey, Long>, RunInfo>()
             for (key in pinnedProcesses) {
                 val dots = timelineByTimestamp.mapNotNull { (ts, map) ->
                     map[key]?.let { dot -> ts to dot }
@@ -362,7 +362,7 @@ fun ProcessTab(
                         var j = i
                         while (j >= 0 && (items[j].type != RunType.SINGLE || j == i) &&
                             (items[j].ts >= runStart)) {
-                            result[key.name to items[j].ts] = RunInfo(items[j].type, runStart, runEnd)
+                            result[key to items[j].ts] = RunInfo(items[j].type, runStart, runEnd)
                             if (items[j].type == RunType.START) break
                             j--
                         }
@@ -495,7 +495,7 @@ private fun TimelineRow(
     selectedDotId: Triple<String, Long, Int>?,
     allTimelineRows: List<ProcessTimelineRow>,
     memoryEnrichedDots: Set<MemoryDotKey>,
-    runInfoMap: Map<Pair<String, Long>, RunInfo>,
+    runInfoMap: Map<Pair<ProcessKey, Long>, RunInfo>,
     diffAnchorMs: Long?,
     onTimestampTap: (Long) -> Unit,
     onTimestampLongPress: (Long) -> Unit,
@@ -538,7 +538,7 @@ private fun TimelineRow(
             for (key in pinnedProcesses) {
                 val dot = stateMap[key]
 
-                val runInfo = runInfoMap[key.name to timestamp]
+                val runInfo = runInfoMap[key to timestamp]
                 val runType = runInfo?.type ?: RunType.SINGLE
                 val isInRun = runType != RunType.SINGLE
 
