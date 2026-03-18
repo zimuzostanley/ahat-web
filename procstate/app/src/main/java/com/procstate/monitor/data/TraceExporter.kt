@@ -106,8 +106,8 @@ object TraceExporter {
         }
 
         // ── Per-process tracks ──────────────────────────────────────────────
-        // Group entries by ProcessKey (name + uid)
         val byProcess = entries.groupBy { it.name to it.uid }
+        val memByProcess = memoryEntries.groupBy { it.name to it.uid }
 
         for ((key, processEntries) in byProcess) {
             val (name, uid) = key
@@ -167,9 +167,7 @@ object TraceExporter {
             }
 
             // Track 4: Memory counters (if any memory data exists)
-            val memForProcess = memoryEntries
-                .filter { it.name == name && it.uid == uid }
-                .sortedBy { it.timestampMs }
+            val memForProcess = memByProcess[key]?.sortedBy { it.timestampMs } ?: emptyList()
             if (memForProcess.isNotEmpty()) {
                 events.put(metadataEvent("thread_name", tracePid, 4, "Memory"))
                 for (mem in memForProcess) {
@@ -202,7 +200,7 @@ object TraceExporter {
         root.put("otherData", JSONObject().apply {
             put("source", "ProcState Monitor")
         })
-        return root.toString(2)
+        return root.toString()
     }
 
     // ── Slice merging ───────────────────────────────────────────────────────
