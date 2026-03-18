@@ -256,6 +256,8 @@ private fun ProcStateApp(vm: MainViewModel) {
             var showTimeDropdown by remember { mutableStateOf(false) }
             androidx.compose.material3.BottomAppBar(
                 containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentPadding = PaddingValues(horizontal = 4.dp),
+                modifier = Modifier.height(56.dp),
             ) {
                     // Time range dropdown
                     Box {
