@@ -62,7 +62,6 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.UnfoldLess
 import androidx.compose.material.icons.filled.UnfoldMore
 import androidx.compose.material.icons.filled.Warning
@@ -179,8 +178,8 @@ private fun ProcStateApp(vm: MainViewModel) {
     var showColorLegendDialog by remember { mutableStateOf(false) }
 
     // Temporary sort for By State tab (never persisted)
-    var sortColumn by remember { mutableStateOf("total") }
-    var sortPhase by remember { mutableIntStateOf(0) } // 0=timestamp, 1=asc, 2=desc
+    var sortColumn by remember { mutableStateOf("timestamp") }
+    var sortAscending by remember { mutableStateOf(false) } // default: descending
     var showSortDialog by remember { mutableStateOf(false) }
 
     val isCapturing by vm.isCapturing.collectAsState()
@@ -280,23 +279,20 @@ private fun ProcStateApp(vm: MainViewModel) {
 
                     // Left actions (next to time range)
                     if (selectedTab == 0) {
-                        // Sort: click cycles, long-press picks column
+                        // Sort: click toggles asc/desc, long-press picks column
+                        val sortLabel = when (sortColumn) {
+                            "timestamp" -> "Time"
+                            "total" -> "Total"
+                            "frozen" -> "Frozen"
+                            else -> ProcStateColors.label(sortColumn)
+                        }
                         Box(
                             modifier = Modifier
                                 .combinedClickable(
                                     onClick = {
-                                        sortPhase = (sortPhase + 1) % 3
-                                        val colLabel = when (sortColumn) {
-                                            "total" -> "Total"
-                                            "frozen" -> "Frozen"
-                                            else -> ProcStateColors.label(sortColumn)
-                                        }
-                                        val msg = when (sortPhase) {
-                                            1 -> "$colLabel \u2191"
-                                            2 -> "$colLabel \u2193"
-                                            else -> "Timestamp"
-                                        }
-                                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                        sortAscending = !sortAscending
+                                        val arrow = if (sortAscending) "\u2191" else "\u2193"
+                                        android.widget.Toast.makeText(context, "$sortLabel $arrow", android.widget.Toast.LENGTH_SHORT).show()
                                     },
                                     onLongClick = { showSortDialog = true },
                                 )
@@ -304,26 +300,11 @@ private fun ProcStateApp(vm: MainViewModel) {
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
-                                    when (sortPhase) {
-                                        1 -> Icons.Default.ArrowUpward
-                                        2 -> Icons.Default.ArrowDownward
-                                        else -> Icons.Default.SwapVert
-                                    },
+                                    if (sortAscending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
                                     null,
-                                    tint = if (sortPhase != 0) MaterialTheme.colorScheme.primary
-                                           else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 Spacer(Modifier.width(4.dp))
-                                Text(
-                                    if (sortPhase != 0) when (sortColumn) {
-                                        "total" -> "Total"
-                                        "frozen" -> "Frozen"
-                                        else -> ProcStateColors.label(sortColumn)
-                                    } else "Timestamp",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (sortPhase != 0) MaterialTheme.colorScheme.primary
-                                           else MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
+                                Text(sortLabel, style = MaterialTheme.typography.labelLarge)
                             }
                         }
                     } else if (pinnedProcesses.isNotEmpty()) {
@@ -430,19 +411,17 @@ private fun ProcStateApp(vm: MainViewModel) {
             val pullState = rememberPullRefreshState(isRefreshing, vm::pullToRefresh)
 
             // Apply temporary sort to By State snapshots
-            val sortedSnapshots = remember(filteredSnapshots, sortColumn, sortPhase) {
-                if (sortPhase == 0) filteredSnapshots
-                else {
-                    val selector: (com.procstate.monitor.data.SnapshotWithCounts) -> Int = { snap ->
-                        when (sortColumn) {
-                            "total" -> snap.totalProcesses
-                            "frozen" -> snap.frozenCount
-                            else -> snap.stateCounts[sortColumn] ?: 0
-                        }
+            val sortedSnapshots = remember(filteredSnapshots, sortColumn, sortAscending) {
+                val selector: (com.procstate.monitor.data.SnapshotWithCounts) -> Long = { snap ->
+                    when (sortColumn) {
+                        "timestamp" -> snap.timestamp
+                        "total" -> snap.totalProcesses.toLong()
+                        "frozen" -> snap.frozenCount.toLong()
+                        else -> (snap.stateCounts[sortColumn] ?: 0).toLong()
                     }
-                    if (sortPhase == 1) filteredSnapshots.sortedBy(selector)
-                    else filteredSnapshots.sortedByDescending(selector)
                 }
+                if (sortAscending) filteredSnapshots.sortedBy(selector)
+                else filteredSnapshots.sortedByDescending(selector)
             }
 
             Box(Modifier.fillMaxSize().pullRefresh(pullState)) {
@@ -537,7 +516,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     // Sort column picker dialog
     if (showSortDialog) {
         val sortOptions = remember(visibleStates) {
-            listOf("total" to "Total processes", "frozen" to "Frozen count") +
+            listOf("timestamp" to "Timestamp", "total" to "Total processes", "frozen" to "Frozen count") +
                 visibleStates.sortedBy { ProcStateColors.label(it).lowercase() }
                     .map { it to ProcStateColors.label(it) }
         }
@@ -554,9 +533,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 .clip(RoundedCornerShape(4.dp))
                                 .clickable {
                                     sortColumn = key
-                                    sortPhase = 1
                                     showSortDialog = false
-                                    android.widget.Toast.makeText(context, "$label \u2191", android.widget.Toast.LENGTH_SHORT).show()
                                 }
                                 .padding(vertical = 8.dp, horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -565,13 +542,11 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 selected = sortColumn == key,
                                 onClick = {
                                     sortColumn = key
-                                    sortPhase = 1
                                     showSortDialog = false
-                                    android.widget.Toast.makeText(context, "$label \u2191", android.widget.Toast.LENGTH_SHORT).show()
                                 },
                             )
                             Spacer(Modifier.width(8.dp))
-                            if (key != "total" && key != "frozen") {
+                            if (key != "timestamp" && key != "total" && key != "frozen") {
                                 Box(
                                     Modifier
                                         .size(10.dp)
