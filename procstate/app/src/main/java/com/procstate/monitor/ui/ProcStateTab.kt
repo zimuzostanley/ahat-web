@@ -459,9 +459,20 @@ private fun SnapshotBreakdown(
             textStyle = MaterialTheme.typography.bodySmall,
         )
 
+        // When searching, auto-expand states that have matching processes
+        val searchMatchingStates = remember(localSearch, entries) {
+            if (localSearch.isBlank()) emptySet()
+            else {
+                val q = localSearch.lowercase()
+                val states = entries.filter { q in it.name.lowercase() }.map { it.procState }.toMutableSet()
+                if (entries.any { it.frozen && q in it.name.lowercase() }) states.add("__frozen__")
+                states
+            }
+        }
+
         for ((index, pair) in sorted.withIndex()) {
             val (state, count) = pair
-            val isStateExpanded = state in expandedStateSet
+            val isStateExpanded = state in expandedStateSet || state in searchMatchingStates
 
             StateRow(
                 state = state,
@@ -503,7 +514,7 @@ private fun SnapshotBreakdown(
                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
                 thickness = 0.5.dp,
             )
-            val isFrozenExpanded = "__frozen__" in expandedStateSet
+            val isFrozenExpanded = "__frozen__" in expandedStateSet || "__frozen__" in searchMatchingStates
             val frozenColor = ProcStateColors.get("frzn", isDark)
 
             Row(
