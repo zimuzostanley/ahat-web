@@ -302,7 +302,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Accumulates all states ever seen — never shrinks during the session. */
-    private val _seenStates = MutableStateFlow<Set<String>>(emptySet())
+    private val _seenStates = MutableStateFlow<Set<String>>(
+        prefs.getStringSet("seen_states", null) ?: emptySet()
+    )
     val visibleStates: StateFlow<Set<String>> = _seenStates.asStateFlow()
 
     /** State filter: empty = show all, non-empty = only these states. */
@@ -365,7 +367,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             snapshotsWithCounts.collect { snapshots ->
                 val newStates = snapshots.flatMap { it.stateCounts.keys }.toSet()
                 if (newStates.isNotEmpty()) {
-                    _seenStates.value = _seenStates.value + newStates
+                    val updated = _seenStates.value + newStates
+                    _seenStates.value = updated
+                    prefs.edit().putStringSet("seen_states", updated).apply()
                 }
             }
         }
