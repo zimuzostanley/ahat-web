@@ -26,6 +26,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -169,7 +173,18 @@ fun SettingsSheet(
         Spacer(Modifier.height(16.dp))
 
         // Data management
-        Text("Data", style = MaterialTheme.typography.titleMedium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Data", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = onShowHelp, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Default.Info,
+                    "Dot guide",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Spacer(Modifier.height(8.dp))
         Text(
             if (hasData) "$snapshotCount snapshots stored" else "No data stored yet",
@@ -198,14 +213,6 @@ fun SettingsSheet(
         }
 
         Spacer(Modifier.height(16.dp))
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-        Spacer(Modifier.height(16.dp))
-
-        TextButton(onClick = onShowHelp) {
-            Text("Dot shapes & symbols guide")
-        }
-
-        Spacer(Modifier.height(8.dp))
 
         TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
             Text("Done")

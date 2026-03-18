@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -65,6 +67,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.procstate.monitor.data.MemoryDotKey
@@ -709,17 +712,28 @@ private fun ProcessPickerSheet(
 ) {
     var search by remember { mutableStateOf("") }
     val pinnedSet = remember(pinnedKeys) { pinnedKeys.toSet() }
-    val filtered = remember(allKeysWithTransitions, search, pinnedSet, sortBy) {
+
+    // Track sort direction: false = descending (default), true = ascending
+    var sortAscending by remember { mutableStateOf(false) }
+
+    val sorted = remember(allKeysWithTransitions, search, pinnedSet, sortBy, sortAscending) {
         val available = allKeysWithTransitions.filter { it.key !in pinnedSet }
         val searched = if (search.isBlank()) available
             else available.filter { search.lowercase() in it.key.name.lowercase() }
-        when (sortBy) {
-            "name" -> searched.sortedBy { it.key.name.lowercase() }
-            "starts" -> searched.sortedByDescending { it.starts }
-            "frozen" -> searched.sortedByDescending { it.frozenCount }
-            else -> searched.sortedByDescending { it.transitions }
+        val comparator: Comparator<ProcessKeyWithTransitions> = when (sortBy) {
+            "name" -> if (sortAscending) compareBy { it.key.name.lowercase() }
+                      else compareByDescending { it.key.name.lowercase() }
+            "starts" -> if (sortAscending) compareBy { it.starts }
+                        else compareByDescending { it.starts }
+            "frozen" -> if (sortAscending) compareBy { it.frozenCount }
+                        else compareByDescending { it.frozenCount }
+            else -> if (sortAscending) compareBy { it.transitions }
+                    else compareByDescending { it.transitions }
         }
+        searched.sortedWith(comparator)
     }
+
+    val colWidth = 52.dp
 
     Column(
         modifier = Modifier
@@ -730,39 +744,15 @@ private fun ProcessPickerSheet(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Pin Process", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
-            if (filtered.isNotEmpty()) {
+            if (sorted.isNotEmpty()) {
                 androidx.compose.material3.TextButton(
-                    onClick = { filtered.forEach { onSelect(it.key) } },
+                    onClick = { sorted.forEach { onSelect(it.key) } },
                 ) {
-                    Text("Pin all ${filtered.size}")
+                    Text("Pin all ${sorted.size}")
                 }
             }
         }
         Spacer(Modifier.height(4.dp))
-        Text(
-            "Sort by transitions or name",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        )
-        Spacer(Modifier.height(4.dp))
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            for ((key, label) in listOf(
-                "transitions" to "States",
-                "starts" to "Starts",
-                "frozen" to "Frozen",
-                "name" to "Name",
-            )) {
-                FilterChip(
-                    selected = sortBy == key,
-                    onClick = { onSortChange(key) },
-                    label = { Text(label, style = MaterialTheme.typography.labelSmall) },
-                )
-            }
-        }
-        Spacer(Modifier.height(8.dp))
 
         OutlinedTextField(
             value = search,
@@ -779,11 +769,40 @@ private fun ProcessPickerSheet(
         )
         Spacer(Modifier.height(8.dp))
 
+        // Column headers — tappable to sort
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PickerColumnHeader("Name", "name", sortBy, sortAscending, Modifier.weight(1f)) {
+                if (sortBy == "name") sortAscending = !sortAscending
+                else { onSortChange("name"); sortAscending = true }
+            }
+            PickerColumnHeader("Starts", "starts", sortBy, sortAscending, Modifier.width(colWidth)) {
+                if (sortBy == "starts") sortAscending = !sortAscending
+                else { onSortChange("starts"); sortAscending = false }
+            }
+            PickerColumnHeader("States", "transitions", sortBy, sortAscending, Modifier.width(colWidth)) {
+                if (sortBy == "transitions") sortAscending = !sortAscending
+                else { onSortChange("transitions"); sortAscending = false }
+            }
+            PickerColumnHeader("Frozen", "frozen", sortBy, sortAscending, Modifier.width(colWidth)) {
+                if (sortBy == "frozen") sortAscending = !sortAscending
+                else { onSortChange("frozen"); sortAscending = false }
+            }
+            Spacer(Modifier.width(18.dp)) // space for + icon
+        }
+
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+            modifier = Modifier.padding(vertical = 4.dp),
+        )
+
         LazyColumn(
             modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            items(filtered) { item ->
+            items(sorted) { item ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -799,43 +818,23 @@ private fun ProcessPickerSheet(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (item.key.uid.isNotEmpty()) {
-                                Text(
-                                    item.key.uid,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            if (item.transitions > 0) {
-                                Text(
-                                    "${item.transitions} states",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                            if (item.starts > 0) {
-                                Text(
-                                    "${item.starts} starts",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            if (item.frozenCount > 0) {
-                                Text(
-                                    "${item.frozenCount} frozen",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
+                        if (item.key.uid.isNotEmpty()) {
+                            Text(
+                                item.key.uid,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
                         }
                     }
+                    PickerCell(item.starts, sortBy == "starts", colWidth)
+                    PickerCell(item.transitions, sortBy == "transitions", colWidth)
+                    PickerCell(item.frozenCount, sortBy == "frozen", colWidth)
                     Icon(Icons.Default.Add, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }
 
-        if (filtered.isEmpty()) {
+        if (sorted.isEmpty()) {
             if (allKeysWithTransitions.isEmpty() && search.isBlank()) {
                 if (hasData) {
                     // Data exists but transitions haven't computed yet
@@ -1198,4 +1197,55 @@ private fun DetailRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurface,
         )
     }
+}
+
+// ── Picker table helpers ─────────────────────────────────────────────────────
+
+@Composable
+private fun PickerColumnHeader(
+    label: String,
+    key: String,
+    activeSort: String,
+    ascending: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val isActive = activeSort == key
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(4.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = if (key == "name") Arrangement.Start else Arrangement.Center,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Normal,
+            color = if (isActive) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        if (isActive) {
+            Icon(
+                if (ascending) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                null,
+                modifier = Modifier.size(12.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PickerCell(value: Int, isActiveSort: Boolean, width: Dp) {
+    Text(
+        if (value > 0) value.toString() else "\u2014",
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = if (isActiveSort) FontWeight.Bold else FontWeight.Normal,
+        color = if (isActiveSort && value > 0) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.width(width),
+    )
 }
