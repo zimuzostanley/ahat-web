@@ -662,39 +662,13 @@ private fun ProcessList(
     onUnpinProcess: (ProcessKey) -> Unit,
     onShowDetail: (DotDetail) -> Unit = {},
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    val filtered = remember(entries, searchQuery) {
-        if (searchQuery.isBlank()) entries
-        else entries.filter { searchQuery.lowercase() in it.name.lowercase() }
-    }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = 16.dp, top = 4.dp, bottom = 4.dp),
     ) {
-        if (entries.size > 5) {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text("Search\u2026", style = MaterialTheme.typography.bodySmall) },
-                leadingIcon = { Icon(Icons.Default.Search, null, Modifier.size(16.dp)) },
-                trailingIcon = {
-                    if (searchQuery.isNotEmpty()) {
-                        IconButton(onClick = { searchQuery = "" }) {
-                            Icon(Icons.Default.Close, null, Modifier.size(16.dp))
-                        }
-                    }
-                },
-                singleLine = true,
-                textStyle = MaterialTheme.typography.bodySmall,
-            )
-            Spacer(Modifier.height(4.dp))
-        }
-
         val pinnedKeys = remember(pinnedProcesses) { pinnedProcesses.toSet() }
-        for (entry in filtered) {
+        for (entry in entries) {
             val key = ProcessKey(entry.name, entry.uid)
             val isPinned = key in pinnedKeys
 
