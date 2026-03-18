@@ -29,7 +29,7 @@ interface SnapshotDao {
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE s.id IN (
             SELECT id FROM snapshots WHERE timestamp >= :start
-            ORDER BY timestamp DESC LIMIT 500
+            ORDER BY timestamp DESC
         )
         GROUP BY s.id, pe.procState
         ORDER BY s.timestamp DESC
@@ -42,7 +42,7 @@ interface SnapshotDao {
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE pe.frozen = 1 AND s.id IN (
             SELECT id FROM snapshots WHERE timestamp >= :start
-            ORDER BY timestamp DESC LIMIT 500
+            ORDER BY timestamp DESC
         )
         GROUP BY s.id
     """)
@@ -58,7 +58,7 @@ interface SnapshotDao {
         JOIN process_entries pe ON s.id = pe.snapshotId
         WHERE pe.name IN (:names) AND s.id IN (
             SELECT id FROM snapshots WHERE timestamp >= :start
-            ORDER BY timestamp DESC LIMIT 500
+            ORDER BY timestamp DESC
         )
         ORDER BY s.timestamp ASC
     """)
