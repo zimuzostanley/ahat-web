@@ -37,7 +37,8 @@ object ProcStateColors {
 
     data class DualColor(val light: Color, val dark: Color)
 
-    // Custom distinct palette. Light = full color, dark = lightened for dark bg.
+    // 18 distinct colors. Light = full color, dark = lightened for dark bg.
+    // 17 states + 1 spare for unknown. Each state gets a unique color.
     private val PALETTE = listOf(
         DualColor(Color(0xFF1F77B4), Color(0xFF6BAED6)),  // 0  blue
         DualColor(Color(0xFFFF7F0E), Color(0xFFFFAA4D)),  // 1  orange
@@ -53,7 +54,10 @@ object ProcStateColors {
         DualColor(Color(0xFFDE5A3C), Color(0xFFEF8D78)),  // 11 coral
         DualColor(Color(0xFF006D6F), Color(0xFF3DA5A7)),  // 12 dark teal
         DualColor(Color(0xFFB5509C), Color(0xFFD487C4)),  // 13 magenta
-        DualColor(Color(0xFF7F7F7F), Color(0xFFB0B0B0)),  // 14 gray (cached)
+        DualColor(Color(0xFF7F7F7F), Color(0xFFB0B0B0)),  // 14 gray
+        DualColor(Color(0xFF882255), Color(0xFFB85C82)),  // 15 wine
+        DualColor(Color(0xFF44AA99), Color(0xFF7CCABA)),  // 16 teal-green
+        DualColor(Color(0xFFCC6677), Color(0xFFE09AA6)),  // 17 rose
     )
 
     /**
@@ -63,48 +67,49 @@ object ProcStateColors {
      */
     private data class StateInfo(val label: String, val colorIndex: Int)
 
-    // Static mapping: raw state -> (friendly label, palette index)
+    // Static mapping: each canonical state from makeOomAdjString gets a unique color.
     // 0=blue 1=orange 2=green 3=red 4=purple 5=brown 6=pink 7=cyan
     // 8=yellow 9=lime 10=indigo 11=coral 12=dark teal 13=magenta 14=gray
+    // 15=wine 16=teal-green 17=rose
     private val STATE_MAP = mapOf(
-        // Core states (from makeOomAdjString)
-        "ntv" to StateInfo("Native", 10),            // indigo
-        "sys" to StateInfo("System", 0),             // blue
-        "pers" to StateInfo("Persistent", 0),        // blue
-        "psvc" to StateInfo("Persistent Svc", 12),   // dark teal
-        "fg" to StateInfo("Foreground", 2),           // green
-        "top" to StateInfo("Top", 2),                 // green
-        "vis" to StateInfo("Visible", 7),             // cyan
-        "prcp" to StateInfo("Perceptible", 1),        // orange
-        "prcm" to StateInfo("Perceptible Med", 8),    // yellow
-        "prcl" to StateInfo("Perceptible Low", 9),    // lime
-        "bkup" to StateInfo("Backup", 12),            // dark teal
-        "hvy" to StateInfo("Heavy", 3),               // red
-        "svc" to StateInfo("Service", 6),             // pink
-        "home" to StateInfo("Home", 9),               // lime
-        "prev" to StateInfo("Previous", 5),           // brown
-        "svcb" to StateInfo("Service B", 13),         // magenta
-        "cch" to StateInfo("Cached", 14),             // gray
-        // Additional aliases from dumpsys activity lru
-        "btop" to StateInfo("Bound Top", 4),          // purple
-        "fgs" to StateInfo("FG Service", 7),          // cyan
-        "bfgs" to StateInfo("Bound FG", 4),           // purple
-        "impfg" to StateInfo("Imp FG", 1),            // orange
-        "impbg" to StateInfo("Imp BG", 11),           // coral
-        "backup" to StateInfo("Backup", 12),          // dark teal
-        "service" to StateInfo("Service", 6),         // pink
-        "service-rs" to StateInfo("Svc Restart", 3),  // red
-        "receiver" to StateInfo("Receiver", 8),       // yellow
-        "heavy" to StateInfo("Heavy", 3),             // red
-        "lastact" to StateInfo("Last Activity", 5),   // brown
-        "cached" to StateInfo("Cached", 14),          // gray
-        "frzn" to StateInfo("Frozen", 10),            // indigo
-        "native" to StateInfo("Native", 10),          // indigo
-        "fore" to StateInfo("Foreground", 2),         // green
-        "percep" to StateInfo("Perceptible", 1),      // orange
-        "perceptible" to StateInfo("Perceptible", 1),
-        "svcrst" to StateInfo("Svc Restart", 3),
-        "lstact" to StateInfo("Last Activity", 5),
+        // 17 canonical states from ProcessList.makeOomAdjString() — each unique color
+        "ntv" to StateInfo("Native", 10),             // indigo
+        "sys" to StateInfo("System", 0),              // blue
+        "pers" to StateInfo("Persistent", 12),        // dark teal
+        "psvc" to StateInfo("Persistent Svc", 15),    // wine
+        "fg" to StateInfo("Foreground", 2),            // green
+        "vis" to StateInfo("Visible", 7),              // cyan
+        "prcp" to StateInfo("Perceptible", 1),         // orange
+        "prcm" to StateInfo("Perceptible Med", 8),     // yellow
+        "prcl" to StateInfo("Perceptible Low", 9),     // lime
+        "bkup" to StateInfo("Backup", 16),             // teal-green
+        "hvy" to StateInfo("Heavy", 3),                // red
+        "svc" to StateInfo("Service", 6),              // pink
+        "home" to StateInfo("Home", 11),               // coral
+        "prev" to StateInfo("Previous", 5),            // brown
+        "svcb" to StateInfo("Service B", 13),          // magenta
+        "cch" to StateInfo("Cached", 14),              // gray
+        "frzn" to StateInfo("Frozen", 4),              // purple
+        // Aliases (map to same color as canonical)
+        "top" to StateInfo("Top", 2),                  // = fg green
+        "fore" to StateInfo("Foreground", 2),          // = fg green
+        "fgs" to StateInfo("FG Service", 17),          // rose
+        "bfgs" to StateInfo("Bound FG", 17),           // = fgs rose
+        "btop" to StateInfo("Bound Top", 2),           // = fg green
+        "impfg" to StateInfo("Imp FG", 1),             // = prcp orange
+        "impbg" to StateInfo("Imp BG", 8),             // = prcm yellow
+        "backup" to StateInfo("Backup", 16),           // = bkup teal-green
+        "service" to StateInfo("Service", 6),          // = svc pink
+        "service-rs" to StateInfo("Svc Restart", 3),   // = hvy red
+        "svcrst" to StateInfo("Svc Restart", 3),       // = hvy red
+        "receiver" to StateInfo("Receiver", 11),       // = home coral
+        "heavy" to StateInfo("Heavy", 3),              // = hvy red
+        "lastact" to StateInfo("Last Activity", 5),    // = prev brown
+        "lstact" to StateInfo("Last Activity", 5),     // = prev brown
+        "cached" to StateInfo("Cached", 14),           // = cch gray
+        "native" to StateInfo("Native", 10),           // = ntv indigo
+        "percep" to StateInfo("Perceptible", 1),       // = prcp orange
+        "perceptible" to StateInfo("Perceptible", 1),  // = prcp orange
     )
 
     private val fallback = DualColor(Color(0xFF636363), Color(0xFF969696))
