@@ -733,7 +733,7 @@ private fun ProcessPickerSheet(
         searched.sortedWith(comparator)
     }
 
-    val colWidth = 52.dp
+    val colWidth = 58.dp
 
     Column(
         modifier = Modifier
@@ -778,15 +778,15 @@ private fun ProcessPickerSheet(
                 if (sortBy == "name") sortAscending = !sortAscending
                 else { onSortChange("name"); sortAscending = true }
             }
-            PickerColumnHeader("Starts", "starts", sortBy, sortAscending, Modifier.width(colWidth)) {
+            PickerColumnHeader("Restarts", "starts", sortBy, sortAscending, Modifier.width(colWidth)) {
                 if (sortBy == "starts") sortAscending = !sortAscending
                 else { onSortChange("starts"); sortAscending = false }
             }
-            PickerColumnHeader("States", "transitions", sortBy, sortAscending, Modifier.width(colWidth)) {
+            PickerColumnHeader("State \u0394", "transitions", sortBy, sortAscending, Modifier.width(colWidth)) {
                 if (sortBy == "transitions") sortAscending = !sortAscending
                 else { onSortChange("transitions"); sortAscending = false }
             }
-            PickerColumnHeader("Frozen", "frozen", sortBy, sortAscending, Modifier.width(colWidth)) {
+            PickerColumnHeader("Freeze \u0394", "frozen", sortBy, sortAscending, Modifier.width(colWidth)) {
                 if (sortBy == "frozen") sortAscending = !sortAscending
                 else { onSortChange("frozen"); sortAscending = false }
             }
