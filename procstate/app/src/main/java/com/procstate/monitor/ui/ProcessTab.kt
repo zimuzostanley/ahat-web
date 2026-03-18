@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -93,6 +94,7 @@ private val TrackColors = listOf(
 private const val COL_WIDTH_DP = 80
 
 private enum class Marker { NORMAL, STARTED }
+private enum class RunType { SINGLE, START, MID, END }
 
 private data class ProcessDot(
     val procState: String,
@@ -302,6 +304,47 @@ fun ProcessTab(
             }
         }
 
+        // Compute run types: detect consecutive same-state dots per column
+        val runTypes = remember(timelineByTimestamp, memoryEnrichedDots) {
+            val result = mutableMapOf<Pair<String, Long>, RunType>() // (name, timestamp) -> RunType
+            for (key in pinnedProcesses) {
+                // Walk timestamps in display order (descending)
+                val dots = timelineByTimestamp.mapNotNull { (ts, map) ->
+                    map[key]?.let { dot -> ts to dot }
+                }
+                for (i in dots.indices) {
+                    val (ts, dot) = dots[i]
+                    val prev = dots.getOrNull(i - 1)
+                    val next = dots.getOrNull(i + 1)
+
+                    val hasMemory = memoryEnrichedDots.contains(MemoryDotKey(ts, key.name, key.uid))
+
+                    fun matches(other: Pair<Long, ProcessDot>?): Boolean {
+                        if (other == null) return false
+                        val (ots, od) = other
+                        if (od.procState != dot.procState) return false
+                        if (od.frozen != dot.frozen) return false
+                        if (dot.marker == Marker.STARTED) return false
+                        if (od.marker == Marker.STARTED) return false
+                        if (hasMemory) return false
+                        if (memoryEnrichedDots.contains(MemoryDotKey(ots, key.name, key.uid))) return false
+                        return true
+                    }
+
+                    val matchesPrev = matches(prev)
+                    val matchesNext = matches(next)
+                    val runType = when {
+                        matchesPrev && matchesNext -> RunType.MID
+                        !matchesPrev && matchesNext -> RunType.START
+                        matchesPrev && !matchesNext -> RunType.END
+                        else -> RunType.SINGLE
+                    }
+                    result[key.name to ts] = runType
+                }
+            }
+            result
+        }
+
         val scrollState = rememberScrollState()
 
         // Column headers
@@ -365,6 +408,7 @@ fun ProcessTab(
                         selectedDotId = selectedDotId,
                         allTimelineRows = timelineRows,
                         memoryEnrichedDots = memoryEnrichedDots,
+                        runTypes = runTypes,
                         diffAnchorMs = diffAnchorMs,
                         onTimestampTap = { ms ->
                             val anchor = diffAnchorMs
@@ -424,6 +468,7 @@ private fun TimelineRow(
     selectedDotId: Triple<String, Long, Int>?,
     allTimelineRows: List<ProcessTimelineRow>,
     memoryEnrichedDots: Set<MemoryDotKey>,
+    runTypes: Map<Pair<String, Long>, RunType>,
     diffAnchorMs: Long?,
     onTimestampTap: (Long) -> Unit,
     onTimestampLongPress: (Long) -> Unit,
@@ -432,7 +477,7 @@ private fun TimelineRow(
     val timeStr = remember(timestamp) { formatTimestamp(timestamp) }
     val isAnchor = diffAnchorMs == timestamp
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         @OptIn(ExperimentalFoundationApi::class)
@@ -465,15 +510,17 @@ private fun TimelineRow(
             for (key in pinnedProcesses) {
                 val dot = stateMap[key]
 
+                val runType = runTypes[key.name to timestamp] ?: RunType.SINGLE
+                val isInRun = runType != RunType.SINGLE
+
                 Box(
                     modifier = Modifier
                         .width(COL_WIDTH_DP.dp)
-                        .padding(vertical = 6.dp),
+                        .then(if (isInRun) Modifier else Modifier.padding(vertical = 6.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (dot != null) {
                         val dotColor = ProcStateColors.get(dot.procState, isDark)
-                        // Triangle for STARTED, circle for NORMAL
                         val isTriangle = dot.marker == Marker.STARTED
 
                         val isSelected = selectedDotId == Triple(key.name, timestamp, dot.pid)
@@ -532,12 +579,24 @@ private fun TimelineRow(
                             val hasMemory = memoryEnrichedDots.contains(
                                 MemoryDotKey(timestamp, key.name, key.uid)
                             )
+
+                            // Shape based on run type
+                            val dotShape = when (runType) {
+                                RunType.START -> RoundedCornerShape(topStart = 7.dp, topEnd = 7.dp)
+                                RunType.MID -> RoundedCornerShape(0.dp)
+                                RunType.END -> RoundedCornerShape(bottomStart = 7.dp, bottomEnd = 7.dp)
+                                RunType.SINGLE -> CircleShape
+                            }
+                            val dotSize = if (isInRun) {
+                                Modifier.width(14.dp).fillMaxHeight()
+                            } else {
+                                Modifier.size(14.dp)
+                            }
+
                             Box(
-                                modifier = Modifier
-                                    .size(14.dp)
+                                modifier = dotSize
                                     .graphicsLayer { scaleX = scale; scaleY = scale }
                                     .then(if (hasMemory) {
-                                        // Dotted white border for memory-enriched dots
                                         Modifier.drawBehind {
                                             drawCircle(
                                                 color = if (isDark) Color.White else Color.Black,
@@ -551,13 +610,13 @@ private fun TimelineRow(
                                             )
                                         }
                                     } else Modifier)
-                                    .clip(CircleShape)
+                                    .clip(dotShape)
                                     .background(dotColor)
-                                    .border(1.dp, dotColor.copy(alpha = 0.3f), CircleShape)
+                                    .border(1.dp, dotColor.copy(alpha = 0.3f), dotShape)
                                     .clickable { onTap() },
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (dot.frozen) {
+                                if (dot.frozen && !isInRun) {
                                     Text(
                                         "\u2715",
                                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp),
