@@ -95,6 +95,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -107,6 +108,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.ShellHelper
 import com.procstate.monitor.ui.theme.ProcStateColors
@@ -170,7 +172,9 @@ private fun ProcStateApp(vm: MainViewModel) {
         onDispose { context.unregisterReceiver(receiver) }
     }
 
-    var selectedTab by remember { mutableIntStateOf(0) }
+    val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { 2 })
+    val selectedTab = pagerState.currentPage
+    val pagerScope = rememberCoroutineScope()
     var showSettings by remember { mutableStateOf(false) }
     var showProcessPicker by remember { mutableStateOf(false) }
     var showRecordSheet by remember { mutableStateOf(false) }
@@ -296,11 +300,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         Box(
                             modifier = Modifier
                                 .combinedClickable(
-                                    onClick = {
-                                        sortAscending = !sortAscending
-                                        val arrow = if (sortAscending) "\u2191" else "\u2193"
-                                        android.widget.Toast.makeText(context, "$sortLabel $arrow", android.widget.Toast.LENGTH_SHORT).show()
-                                    },
+                                    onClick = { sortAscending = !sortAscending },
                                     onLongClick = { showSortDialog = true },
                                 )
                                 .padding(horizontal = 12.dp, vertical = 8.dp),
@@ -398,7 +398,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                 selectedTabIndex = selectedTab,
                 containerColor = MaterialTheme.colorScheme.background,
             ) {
-                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                Tab(selected = selectedTab == 0, onClick = { pagerScope.launch { pagerState.animateScrollToPage(0) } }) {
                     Row(
                         Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -415,7 +415,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         }
                     }
                 }
-                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                Tab(selected = selectedTab == 1, onClick = { pagerScope.launch { pagerState.animateScrollToPage(1) } }) {
                     Text("Process", Modifier.padding(12.dp))
                 }
             }
@@ -438,7 +438,10 @@ private fun ProcStateApp(vm: MainViewModel) {
             }
 
             Box(Modifier.fillMaxSize().pullRefresh(pullState)) {
-                when (selectedTab) {
+                androidx.compose.foundation.pager.HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                ) { page -> when (page) {
                     0 -> ProcStateTab(
                         snapshots = sortedSnapshots,
                         pinnedProcesses = pinnedProcesses,
@@ -482,6 +485,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                             onDismissPicker = { showProcessPicker = false },
                         )
                     }
+                }
                 }
 
                 PullRefreshIndicator(

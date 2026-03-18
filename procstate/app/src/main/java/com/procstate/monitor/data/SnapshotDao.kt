@@ -64,9 +64,6 @@ interface SnapshotDao {
     """)
     fun getProcessTimeline(names: List<String>, start: Long): Flow<List<ProcessTimelineRow>>
 
-    @Query("SELECT DISTINCT name, uid FROM process_entries ORDER BY name")
-    fun getDistinctProcessKeys(): Flow<List<ProcessKeyRow>>
-
     @Query("""
         SELECT timestamp FROM snapshots WHERE timestamp >= :start
         ORDER BY timestamp DESC
@@ -170,5 +167,3 @@ interface SnapshotDao {
     """)
     suspend fun getAllMemoryForExport(start: Long): List<MemorySnapshotEntity>
 }
-
-data class ProcessKeyRow(val name: String, val uid: String)

@@ -219,6 +219,7 @@ fun ProcessTab(
                 isDark = isDark,
                 getAppLabel = getAppLabel,
                 onUnpinProcess = onUnpinProcess,
+                onOpenPicker = onOpenPicker,
             )
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
         }
@@ -651,6 +652,7 @@ private fun TrackedChipsRow(
     isDark: Boolean,
     getAppLabel: (String) -> String,
     onUnpinProcess: (ProcessKey) -> Unit,
+    onOpenPicker: () -> Unit = {},
 ) {
     Row(
         modifier = Modifier
@@ -664,19 +666,19 @@ private fun TrackedChipsRow(
             val trackColor = TrackColors[i % TrackColors.size].let {
                 if (isDark) it.dark else it.light
             }
-            ProcessChip(label = getAppLabel(key.name), key = key, color = trackColor, onRemove = { onUnpinProcess(key) })
+            ProcessChip(label = getAppLabel(key.name), key = key, color = trackColor, onRemove = { onUnpinProcess(key) }, onTap = onOpenPicker)
         }
     }
 }
 
 @Composable
-private fun ProcessChip(label: String, key: ProcessKey, color: Color, onRemove: () -> Unit) {
+private fun ProcessChip(label: String, key: ProcessKey, color: Color, onRemove: () -> Unit, onTap: () -> Unit = {}) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))
             .background(color.copy(alpha = 0.1f))
             .border(1.dp, color.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
-            .clickable { /* tap chip for full name */ }
+            .clickable(onClick = onTap)
             .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

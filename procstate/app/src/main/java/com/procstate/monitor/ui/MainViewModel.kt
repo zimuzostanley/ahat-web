@@ -588,57 +588,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putLong("export_range", millis).apply()
     }
 
-    private val _isExporting = MutableStateFlow(false)
-    val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()
-
-    fun exportTrace(rangeMillis: Long, writeOutput: suspend (String) -> Unit) {
-        if (_isExporting.value) return
-        viewModelScope.launch {
-            _isExporting.value = true
-            try {
-                val json = withContext(Dispatchers.IO) {
-                    val startMs = if (rangeMillis > 0) {
-                        System.currentTimeMillis() - rangeMillis
-                    } else 0L
-                    val entries = dao.getAllEntriesForExport(startMs)
-                    val timestamps = dao.getAllTimestampsForExport(startMs)
-                    val memSnapshots = dao.getAllMemoryForExport(startMs)
-                    val exportEntries = entries.map { row ->
-                        TraceExporter.Entry(
-                            timestampMs = row.timestamp,
-                            name = row.name,
-                            uid = row.uid,
-                            pid = row.pid,
-                            procState = row.procState,
-                            frozen = row.frozen,
-                        )
-                    }
-                    val memEntries = memSnapshots.map { m ->
-                        TraceExporter.MemoryEntry(
-                            timestampMs = m.timestamp,
-                            name = m.name, uid = m.uid, pid = m.pid,
-                            totalPssKb = m.totalPssKb, totalRssKb = m.totalRssKb,
-                            javaHeapKb = m.javaHeapKb, nativeHeapKb = m.nativeHeapKb,
-                            codeKb = m.codeKb, stackKb = m.stackKb,
-                            graphicsKb = m.graphicsKb, systemKb = m.systemKb,
-                            totalSwapKb = m.totalSwapKb,
-                        )
-                    }
-                    TraceExporter.export(
-                        exportEntries, ::getAppLabel, timestamps, memEntries,
-                        getStateLabel = { com.procstate.monitor.ui.theme.ProcStateColors.label(it) },
-                    )
-                }
-                writeOutput(json)
-            } catch (e: Exception) {
-                Log.e("MainVM", "Export failed", e)
-                _captureError.value = "Export failed: ${e.message}"
-            } finally {
-                _isExporting.value = false
-            }
-        }
-    }
-
     // ── Data management ─────────────────────────────────────────────────────
 
     fun clearAllData() {
