@@ -624,7 +624,6 @@ private fun TrackedChipsRow(
 
 @Composable
 private fun ProcessChip(label: String, key: ProcessKey, color: Color, onRemove: () -> Unit) {
-    val context = LocalContext.current
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(14.dp))

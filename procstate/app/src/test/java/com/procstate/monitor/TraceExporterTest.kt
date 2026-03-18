@@ -2,10 +2,13 @@ package com.procstate.monitor
 
 import com.procstate.monitor.data.TraceExporter
 import com.procstate.monitor.data.TraceExporter.Entry
+import com.procstate.monitor.data.TraceExporter.MemoryEntry
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.ByteArrayOutputStream
 
 class TraceExporterTest {
 
@@ -295,5 +298,135 @@ class TraceExporterTest {
             }
         }
         assertEquals("Two processes should have different pids", 2, pids.size)
+    }
+
+    // ── Streaming parity ────────────────────────────────────────────────────
+
+    /**
+     * Helper: compare trace events from export() and exportToStream() for semantic equality.
+     * JSONObject.toString() key order is nondeterministic, so we compare parsed structures.
+     */
+    private fun assertStreamingParity(
+        entries: List<Entry>,
+        timestamps: List<Long>,
+        memoryEntries: List<MemoryEntry> = emptyList(),
+    ) {
+        val label: (String) -> String = { it }
+        val nonStreaming = TraceExporter.export(entries, label, timestamps, memoryEntries)
+        val baos = ByteArrayOutputStream()
+        TraceExporter.exportToStream(baos, entries, label, timestamps, memoryEntries)
+        val streaming = baos.toString(Charsets.UTF_8.name())
+
+        val objA = JSONObject(nonStreaming)
+        val objB = JSONObject(streaming)
+
+        // Same top-level keys
+        assertEquals(objA.getString("displayTimeUnit"), objB.getString("displayTimeUnit"))
+
+        // Same number of trace events
+        val eventsA = objA.getJSONArray("traceEvents")
+        val eventsB = objB.getJSONArray("traceEvents")
+        assertEquals("Event count mismatch", eventsA.length(), eventsB.length())
+
+        // Compare each event by canonical fields
+        for (i in 0 until eventsA.length()) {
+            val a = eventsA.getJSONObject(i)
+            val b = eventsB.getJSONObject(i)
+            assertEquals("ph mismatch at $i", a.getString("ph"), b.getString("ph"))
+            if (a.has("name")) assertEquals("name mismatch at $i", a.getString("name"), b.getString("name"))
+            assertEquals("pid mismatch at $i", a.getInt("pid"), b.getInt("pid"))
+            assertEquals("tid mismatch at $i", a.getInt("tid"), b.getInt("tid"))
+            if (a.has("ts")) assertEquals("ts mismatch at $i", a.getLong("ts"), b.getLong("ts"))
+            if (a.has("dur")) assertEquals("dur mismatch at $i", a.getLong("dur"), b.getLong("dur"))
+        }
+    }
+
+    @Test
+    fun `exportToStream produces valid JSON`() {
+        val entries = listOf(entry(1000, state = "fg"), entry(2000, state = "cch"))
+        val baos = ByteArrayOutputStream()
+        TraceExporter.exportToStream(baos, entries, { it }, listOf(1000L, 2000L, 3000L))
+        val obj = JSONObject(baos.toString(Charsets.UTF_8.name()))
+        assertTrue(obj.has("traceEvents"))
+        assertTrue(obj.getJSONArray("traceEvents").length() > 0)
+        assertEquals("ms", obj.getString("displayTimeUnit"))
+    }
+
+    @Test
+    fun `exportToStream matches export for simple case`() {
+        val entries = listOf(
+            entry(1000, state = "fg"),
+            entry(2000, state = "cch"),
+            entry(3000, state = "fg"),
+        )
+        assertStreamingParity(entries, listOf(1000L, 2000L, 3000L, 4000L))
+    }
+
+    @Test
+    fun `exportToStream matches export for multiple processes`() {
+        val entries = listOf(
+            entry(1000, name = "com.a", uid = "u0a1", state = "fg"),
+            entry(1000, name = "com.b", uid = "u0a2", state = "cch"),
+            entry(2000, name = "com.a", uid = "u0a1", state = "vis"),
+            entry(2000, name = "com.b", uid = "u0a2", state = "fg"),
+        )
+        assertStreamingParity(entries, listOf(1000L, 2000L, 3000L))
+    }
+
+    @Test
+    fun `exportToStream matches export with frozen entries`() {
+        val entries = listOf(
+            entry(1000, frozen = false),
+            entry(2000, frozen = true),
+            entry(3000, frozen = true),
+            entry(4000, frozen = false),
+        )
+        assertStreamingParity(entries, listOf(1000L, 2000L, 3000L, 4000L, 5000L))
+    }
+
+    @Test
+    fun `exportToStream matches export with lifecycle events`() {
+        val entries = listOf(
+            entry(1000, pid = 100),
+            entry(2000, pid = 200),
+            entry(3000, pid = 200),
+        )
+        assertStreamingParity(entries, listOf(1000L, 2000L, 3000L, 4000L))
+    }
+
+    @Test
+    fun `exportToStream matches export with memory entries`() {
+        val entries = listOf(
+            entry(1000, name = "com.test", uid = "u0a100", state = "fg"),
+            entry(2000, name = "com.test", uid = "u0a100", state = "cch"),
+        )
+        val memEntries = listOf(
+            MemoryEntry(1000, "com.test", "u0a100", 1000,
+                totalPssKb = 50000, totalRssKb = 80000,
+                javaHeapKb = 10000, nativeHeapKb = 20000,
+                codeKb = 5000, stackKb = 1000,
+                graphicsKb = 8000, systemKb = 6000,
+                totalSwapKb = 0),
+        )
+        assertStreamingParity(entries, listOf(1000L, 2000L, 3000L), memEntries)
+    }
+
+    @Test
+    fun `exportToStream matches export empty input`() {
+        assertStreamingParity(emptyList(), emptyList())
+    }
+
+    @Test
+    fun `exportToStream matches export with swap`() {
+        val entries = listOf(entry(1000, name = "com.test", uid = "u0a100", state = "fg"))
+        val memEntries = listOf(
+            MemoryEntry(1000, "com.test", "u0a100", 1000,
+                totalPssKb = 50000, totalRssKb = 80000,
+                javaHeapKb = 10000, nativeHeapKb = 20000,
+                codeKb = 5000, stackKb = 1000,
+                graphicsKb = 8000, systemKb = 6000,
+                totalSwapKb = 3000),
+        )
+        assertStreamingParity(entries, listOf(1000L, 2000L), memEntries)
     }
 }

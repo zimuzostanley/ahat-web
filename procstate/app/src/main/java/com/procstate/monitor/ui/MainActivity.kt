@@ -415,11 +415,13 @@ private fun ProcStateApp(vm: MainViewModel) {
                 onDispose { context.unregisterReceiver(r) }
             }
             val autoMemDump by vm.autoMemoryDump.collectAsState()
+            val exportRange by vm.exportRange.collectAsState()
             SettingsSheet(
                 themeMode = themeMode,
                 snapshotCount = snapshotCount,
                 isExporting = isExporting,
                 autoMemoryDump = autoMemDump,
+                exportRange = exportRange,
                 onSetAutoMemoryDump = vm::setAutoMemoryDump,
                 onSetTheme = vm::setTheme,
                 onClearAll = vm::clearAllData,
@@ -429,6 +431,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     val filename = "procstate_${System.currentTimeMillis()}.json"
                     activity.exportFileLauncher.launch(filename)
                 },
+                onExportRangeChange = vm::setExportRange,
                 onDismiss = { showSettings = false },
             )
         }

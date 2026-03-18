@@ -206,10 +206,113 @@ object TraceExporter {
         val root = JSONObject()
         root.put("traceEvents", events)
         root.put("displayTimeUnit", "ms")
-        root.put("otherData", JSONObject().apply {
-            put("source", "ProcState Monitor")
-        })
+        root.put("otherData", JSONObject().apply { put("source", "ProcState Monitor") })
         return root.toString()
+    }
+
+    /** Stream JSON directly to an OutputStream to avoid OOM on large exports. */
+    fun exportToStream(
+        out: java.io.OutputStream,
+        entries: List<Entry>,
+        getAppLabel: (String) -> String,
+        allTimestampsMs: List<Long>,
+        memoryEntries: List<MemoryEntry> = emptyList(),
+        onProgress: ((String) -> Unit)? = null,
+    ) {
+        val writer = java.io.BufferedWriter(java.io.OutputStreamWriter(out, Charsets.UTF_8), 64 * 1024)
+        writer.write("{\"traceEvents\":[")
+
+        val sortedTimestamps = allTimestampsMs.sorted()
+
+        // Collect all events into a list, then stream them one by one
+        // This avoids holding the full JSON string — each event is serialized and flushed
+        var firstEvent = true
+        fun writeEvent(event: JSONObject) {
+            if (!firstEvent) writer.write(",")
+            writer.write(event.toString())
+            firstEvent = false
+        }
+
+        // Global counters
+        onProgress?.invoke("Writing counters")
+        val globalPid = 0
+        writeEvent(metadataEvent("process_name", globalPid, 0, "Process State Counts"))
+        writeEvent(metadataEvent("process_sort_index", globalPid, 0, -1))
+
+        val byTimestamp = entries.groupBy { it.timestampMs }
+        for (ts in sortedTimestamps) {
+            val entriesAtTs = byTimestamp[ts] ?: continue
+            val stateCounts = entriesAtTs.groupBy { it.procState }.mapValues { it.value.size }
+            writeEvent(JSONObject().apply {
+                put("ph", "C"); put("name", "processes"); put("cat", "state_counts")
+                put("pid", globalPid); put("tid", 0); put("ts", ts * 1000)
+                put("args", JSONObject(stateCounts))
+            })
+            writeEvent(JSONObject().apply {
+                put("ph", "C"); put("name", "frozen"); put("cat", "frozen_count")
+                put("pid", globalPid); put("tid", 0); put("ts", ts * 1000)
+                put("args", JSONObject(mapOf("frozen" to entriesAtTs.count { it.frozen })))
+            })
+        }
+
+        // Per-process tracks
+        val byProcess = entries.groupBy { it.name to it.uid }
+        val memByProcess = memoryEntries.groupBy { it.name to it.uid }
+        var processCount = 0
+        val totalProcesses = byProcess.size
+
+        for ((key, processEntries) in byProcess) {
+            processCount++
+            if (processCount % 20 == 0) onProgress?.invoke("Process $processCount/$totalProcesses")
+
+            val (name, uid) = key
+            val appLabel = getAppLabel(name)
+            val trackName = "$name / ${name.substringBefore(':')} / $uid / $appLabel"
+            val tracePid = (name + uid).hashCode() and 0x7FFFFFFF
+
+            writeEvent(metadataEvent("process_name", tracePid, 0, trackName))
+            writeEvent(metadataEvent("thread_name", tracePid, 1, "State"))
+            writeEvent(metadataEvent("thread_name", tracePid, 2, "Frozen"))
+            writeEvent(metadataEvent("thread_name", tracePid, 3, "Lifecycle"))
+
+            val sorted = processEntries.sortedBy { it.timestampMs }
+            for (slice in mergeStateSlices(sorted, sortedTimestamps)) {
+                writeEvent(completeEvent("${slice.name}", "state", tracePid, 1, slice.startUs, slice.durUs, slice.args))
+            }
+            for (slice in mergeFrozenSlices(sorted, sortedTimestamps)) {
+                writeEvent(completeEvent("frozen", "frozen", tracePid, 2, slice.startUs, slice.durUs))
+            }
+            for (instant in detectLifecycleEvents(sorted)) {
+                writeEvent(instantEvent(instant.name, "lifecycle", tracePid, 3, instant.tsUs, instant.args))
+            }
+
+            val memForProcess = memByProcess[key]?.sortedBy { it.timestampMs } ?: emptyList()
+            if (memForProcess.isNotEmpty()) {
+                writeEvent(metadataEvent("thread_name", tracePid, 4, "Memory"))
+                for (mem in memForProcess) {
+                    writeEvent(JSONObject().apply {
+                        put("ph", "C"); put("name", "Memory"); put("cat", "Memory")
+                        put("pid", tracePid); put("tid", 4); put("ts", mem.timestampMs * 1000)
+                        put("args", JSONObject().apply {
+                            put("Total PSS (KB)", mem.totalPssKb)
+                            put("Total RSS (KB)", mem.totalRssKb)
+                            put("Java Heap (KB)", mem.javaHeapKb)
+                            put("Native Heap (KB)", mem.nativeHeapKb)
+                            put("Code (KB)", mem.codeKb)
+                            put("Stack (KB)", mem.stackKb)
+                            put("Graphics (KB)", mem.graphicsKb)
+                            put("System (KB)", mem.systemKb)
+                            if (mem.totalSwapKb > 0) put("Swap (KB)", mem.totalSwapKb)
+                        })
+                    })
+                }
+            }
+            writer.flush() // flush per process to avoid buffering everything
+        }
+
+        writer.write("],\"displayTimeUnit\":\"ms\",\"otherData\":{\"source\":\"ProcState Monitor\"}}")
+        writer.flush()
+        onProgress?.invoke("Done")
     }
 
     // ── Slice merging ───────────────────────────────────────────────────────

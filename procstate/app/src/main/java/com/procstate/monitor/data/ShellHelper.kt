@@ -112,8 +112,9 @@ object ShellHelper {
 
     private fun execRaw(vararg cmd: String): String {
         val proc = ProcessBuilder(*cmd).redirectErrorStream(true).start()
-        // Read stream in a separate thread to avoid deadlock when pipe buffer fills
-        val outputBuilder = StringBuilder()
+        // Read stream in a separate thread to avoid deadlock when pipe buffer fills.
+        // StringBuffer is thread-safe (reader thread writes, main thread reads after join).
+        val outputBuilder = StringBuffer()
         val reader = Thread {
             proc.inputStream.bufferedReader().use { br ->
                 br.forEachLine { outputBuilder.appendLine(it) }
@@ -131,8 +132,10 @@ object ShellHelper {
     }
 
     fun exec(command: String): String {
-        val result = if (hasRoot == true && suPath != null) {
-            execRaw("sh", "-c", "$suPath -c '${command.replace("'", "'\\''")}'")
+        // Snapshot volatile fields to avoid TOCTOU race between hasRoot and suPath reads
+        val rootPath = suPath.takeIf { hasRoot == true }
+        val result = if (rootPath != null) {
+            execRaw("sh", "-c", "$rootPath -c '${command.replace("'", "'\\''")}'")
         } else {
             execRaw("sh", "-c", command)
         }

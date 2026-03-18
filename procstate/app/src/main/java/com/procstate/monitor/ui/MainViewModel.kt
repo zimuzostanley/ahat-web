@@ -364,14 +364,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _ticker.value = System.currentTimeMillis()
             }
         }
-        // Accumulate all states ever seen in legend
+        // Accumulate all states ever seen in legend — only persist when set grows
         viewModelScope.launch {
             snapshotsWithCounts.collect { snapshots ->
                 val newStates = snapshots.flatMap { it.stateCounts.keys }.toSet()
                 if (newStates.isNotEmpty()) {
-                    val updated = _seenStates.value + newStates
-                    _seenStates.value = updated
-                    prefs.edit().putStringSet("seen_states", updated).apply()
+                    val current = _seenStates.value
+                    val updated = current + newStates
+                    if (updated.size != current.size) {
+                        _seenStates.value = updated
+                        prefs.edit().putStringSet("seen_states", updated).apply()
+                    }
                 }
             }
         }
@@ -562,6 +565,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     // ── Export ────────────────────────────────────────────────────────────────
+
+    private val _exportRange = MutableStateFlow(prefs.getLong("export_range", 0L))
+    val exportRange: StateFlow<Long> = _exportRange.asStateFlow()
+
+    fun setExportRange(millis: Long) {
+        _exportRange.value = millis
+        prefs.edit().putLong("export_range", millis).apply()
+    }
 
     private val _isExporting = MutableStateFlow(false)
     val isExporting: StateFlow<Boolean> = _isExporting.asStateFlow()

@@ -107,17 +107,16 @@ class ExportService : Service() {
                         pm.getApplicationLabel(pm.getApplicationInfo(pkgName, 0)).toString()
                     } catch (_: Exception) { name }
                 }
-                val json = TraceExporter.export(exportEntries, getAppLabel, timestamps, memEntries) { progress ->
-                    updateNotification(progress)
-                }
 
                 updateNotification("Writing file\u2026")
                 contentResolver.openOutputStream(uri)?.use { out ->
-                    out.write(json.toByteArray())
+                    TraceExporter.exportToStream(out, exportEntries, getAppLabel, timestamps, memEntries) { progress ->
+                        updateNotification(progress)
+                    }
                 }
 
                 showDoneNotification("Export complete")
-                Log.i(TAG, "Export done: ${entries.size} entries, ${json.length} bytes")
+                Log.i(TAG, "Export done: ${entries.size} entries")
             } catch (e: Exception) {
                 Log.e(TAG, "Export failed", e)
                 showDoneNotification("Export failed: ${e.message}")

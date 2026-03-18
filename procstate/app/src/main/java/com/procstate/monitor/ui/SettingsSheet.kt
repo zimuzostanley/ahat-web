@@ -37,11 +37,13 @@ fun SettingsSheet(
     snapshotCount: Int,
     isExporting: Boolean,
     autoMemoryDump: Boolean,
+    exportRange: Long,
     onSetAutoMemoryDump: (Boolean) -> Unit,
     onSetTheme: (ThemeMode) -> Unit,
     onClearAll: () -> Unit,
     onPrune: (Long) -> Unit,
     onExport: (Long) -> Unit,
+    onExportRangeChange: (Long) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
@@ -122,7 +124,6 @@ fun SettingsSheet(
         )
         Spacer(Modifier.height(8.dp))
 
-        var exportRange by remember { mutableStateOf(0L) }
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -140,7 +141,7 @@ fun SettingsSheet(
             )) {
                 FilterChip(
                     selected = exportRange == millis,
-                    onClick = { exportRange = millis },
+                    onClick = { onExportRangeChange(millis) },
                     label = { Text(label) },
                 )
             }
