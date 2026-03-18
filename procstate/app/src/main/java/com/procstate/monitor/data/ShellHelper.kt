@@ -253,8 +253,18 @@ object ShellHelper {
         var javaHeap = 0L; var nativeHeap = 0L; var code = 0L
         var stack = 0L; var graphics = 0L; var system = 0L
 
+        Log.d("zim", "parseMemInfoOutput: ${output.length} chars, ${output.lines().size} lines")
+
         // Parse all category lines — later ones (from App Summary) override earlier ones
         for (line in output.lines()) {
+            // Log lines that contain our target keywords
+            if ("Graphics" in line || "Java Heap" in line || "Native Heap" in line) {
+                val hex = line.map { String.format("%02x", it.code) }.joinToString("")
+                Log.d("zim", "MATCH LINE: [$line]")
+                Log.d("zim", "  HEX: $hex")
+                val m = SUMMARY_LINE.find(line)
+                Log.d("zim", "  REGEX MATCH: ${m != null} groups=${m?.groupValues}")
+            }
             SUMMARY_LINE.find(line)?.let { m ->
                 val kb = m.groupValues[2].toLong()
                 when (m.groupValues[1]) {
