@@ -191,25 +191,26 @@ fun SettingsSheet(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TextButton(onClick = { confirmPrune = 7 * 24 * 60 * 60_000L }, enabled = hasData) {
-                Text("Prune older than 7d")
-            }
-            TextButton(onClick = { confirmPrune = 24 * 60 * 60_000L }, enabled = hasData) {
-                Text("Prune older than 24h")
-            }
-        }
-
         Spacer(Modifier.height(8.dp))
 
-        Button(
-            onClick = { confirmClear = true },
-            enabled = hasData,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("Clear all data")
+            TextButton(onClick = { confirmPrune = 7 * 24 * 60 * 60_000L }, enabled = hasData) {
+                Text("Prune 7d")
+            }
+            TextButton(onClick = { confirmPrune = 24 * 60 * 60_000L }, enabled = hasData) {
+                Text("Prune 24h")
+            }
+            Spacer(Modifier.weight(1f))
+            Button(
+                onClick = { confirmClear = true },
+                enabled = hasData,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            ) {
+                Text("Clear all")
+            }
         }
 
         Spacer(Modifier.height(16.dp))
