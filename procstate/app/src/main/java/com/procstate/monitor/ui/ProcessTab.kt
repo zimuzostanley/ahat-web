@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -205,6 +206,7 @@ fun ProcessTab(
                 allKeysWithTransitions = allProcessKeysWithTransitions,
                 pinnedKeys = pinnedProcesses,
                 onSelect = onPinProcess,
+                onUnpin = onUnpinProcess,
                 sortBy = pickerSort,
                 onSortChange = onPickerSortChange,
                 hasData = allSnapshotTimestamps.isNotEmpty(),
@@ -704,6 +706,7 @@ private fun ProcessPickerSheet(
     allKeysWithTransitions: List<ProcessKeyWithTransitions>,
     pinnedKeys: List<ProcessKey>,
     onSelect: (ProcessKey) -> Unit,
+    onUnpin: (ProcessKey) -> Unit = {},
     sortBy: String = "transitions",
     onSortChange: (String) -> Unit = {},
     hasData: Boolean = true,
@@ -715,9 +718,8 @@ private fun ProcessPickerSheet(
     var sortAscending by remember { mutableStateOf(false) }
 
     val sorted = remember(allKeysWithTransitions, search, pinnedSet, sortBy, sortAscending) {
-        val available = allKeysWithTransitions.filter { it.key !in pinnedSet }
-        val searched = if (search.isBlank()) available
-            else available.filter { search.lowercase() in it.key.name.lowercase() }
+        val searched = if (search.isBlank()) allKeysWithTransitions
+            else allKeysWithTransitions.filter { search.lowercase() in it.key.name.lowercase() }
         val comparator: Comparator<ProcessKeyWithTransitions> = when (sortBy) {
             "name" -> if (sortAscending) compareBy { it.key.name.lowercase() }
                       else compareByDescending { it.key.name.lowercase() }
@@ -740,13 +742,14 @@ private fun ProcessPickerSheet(
             .padding(horizontal = 16.dp, vertical = 8.dp),
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("Pin Process", style = MaterialTheme.typography.titleMedium)
+            Text("Processes", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
-            if (sorted.isNotEmpty()) {
+            val unpinnedCount = sorted.count { it.key !in pinnedSet }
+            if (unpinnedCount > 0) {
                 androidx.compose.material3.TextButton(
-                    onClick = { sorted.forEach { onSelect(it.key) } },
+                    onClick = { sorted.filter { it.key !in pinnedSet }.forEach { onSelect(it.key) } },
                 ) {
-                    Text("Pin all ${sorted.size}")
+                    Text("Pin all $unpinnedCount")
                 }
             }
         }
@@ -792,7 +795,7 @@ private fun ProcessPickerSheet(
                 "Pin",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.width(28.dp),
+                modifier = Modifier.width(32.dp),
                 textAlign = TextAlign.Center,
             )
         }
@@ -807,11 +810,17 @@ private fun ProcessPickerSheet(
             verticalArrangement = Arrangement.spacedBy(2.dp),
         ) {
             items(sorted) { item ->
+                val isPinned = item.key in pinnedSet
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(4.dp))
-                        .clickable { onSelect(item.key) }
+                        .clickable {
+                            if (isPinned) onUnpin(item.key) else onSelect(item.key)
+                        }
+                        .then(if (isPinned) Modifier.background(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        ) else Modifier)
                         .padding(vertical = 8.dp, horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -833,7 +842,13 @@ private fun ProcessPickerSheet(
                     PickerCell(item.starts, sortBy == "starts", colWidth)
                     PickerCell(item.transitions, sortBy == "transitions", colWidth)
                     PickerCell(item.frozenCount, sortBy == "frozen", colWidth)
-                    Icon(Icons.Default.Add, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+                    androidx.compose.material3.Checkbox(
+                        checked = isPinned,
+                        onCheckedChange = {
+                            if (isPinned) onUnpin(item.key) else onSelect(item.key)
+                        },
+                        modifier = Modifier.size(24.dp),
+                    )
                 }
             }
         }

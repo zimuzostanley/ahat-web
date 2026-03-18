@@ -278,6 +278,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                         DropdownMenu(
                             expanded = showTimeDropdown,
                             onDismissRequest = { showTimeDropdown = false },
+                            offset = androidx.compose.ui.unit.DpOffset(0.dp, 0.dp),
                         ) {
                             for (range in TimeRange.entries) {
                                 DropdownMenuItem(
@@ -438,6 +439,38 @@ private fun ProcStateApp(vm: MainViewModel) {
             }
 
             Box(Modifier.fillMaxSize().pullRefresh(pullState)) {
+                if (snapshotCount == 0 && !isCapturing) {
+                    // Empty state — big record button
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.Center,
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        IconButton(
+                            onClick = { showRecordSheet = true },
+                            modifier = Modifier.size(80.dp),
+                        ) {
+                            Icon(
+                                Icons.Default.RadioButtonChecked,
+                                "Start Recording",
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Start Recording",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Or pull down to capture a single snapshot",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        )
+                    }
+                } else {
                 androidx.compose.foundation.pager.HorizontalPager(
                     state = pagerState,
                     modifier = Modifier.fillMaxSize(),
@@ -487,6 +520,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     }
                 }
                 }
+                } // else (has data)
 
                 PullRefreshIndicator(
                     refreshing = isRefreshing,
