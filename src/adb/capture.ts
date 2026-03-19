@@ -638,8 +638,7 @@ export class AdbConnection {
       }
 
       completed++;
-      const shortName = e.name.length > 30 ? "\u2026" + e.name.slice(-29) : e.name;
-      onProgress(`${completed}/${readable.length}: ${shortName}`, completed, readable.length);
+      onProgress("Scanning VMAs\u2026", completed, readable.length);
     };
 
     // Worker loop: each worker pulls the next VMA index and greps it
