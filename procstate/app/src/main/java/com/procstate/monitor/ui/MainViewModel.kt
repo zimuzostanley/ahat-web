@@ -45,7 +45,9 @@ enum class TimeRange(val label: String, val millis: Long) {
     MIN_30("30m", 30 * 60_000L),
     HOUR_1("1h", 60 * 60_000L),
     HOUR_6("6h", 6 * 60 * 60_000L),
+    HOUR_12("12h", 12 * 60 * 60_000L),
     HOUR_24("24h", 24 * 60 * 60_000L),
+    DAY_3("3d", 3L * 24 * 60 * 60_000L),
     DAY_7("7d", 7 * 24 * 60 * 60_000L),
     DAY_30("30d", 30L * 24 * 60 * 60_000L),
 }
