@@ -56,6 +56,8 @@ fun SettingsSheet(
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     var confirmPrune by remember { mutableStateOf<Long?>(null) }
+    var showSessions by remember { mutableStateOf(false) }
+    var sessions by remember { mutableStateOf<List<DataSession>?>(null) }
     val hasData = snapshotCount > 0
 
     Column(
@@ -175,8 +177,6 @@ fun SettingsSheet(
         Spacer(Modifier.height(16.dp))
 
         // Data management
-        var showSessions by remember { mutableStateOf(false) }
-        var sessions by remember { mutableStateOf<List<DataSession>?>(null) }
         Text("Data", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
         val scope = androidx.compose.runtime.rememberCoroutineScope()
