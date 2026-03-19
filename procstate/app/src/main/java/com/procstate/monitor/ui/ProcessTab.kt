@@ -51,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -132,6 +133,7 @@ fun ProcessTab(
     memoryDumpProgress: String? = null,
     memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
     allProcessKeysWithTransitions: List<ProcessKeyWithTransitions> = emptyList(),
+    allProcessKeysFlow: kotlinx.coroutines.flow.StateFlow<List<ProcessKeyWithTransitions>>? = null,
     pickerSort: String = "transitions",
     onPickerSortChange: (String) -> Unit = {},
     isRefreshing: Boolean = false,
@@ -202,8 +204,10 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
+            // Collect flow inside sheet for live updates (ModalBottomSheet recomposition fix)
+            val liveKeys = allProcessKeysFlow?.collectAsState()?.value ?: allProcessKeysWithTransitions
             ProcessPickerSheet(
-                allKeysWithTransitions = allProcessKeysWithTransitions,
+                allKeysWithTransitions = liveKeys,
                 pinnedKeys = pinnedProcesses,
                 onSelect = onPinProcess,
                 onUnpin = onUnpinProcess,

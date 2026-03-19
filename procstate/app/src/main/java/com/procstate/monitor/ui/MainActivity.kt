@@ -475,6 +475,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                             allSnapshotTimestamps = snapshotTimestamps,
                             allProcessKeys = allProcessKeys,
                             allProcessKeysWithTransitions = allProcessKeysWithTransitions,
+                            allProcessKeysFlow = vm.allProcessKeysWithTransitions,
                             pickerSort = vm.pickerSort.collectAsState().value,
                             onPickerSortChange = vm::setPickerSort,
                             onPinProcess = vm::pinProcess,
