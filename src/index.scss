@@ -2467,6 +2467,202 @@ code {
   color: var(--ah-text);
 }
 
+// ─── Process Strings View ────────────────────────────────────────────────────
+
+.ah-proc-strings {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.ah-proc-strings__tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--ah-border);
+  flex-shrink: 0;
+}
+
+.ah-proc-strings__search {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  border: 1px solid var(--ah-border);
+  background: var(--ah-surface);
+  padding: 0.25rem 0.5rem;
+  width: 16rem;
+  &::placeholder { color: var(--ah-text-fainter); }
+  &:focus { outline: none; border-color: #38bdf8; }
+}
+
+.ah-proc-strings__count {
+  font-size: 10px;
+  color: var(--ah-text-faint);
+  white-space: nowrap;
+}
+
+.ah-proc-strings__content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ah-proc-strings__table-header {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.25rem 1rem;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ah-text-faint);
+  border-bottom: 1px solid var(--ah-border);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  background: var(--ah-surface);
+  z-index: 1;
+}
+
+.ah-proc-strings__rows {
+  flex: 1;
+  overflow: auto;
+}
+
+.ah-proc-strings__row {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.125rem 1rem;
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--ah-border-light);
+  align-items: baseline;
+  &:hover { background: var(--ah-hover-accent-bg); }
+}
+
+.ah-proc-strings__row--nested {
+  padding-left: 2.5rem;
+}
+
+.ah-proc-strings__col {
+  font-family: $mono;
+  color: var(--ah-text-secondary);
+  flex-shrink: 0;
+}
+
+.ah-proc-strings__col--sortable {
+  cursor: pointer;
+  &:hover { color: var(--ah-text-primary); }
+}
+
+.ah-proc-strings__col--addr {
+  width: 7rem;
+  font-size: 10px;
+  color: var(--ah-text-faint);
+}
+
+.ah-proc-strings__col--vma {
+  width: 14rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.ah-proc-strings__vma-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--ah-text-faint);
+}
+
+.ah-proc-strings__col--str {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ah-proc-strings__col--bytes {
+  width: 5rem;
+  text-align: right;
+}
+
+.ah-proc-strings__col--count {
+  width: 4rem;
+  text-align: right;
+}
+
+.ah-proc-strings__more {
+  padding: 0.5rem 1rem;
+  font-size: 10px;
+  color: var(--ah-text-faint);
+  text-align: center;
+}
+
+.ah-proc-strings__empty {
+  padding: 2rem;
+  font-size: 0.75rem;
+  color: var(--ah-text-faint);
+  text-align: center;
+}
+
+// ── By VMA accordion ──
+
+.ah-proc-strings__vma-group {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.25rem 1rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--ah-border-light);
+  &:hover { background: var(--ah-hover-accent-bg); }
+}
+
+.ah-proc-strings__vma-group--expanded {
+  background: var(--ah-accent-bg);
+  border-bottom-color: var(--ah-border);
+}
+
+.ah-proc-strings__vma-addr {
+  font-family: $mono;
+  font-size: 10px;
+  color: var(--ah-text-faint);
+  flex-shrink: 0;
+}
+
+.ah-proc-strings__vma-perms {
+  font-family: $mono;
+  font-size: 10px;
+  color: var(--ah-text-fainter);
+  flex-shrink: 0;
+  width: 2.5rem;
+}
+
+.ah-proc-strings__vma-count {
+  font-size: 10px;
+  color: var(--ah-text-secondary);
+  flex-shrink: 0;
+  width: 7rem;
+  text-align: right;
+}
+
+.ah-proc-strings__vma-size {
+  font-size: 10px;
+  color: var(--ah-text-faint);
+  flex-shrink: 0;
+  width: 4.5rem;
+  text-align: right;
+}
+
+.ah-proc-strings__vma-strings {
+  border-bottom: 1px solid var(--ah-border);
+}
+
 // ─── Scrollbar ───────────────────────────────────────────────────────────────
 
 * {

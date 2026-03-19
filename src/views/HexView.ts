@@ -288,6 +288,7 @@ interface HexViewAttrs {
   name: string;
   regions?: { addrStart: string; addrEnd: string }[];
   availableDiffs?: DiffTarget[];
+  initialStringFilter?: string;
 }
 
 function HexView(): m.Component<HexViewAttrs> {
@@ -304,6 +305,7 @@ function HexView(): m.Component<HexViewAttrs> {
   let diffMinimapCanvas: HTMLCanvasElement | null = null;
   let programmaticScroll = false;
   let stringShowCount = MAX_DISPLAYED_STRINGS;
+  let appliedInitialFilter: string | undefined;
   let showDuplicates = false;
   let dupSortField: DupSortField = "totalBytes";
   let dupSortAsc = false;
@@ -546,7 +548,12 @@ function HexView(): m.Component<HexViewAttrs> {
       if (highlightTimer) clearTimeout(highlightTimer);
     },
     view(vnode) {
-      const { buffer, name, regions, availableDiffs } = vnode.attrs;
+      const { buffer, name, regions, availableDiffs, initialStringFilter } = vnode.attrs;
+      if (initialStringFilter !== undefined && initialStringFilter !== appliedInitialFilter) {
+        appliedInitialFilter = initialStringFilter;
+        stringFilter = initialStringFilter;
+        showStrings = true;
+      }
       const data = getData(buffer);
       const totalRows = Math.ceil(data.byteLength / BYTES_PER_ROW);
       const regionMap = getRegionMap(regions);

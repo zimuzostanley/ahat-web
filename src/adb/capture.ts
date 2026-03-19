@@ -66,6 +66,47 @@ export interface SmapsAggregated {
   entries: SmapsEntry[];
 }
 
+/** A single string extracted from a VMA via on-device grep. */
+export interface VmaString {
+  offset: number;        // byte offset within the VMA region
+  vmaAddr: number;       // absolute VMA address (vmaBase + offset)
+  str: string;
+  vmaIndex: number;      // index into the regions array
+}
+
+/** VMA region info for the process strings view. */
+export interface VmaRegionInfo {
+  addrStart: string;
+  addrEnd: string;
+  perms: string;
+  name: string;
+  sizeKb: number;
+  stringCount: number;
+}
+
+/** Result of grepping all VMAs for a process. */
+export interface ProcessStringsResult {
+  pid: number;
+  processName: string;
+  regions: VmaRegionInfo[];
+  strings: VmaString[];
+}
+
+/** Parse grep -b output lines into offset/string pairs. */
+export function parseGrepOutput(output: string): { offset: number; str: string }[] {
+  const results: { offset: number; str: string }[] = [];
+  for (const line of output.split("\n")) {
+    if (!line) continue;
+    const colonIdx = line.indexOf(":");
+    if (colonIdx < 0) continue;
+    const offset = parseInt(line.substring(0, colonIdx), 10);
+    if (!isFinite(offset)) continue;
+    const str = line.substring(colonIdx + 1);
+    if (str.length >= 4) results.push({ offset, str });
+  }
+  return results;
+}
+
 /** Per-process smaps rollup summary from /proc/<pid>/smaps_rollup. */
 export interface SmapsRollup {
   sizeKb: number;
@@ -539,6 +580,67 @@ export class AdbConnection {
     } finally {
       try { await this.device?.shell(`rm -f ${tmpPath}`); } catch { /* ignore */ }
     }
+  }
+
+  /** Extract printable strings from process VMAs using on-device grep. */
+  async grepVmaStrings(
+    pid: number,
+    entries: SmapsEntry[],
+    onProgress: (status: string, completed: number, total: number) => void,
+    signal?: AbortSignal,
+  ): Promise<{ regions: VmaRegionInfo[]; strings: VmaString[] }> {
+    if (!this.device) throw new Error("Not connected");
+    if (!this._isRoot) throw new Error("Root required");
+
+    const readable = entries.filter(e => e.perms[0] === "r");
+    const regions: VmaRegionInfo[] = readable.map(e => ({
+      addrStart: e.addrStart,
+      addrEnd: e.addrEnd,
+      perms: e.perms,
+      name: e.name,
+      sizeKb: e.sizeKb,
+      stringCount: 0,
+    }));
+    const strings: VmaString[] = [];
+
+    for (let i = 0; i < readable.length; i++) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+      const e = readable[i];
+      const region = regions[i];
+      const startByte = parseInt(e.addrStart, 16);
+      const endByte = parseInt(e.addrEnd, 16);
+      const startPage = Math.floor(startByte / 4096);
+      const numPages = Math.ceil((endByte - startByte) / 4096);
+
+      const shortName = e.name.length > 30 ? "\u2026" + e.name.slice(-29) : e.name;
+      onProgress(`${i + 1}/${readable.length}: ${shortName}`, i, readable.length);
+
+      try {
+        // Use -E for extended regex; [ -~] matches printable ASCII (0x20-0x7e)
+        const grepCmd = `dd if=/proc/${pid}/mem bs=4096 skip=${startPage} count=${numPages} 2>/dev/null | grep -baoE "[ -~]{4,}"`;
+        // Wrap in su; inner double-quotes are safe inside single-quoted su argument
+        const shellCmd = this._suPrefix === "su -c"
+          ? `su -c '${grepCmd}'`
+          : `su 0 sh -c '${grepCmd}'`;
+        const output = await this.device.shell(shellCmd, signal);
+        const parsed = parseGrepOutput(output);
+        region.stringCount = parsed.length;
+        for (const p of parsed) {
+          strings.push({
+            offset: p.offset,
+            vmaAddr: startByte + p.offset,
+            str: p.str,
+            vmaIndex: i,
+          });
+        }
+      } catch {
+        // VMA may have disappeared or be unreadable — skip
+      }
+    }
+
+    onProgress("Done", readable.length, readable.length);
+    return { regions, strings };
   }
 
   private _listenDisconnect(): void {

@@ -1,7 +1,7 @@
 import m from "mithril";
 import { Fragment } from "./mithril-helpers";
 import type { OverviewData } from "./hprof.worker";
-import { AdbConnection, parseSmaps, aggregateSmaps, parseSmapsRollups, parseBatchSmaps, type SmapsAggregated } from "./adb/capture";
+import { AdbConnection, parseSmaps, aggregateSmaps, parseSmapsRollups, parseBatchSmaps, type SmapsAggregated, type ProcessStringsResult } from "./adb/capture";
 import HprofWorkerInline from "./hprof.worker.ts?worker&inline";
 import { type WorkerProxy, makeWorkerProxy } from "./worker-proxy";
 import { Breadcrumbs } from "./components";
@@ -19,6 +19,7 @@ import ObjectsView from "./views/ObjectsView";
 import BitmapGalleryView from "./views/BitmapGalleryView";
 import StringsView from "./views/StringsView";
 import SmapsFileView from "./views/SmapsFileView";
+import ProcessStringsView from "./views/ProcessStringsView";
 import PerfettoView from "./views/PerfettoView";
 
 // ─── CmdTooltip ──────────────────────────────────────────────────────────────
@@ -85,7 +86,7 @@ export interface VmaRegion { addrStart: string; addrEnd: string }
 interface Session {
   id: string;
   name: string;
-  kind: "hprof" | "vmadump" | "smaps" | "perfetto";
+  kind: "hprof" | "vmadump" | "smaps" | "perfetto" | "procstrings";
   status: SessionStatus;
   buffer: ArrayBuffer | null;
   proxy: WorkerProxy | null;
@@ -94,8 +95,10 @@ interface Session {
   worker: Worker | null;
   errorMsg: string | null;
   vmaRegions?: VmaRegion[];
+  initialStringFilter?: string;
   smapsAggregated?: SmapsAggregated[];
   smapsProcesses?: { pid: number; name: string; aggregated: SmapsAggregated[] }[];
+  procStrings?: ProcessStringsResult;
 }
 
 let nextSessionId = 1;
@@ -341,7 +344,7 @@ export default function App(): m.Component {
     }
   }
 
-  function loadVmaDump(name: string, buffer: ArrayBuffer, regions?: VmaRegion[]) {
+  function loadVmaDump(name: string, buffer: ArrayBuffer, regions?: VmaRegion[], initialStringFilter?: string) {
     const sessionId = `session-${nextSessionId++}`;
     const newSession: Session = {
       id: sessionId, name, kind: "vmadump", status: "ready",
@@ -349,6 +352,20 @@ export default function App(): m.Component {
       progress: { msg: "", pct: 100 },
       worker: null, errorMsg: null,
       vmaRegions: regions,
+      initialStringFilter,
+    };
+    sessions = [...sessions, newSession];
+    activeTab = sessionId;
+  }
+
+  function loadProcessStrings(name: string, data: ProcessStringsResult) {
+    const sessionId = `session-${nextSessionId++}`;
+    const newSession: Session = {
+      id: sessionId, name, kind: "procstrings", status: "ready",
+      buffer: null, proxy: null, overview: null,
+      progress: { msg: "", pct: 100 },
+      worker: null, errorMsg: null,
+      procStrings: data,
     };
     sessions = [...sessions, newSession];
     activeTab = sessionId;
@@ -527,7 +544,7 @@ export default function App(): m.Component {
                       key: s.id,
                       className: `ah-tab__group ah-tab${activeTab === s.id ? " ah-tab--active" : ""}`,
                       onclick: () => switchToTab(s.id),
-                      title: s.name + (s.kind === "vmadump" ? " (VMA dump)" : s.kind === "smaps" ? " (smaps)" : s.kind === "perfetto" ? " (Perfetto)" : " (heap dump)"),
+                      title: s.name + (s.kind === "vmadump" ? " (VMA dump)" : s.kind === "smaps" ? " (smaps)" : s.kind === "perfetto" ? " (Perfetto)" : s.kind === "procstrings" ? " (strings)" : " (heap dump)"),
                     },
                       s.status === "loading" && m("span", { className: "ah-tab__dot ah-tab__dot--loading" }),
                       s.status === "error" && m("span", { className: "ah-tab__dot ah-tab__dot--error" }),
@@ -755,7 +772,7 @@ export default function App(): m.Component {
               )
             ),
             m("div", { className: sessions.length > 0 ? "ah-capture-wrap--compact" : "ah-capture-wrap" },
-              m(CaptureView, { onCaptured: loadBuffer, onVmaDump: loadVmaDump, conn: adbConn, sessionFile: pendingSessionFile })
+              m(CaptureView, { onCaptured: loadBuffer, onVmaDump: loadVmaDump, onProcessStrings: loadProcessStrings, conn: adbConn, sessionFile: pendingSessionFile })
             )
           )
         ),
@@ -802,9 +819,31 @@ export default function App(): m.Component {
                   buffer: activeSession.buffer,
                   name: activeSession.name,
                   regions: activeSession.vmaRegions,
+                  initialStringFilter: activeSession.initialStringFilter,
                   availableDiffs: sessions
                     .filter(s => s.kind === "vmadump" && s.id !== activeSession.id && s.status === "ready" && s.buffer)
                     .map(s => ({ id: s.id, name: s.name, buffer: s.buffer! })),
+                })
+              )
+            ),
+
+            // Ready — process strings view
+            activeSession.status === "ready" && activeSession.kind === "procstrings" && activeSession.procStrings && (
+              m("main", { className: "ah-main" },
+                m(ProcessStringsView, {
+                  data: activeSession.procStrings,
+                  name: activeSession.name,
+                  onDumpVma: (dumpName: string, pid: number, region: { addrStart: string; addrEnd: string }, filterString?: string) => {
+                    // Trigger VMA dump via the ADB connection, then open hex view
+                    const regions = [region];
+                    adbConn.dumpVmaMemory(pid, regions, () => {}).then(data => {
+                      loadVmaDump(dumpName, data.buffer as ArrayBuffer, regions, filterString);
+                    }).catch(e => {
+                      if (e instanceof DOMException && e.name === "AbortError") return;
+                      error = e instanceof Error ? e.message : "VMA dump failed";
+                      m.redraw();
+                    });
+                  },
                 })
               )
             ),

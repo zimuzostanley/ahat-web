@@ -1,6 +1,6 @@
 import m from "mithril";
 import { Fragment } from "../mithril-helpers";
-import { AdbConnection, PINNED_PROCESSES, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
+import { AdbConnection, PINNED_PROCESSES, type ProcessInfo, type CapturePhase, type SmapsAggregated, type SmapsEntry, type SmapsRollup, type SharedMapping, type SharedMappingDiff, type GlobalMemInfo, type ProcessDiff, type GlobalMemInfoDiff, type SmapsDiff, type SmapsEntryDiff, type ProcessStringsResult, diffProcesses, diffGlobalMemInfo, diffSmaps, diffSmapsEntries, aggregateSmaps, aggregateSharedMappings, diffSharedMappings } from "../adb/capture";
 import { fmtSize, fmtDelta, deltaBgClass } from "../format";
 import { sortWithDiffPinning, computeSmapsTotals, SMAPS_COLUMNS, SMAPS_DELTA_KEY, timelineClick, deleteSnapshotState, type TimelineState, type SmapsNumericField, type SmapsDeltaKey } from "./capture-helpers";
 import { searchProcesses, searchSharedMappings, filterProcesses, filterSmapsGroups, filterVmaEntries, filterSharedMappings, type SearchResults, type SearchMatch } from "./capture-search";
@@ -714,6 +714,7 @@ function getFieldValue(p: ProcessInfo, field: SmapsNumericField, rollup?: SmapsR
 interface CaptureViewAttrs {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
   onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
+  onProcessStrings: (name: string, data: ProcessStringsResult) => void;
   conn: AdbConnection;
   sessionFile?: File | null;
 }
@@ -738,6 +739,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   // VMA dump state
   let vmaDumpAbortCtrl: AbortController | null = null;
   let vmaDumpStatus: string | null = null;
+
+  // Process strings extraction state
+  let stringsAbortCtrl: AbortController | null = null;
+  let stringsStatus: string | null = null;
+  let stringsProgress: { done: number; total: number } | null = null;
 
   // Smaps rollup -- fast batch fetch (root-only)
   let smapsRollups = new Map<number, SmapsRollup>();
@@ -1198,6 +1204,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         cancelSmapsFetch();
         cancelAllCaptures();
         cancelVmaDump();
+        cancelStrings();
         error = "USB device disconnected";
         m.redraw();
       };
@@ -1308,11 +1315,68 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     }
   }
 
+  function cancelStrings() {
+    if (stringsAbortCtrl) { stringsAbortCtrl.abort(); stringsAbortCtrl = null; }
+    stringsStatus = null;
+    stringsProgress = null;
+  }
+
+  async function handleStrings(pid: number, processName: string) {
+    if (!connected || stringsStatus) return;
+    const ac = new AbortController();
+    stringsAbortCtrl = ac;
+    try {
+      // Ensure smaps is loaded for this process
+      let aggregated = smapsData.get(pid);
+      if (!aggregated || aggregated.length === 0) {
+        stringsStatus = "Fetching smaps\u2026";
+        m.redraw();
+        const rawEntries = await conn.getSmapsForPid(pid, ac.signal);
+        if (ac.signal.aborted) return;
+        aggregated = aggregateSmaps(rawEntries);
+        smapsData = new Map(smapsData);
+        smapsData.set(pid, aggregated);
+      }
+
+      const allEntries = aggregated.flatMap(a => a.entries);
+      stringsStatus = "Scanning strings\u2026";
+      m.redraw();
+
+      const result = await conn.grepVmaStrings(pid, allEntries, (status, done, total) => {
+        stringsStatus = status;
+        stringsProgress = { done, total };
+        m.redraw();
+      }, ac.signal);
+
+      if (ac.signal.aborted) return;
+
+      const procSan = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      _onProcessStrings(`${procSan}_strings`, {
+        pid,
+        processName,
+        ...result,
+      });
+    } catch (e) {
+      if (ac.signal.aborted) return;
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      error = e instanceof Error ? e.message : "String extraction failed";
+      m.redraw();
+    } finally {
+      if (stringsAbortCtrl === ac) {
+        stringsAbortCtrl = null;
+        stringsStatus = null;
+        stringsProgress = null;
+        m.redraw();
+      }
+    }
+  }
+
   function handleDisconnect() {
     cancelEnrichment();
     cancelSmapsFetch();
     cancelAllCaptures();
     cancelVmaDump();
+    cancelStrings();
     conn.disconnect();
     connected = false;
     error = null;
@@ -1323,6 +1387,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   // Attrs-derived callbacks stored each render
   let _onCaptured: (name: string, buffer: ArrayBuffer) => void;
   let _onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
+  let _onProcessStrings: (name: string, data: ProcessStringsResult) => void;
   let _importedSessionFile: File | null = null;
 
   return {
@@ -1330,6 +1395,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       conn = vnode.attrs.conn;
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
+      _onProcessStrings = vnode.attrs.onProcessStrings;
       if (vnode.attrs.sessionFile) {
         _importedSessionFile = vnode.attrs.sessionFile;
         importSession(vnode.attrs.sessionFile);
@@ -1340,6 +1406,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       cancelSmapsFetch();
       cancelAllCaptures();
       cancelVmaDump();
+      cancelStrings();
       conn.disconnect();
       if (searchTimer) clearTimeout(searchTimer);
     },
@@ -1347,6 +1414,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       conn = vnode.attrs.conn;
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
+      _onProcessStrings = vnode.attrs.onProcessStrings;
       if (vnode.attrs.sessionFile && vnode.attrs.sessionFile !== _importedSessionFile) {
         _importedSessionFile = vnode.attrs.sessionFile;
         importSession(vnode.attrs.sessionFile);
@@ -1687,6 +1755,29 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
               ])
             ),
 
+            // Process strings progress
+            stringsStatus && (
+              m("div", { className: "ah-capture-progress" }, [
+                m("div", { className: "ah-capture-progress__row" }, [
+                  m("span", { className: "ah-capture-progress__text" }, `Strings: ${stringsStatus}`),
+                  stringsProgress && m("span", { className: "ah-capture-progress__count" },
+                    `${stringsProgress.done}/${stringsProgress.total}`),
+                  m("button", {
+                    className: "ah-capture-progress__cancel",
+                    onclick: cancelStrings,
+                  }, "Cancel"),
+                ]),
+                stringsProgress && stringsProgress.total > 0 && (
+                  m("div", { className: "ah-capture-progress-bar" }, [
+                    m("div", {
+                      className: "ah-capture-progress-bar__fill ah-capture-progress-bar__fill--accent",
+                      style: { width: `${(stringsProgress.done / stringsProgress.total) * 100}%` },
+                    }),
+                  ])
+                ),
+              ])
+            ),
+
             // Enrichment progress
             enrichStatus && (
               m("div", { className: "ah-capture-progress" }, [
@@ -1953,6 +2044,15 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                                 onDump: startCapture,
                                 onCancel: cancelCapture,
                               })
+                            ),
+                            d.status !== "removed" && conn.isRoot && (
+                              m("button", {
+                                className: "ah-smaps-action",
+                                style: { marginLeft: "0.25rem" },
+                                disabled: !connected || !isLive || !!stringsStatus,
+                                title: "Extract strings from process VMAs",
+                                onclick: (e: Event) => { e.stopPropagation(); handleStrings(p.pid, p.name); },
+                              }, "strings")
                             ),
                           ]),
                           m("td", { className: "ah-capture-td--pid" }, [
