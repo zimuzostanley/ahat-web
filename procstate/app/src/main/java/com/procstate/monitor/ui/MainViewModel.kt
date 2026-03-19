@@ -609,23 +609,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun getDataSessions(): List<DataSession> {
         val timestamps = withContext(Dispatchers.IO) { dao.getAllSnapshotTimestamps() }
-        if (timestamps.isEmpty()) return emptyList()
-        // Group into sessions: gap > 2 minutes = new session
-        val sessions = mutableListOf<DataSession>()
-        var sessionStart = timestamps[0]
-        var sessionCount = 1
-        for (i in 1 until timestamps.size) {
-            val gap = timestamps[i] - timestamps[i - 1]
-            if (gap > 2 * 60_000) {
-                sessions.add(DataSession(sessionStart, timestamps[i - 1], sessionCount))
-                sessionStart = timestamps[i]
-                sessionCount = 1
-            } else {
-                sessionCount++
-            }
-        }
-        sessions.add(DataSession(sessionStart, timestamps.last(), sessionCount))
-        return sessions
+        return timestamps.map { DataSession(it, it, 1) }
     }
 
     // ── Data management ─────────────────────────────────────────────────────
