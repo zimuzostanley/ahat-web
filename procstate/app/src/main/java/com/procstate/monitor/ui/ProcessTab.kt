@@ -718,7 +718,7 @@ private fun ProcessPickerSheet(
     // Local pinned state for immediate UI feedback inside ModalBottomSheet
     var localPinned by remember(pinnedKeys) { mutableStateOf(pinnedKeys.toSet()) }
     var showPinWarning by remember { mutableStateOf(false) }
-    var pendingPin by remember { mutableStateOf<ProcessKey?>(null) }
+    var pendingPins by remember { mutableStateOf<List<ProcessKey>>(emptyList()) }
     val pinnedSet = localPinned
 
     // Track sort direction: false = descending (default), true = ascending
@@ -757,6 +757,7 @@ private fun ProcessPickerSheet(
                     onClick = {
                         val toPins = sorted.filter { it.key !in pinnedSet }.map { it.key }
                         if (localPinned.size + toPins.size > 10) {
+                            pendingPins = toPins
                             showPinWarning = true
                         } else {
                             localPinned = localPinned + toPins
@@ -826,7 +827,6 @@ private fun ProcessPickerSheet(
         ) {
             items(sorted) { item ->
                 val isPinned = item.key in pinnedSet
-                val context = androidx.compose.ui.platform.LocalContext.current
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -835,15 +835,12 @@ private fun ProcessPickerSheet(
                             if (isPinned) {
                                 localPinned = localPinned - item.key
                                 onUnpin(item.key)
+                            } else if (localPinned.size >= 10) {
+                                pendingPins = listOf(item.key)
+                                showPinWarning = true
                             } else {
-                                if (localPinned.size >= 10) {
-                                    showPinWarning = true
-                                    pendingPin = item.key
-                                } else {
-                                    localPinned = localPinned + item.key
-                                    onSelect(item.key)
-                                    android.widget.Toast.makeText(context, item.key.name, android.widget.Toast.LENGTH_SHORT).show()
-                                }
+                                localPinned = localPinned + item.key
+                                onSelect(item.key)
                             }
                         }
                         .then(if (isPinned) Modifier.background(
@@ -877,8 +874,8 @@ private fun ProcessPickerSheet(
                                 localPinned = localPinned - item.key
                                 onUnpin(item.key)
                             } else if (localPinned.size >= 10) {
+                                pendingPins = listOf(item.key)
                                 showPinWarning = true
-                                pendingPin = item.key
                             } else {
                                 localPinned = localPinned + item.key
                                 onSelect(item.key)
@@ -925,24 +922,23 @@ private fun ProcessPickerSheet(
     }
 
     if (showPinWarning) {
+        val totalAfter = localPinned.size + pendingPins.size
         androidx.compose.material3.AlertDialog(
-            onDismissRequest = { showPinWarning = false; pendingPin = null },
-            title = { Text("Pin ${localPinned.size + 1} processes?") },
+            onDismissRequest = { showPinWarning = false; pendingPins = emptyList() },
+            title = { Text("Pin $totalAfter processes?") },
             text = { Text("Pinning many processes may slow the UI. Continue?") },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
-                    pendingPin?.let {
-                        localPinned = localPinned + it
-                        onSelect(it)
-                    }
+                    localPinned = localPinned + pendingPins
+                    pendingPins.forEach { onSelect(it) }
                     showPinWarning = false
-                    pendingPin = null
+                    pendingPins = emptyList()
                 }) { Text("Pin") }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     showPinWarning = false
-                    pendingPin = null
+                    pendingPins = emptyList()
                 }) { Text("Cancel") }
             },
         )
