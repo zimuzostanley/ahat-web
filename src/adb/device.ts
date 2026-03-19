@@ -138,7 +138,6 @@ const textDec = new TextDecoder();
 
 const RX_HIGH_WATER = 2 * 1024 * 1024;   // 2 MiB: pause ACKs
 const RX_LOW_WATER  = 512 * 1024;         // 512 KiB: resume ACKs
-const RX_ACK_DELAY  = 8;                  // ms to delay ACK when above high water
 
 export class AdbDevice {
   private lastStreamId = 0;
@@ -356,17 +355,14 @@ export class AdbDevice {
   private ackOrDefer(localId: number, remoteId: number, dataLen: number): void {
     this.rxBuffered += dataLen;
     if (this.rxBuffered > RX_HIGH_WATER) {
+      // Defer ACK until consumer drains below low-water mark.
       this.rxPaused = true;
       this.pendingAcks.push({ localId, remoteId });
-      // Send delayed ACK as safety valve — even if consumer stalls, we
-      // eventually unblock the device to avoid deadlock.
+      // Safety valve: flush after 100ms even if consumer hasn't drained,
+      // to prevent deadlock if _notifyConsumed is never called.
       setTimeout(() => {
-        const idx = this.pendingAcks.findIndex(a => a.localId === localId && a.remoteId === remoteId);
-        if (idx >= 0) {
-          this.pendingAcks.splice(idx, 1);
-          this.send("OKAY", localId, remoteId);
-        }
-      }, RX_ACK_DELAY);
+        if (this.pendingAcks.length > 0) this.flushPendingAcks();
+      }, 100);
     } else {
       this.send("OKAY", localId, remoteId);
     }
@@ -476,12 +472,32 @@ export class AdbDevice {
     }
   }
 
+  // ── Serialized send queue ───────────────────────────────────────────────
+  // All USB writes go through this queue to prevent concurrent transferOut
+  // calls on the same endpoint, which can crash the WebUSB connection.
+  private sendQueue: Array<{ cmd: string; arg0: number; arg1: number; data?: Uint8Array | string }> = [];
+  private sendInFlight = false;
+
   private send(cmd: string, arg0: number, arg1: number, data?: Uint8Array | string): void {
     if (!this._connected) return;
-    AdbDevice.sendRaw(this.usb, cmd, arg0, arg1, data, this.useChecksum).catch(err => {
-      console.error("[adb] send error:", err);
-      this._connected = false;
-    });
+    this.sendQueue.push({ cmd, arg0, arg1, data });
+    if (!this.sendInFlight) this.drainSendQueue();
+  }
+
+  private async drainSendQueue(): Promise<void> {
+    this.sendInFlight = true;
+    while (this.sendQueue.length > 0) {
+      const entry = this.sendQueue.shift()!;
+      if (!this._connected) break;
+      try {
+        await AdbDevice.sendRaw(this.usb, entry.cmd, entry.arg0, entry.arg1, entry.data, this.useChecksum);
+      } catch (err) {
+        console.error("[adb] send error:", err);
+        this._connected = false;
+        break;
+      }
+    }
+    this.sendInFlight = false;
   }
 
   private static async recvMsg(usb: AdbUsbInterface): Promise<AdbMsg> {

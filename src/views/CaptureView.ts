@@ -2048,7 +2048,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             d.status !== "removed" && conn.isRoot && (
                               m("button", {
                                 className: "ah-smaps-action",
-                                style: { marginLeft: "0.25rem" },
                                 disabled: !connected || !isLive || !!stringsStatus,
                                 title: "Extract strings from process VMAs",
                                 onclick: (e: Event) => { e.stopPropagation(); handleStrings(p.pid, p.name); },

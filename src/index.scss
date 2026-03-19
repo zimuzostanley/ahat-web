@@ -1989,6 +1989,9 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   @extend .ah-capture-td;
   text-align: center;
   white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 .ah-capture-td--name {

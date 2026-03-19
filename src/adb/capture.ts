@@ -583,7 +583,8 @@ export class AdbConnection {
   }
 
   /** Extract printable strings from process VMAs using on-device grep.
-   *  Runs up to GREP_CONCURRENCY VMA greps in parallel for speed. */
+   *  Batches multiple VMAs per shell command to reduce round-trips while
+   *  using only a single ADB stream at a time (avoids USB disconnect). */
   async grepVmaStrings(
     pid: number,
     entries: SmapsEntry[],
@@ -593,7 +594,8 @@ export class AdbConnection {
     if (!this.device) throw new Error("Not connected");
     if (!this._isRoot) throw new Error("Root required");
 
-    const CONCURRENCY = 4;
+    const BATCH_SIZE = 8; // VMAs per shell command
+    const MARKER = "===VMA===";
     const readable = entries.filter(e => e.perms[0] === "r");
     const regions: VmaRegionInfo[] = readable.map(e => ({
       addrStart: e.addrStart,
@@ -603,61 +605,55 @@ export class AdbConnection {
       sizeKb: e.sizeKb,
       stringCount: 0,
     }));
+    const strings: VmaString[] = [];
 
-    // Per-VMA results collected in order
-    const perVma: VmaString[][] = readable.map(() => []);
-    let completed = 0;
-    let nextIndex = 0;
+    for (let batchStart = 0; batchStart < readable.length; batchStart += BATCH_SIZE) {
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
-    const grepOne = async (i: number): Promise<void> => {
-      const e = readable[i];
-      const region = regions[i];
-      const startByte = parseInt(e.addrStart, 16);
-      const endByte = parseInt(e.addrEnd, 16);
-      const startPage = Math.floor(startByte / 4096);
-      const numPages = Math.ceil((endByte - startByte) / 4096);
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, readable.length);
+      onProgress("Scanning VMAs\u2026", batchStart, readable.length);
+
+      // Build a single shell command that greps all VMAs in this batch,
+      // separated by a unique marker line so we can split the output.
+      const cmds: string[] = [];
+      const batchMeta: { index: number; startByte: number }[] = [];
+      for (let i = batchStart; i < batchEnd; i++) {
+        const e = readable[i];
+        const startByte = parseInt(e.addrStart, 16);
+        const endByte = parseInt(e.addrEnd, 16);
+        const startPage = Math.floor(startByte / 4096);
+        const numPages = Math.ceil((endByte - startByte) / 4096);
+        batchMeta.push({ index: i, startByte });
+        cmds.push(`echo ${MARKER}`);
+        cmds.push(`dd if=/proc/${pid}/mem bs=4096 skip=${startPage} count=${numPages} 2>/dev/null | grep -baoE "[ -~]{4,}"`);
+      }
 
       try {
-        const grepCmd = `dd if=/proc/${pid}/mem bs=4096 skip=${startPage} count=${numPages} 2>/dev/null | grep -baoE "[ -~]{4,}"`;
+        const innerCmd = cmds.join(";");
         const shellCmd = this._suPrefix === "su -c"
-          ? `su -c '${grepCmd}'`
-          : `su 0 sh -c '${grepCmd}'`;
-        const output = await this.device!.shell(shellCmd, signal);
-        const parsed = parseGrepOutput(output);
-        region.stringCount = parsed.length;
-        for (const p of parsed) {
-          perVma[i].push({
-            offset: p.offset,
-            vmaAddr: startByte + p.offset,
-            str: p.str,
-            vmaIndex: i,
-          });
+          ? `su -c '${innerCmd}'`
+          : `su 0 sh -c '${innerCmd}'`;
+        const output = await this.device.shell(shellCmd, signal);
+
+        // Split output by marker — first section before the first marker is empty
+        const sections = output.split(MARKER);
+        for (let si = 0; si < batchMeta.length; si++) {
+          const section = sections[si + 1] ?? ""; // +1 because first split is before first marker
+          const { index, startByte } = batchMeta[si];
+          const parsed = parseGrepOutput(section);
+          regions[index].stringCount = parsed.length;
+          for (const p of parsed) {
+            strings.push({
+              offset: p.offset,
+              vmaAddr: startByte + p.offset,
+              str: p.str,
+              vmaIndex: index,
+            });
+          }
         }
       } catch {
-        // VMA may have disappeared or be unreadable — skip
+        // Batch failed — individual VMAs may have disappeared
       }
-
-      completed++;
-      onProgress("Scanning VMAs\u2026", completed, readable.length);
-    };
-
-    // Worker loop: each worker pulls the next VMA index and greps it
-    const worker = async (): Promise<void> => {
-      while (nextIndex < readable.length) {
-        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
-        const i = nextIndex++;
-        await grepOne(i);
-      }
-    };
-
-    // Launch CONCURRENCY workers
-    const workers = Array.from({ length: Math.min(CONCURRENCY, readable.length) }, () => worker());
-    await Promise.all(workers);
-
-    // Flatten results in VMA order
-    const strings: VmaString[] = [];
-    for (const vmaStrings of perVma) {
-      for (const s of vmaStrings) strings.push(s);
     }
 
     onProgress("Done", readable.length, readable.length);
