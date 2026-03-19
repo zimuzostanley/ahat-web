@@ -53,6 +53,7 @@ fun SettingsSheet(
     onExport: (Long) -> Unit,
     onExportRangeChange: (Long) -> Unit,
     onLoadSessions: (suspend () -> List<DataSession>)? = null,
+    onPinSession: ((startMs: Long) -> Unit)? = null,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     var confirmPrune by remember { mutableStateOf<Long?>(null) }
@@ -263,7 +264,14 @@ fun SettingsSheet(
                     val fmt = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(sessions!!.reversed()) { session ->
-                            Column(Modifier.fillMaxWidth()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .then(if (onPinSession != null) Modifier.clickable {
+                                        onPinSession(session.startMs)
+                                        showSessions = false
+                                    } else Modifier),
+                            ) {
                                 if (session.isSingleSnapshot) {
                                     Row(
                                         Modifier.fillMaxWidth(),

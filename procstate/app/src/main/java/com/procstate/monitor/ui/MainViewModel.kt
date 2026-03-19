@@ -159,6 +159,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _ticker = MutableStateFlow(System.currentTimeMillis())
 
+    /** Pinned absolute start time (non-persisted). Overrides time range when set. */
+    private val _pinnedStartMs = MutableStateFlow<Long?>(null)
+    val pinnedStartMs: StateFlow<Long?> = _pinnedStartMs.asStateFlow()
+
+    fun pinStartTime(startMs: Long) { _pinnedStartMs.value = startMs }
+    fun clearPinnedStart() { _pinnedStartMs.value = null }
+
+    /** Effective start time: pinned start or relative time range. */
+    private val effectiveStart = combine(_timeRange, _ticker, _pinnedStartMs) { range, tick, pinned ->
+        pinned ?: (tick - range.millis)
+    }
+
     // ── Capture controls ────────────────────────────────────────────────────
 
     private val _captureInterval = MutableStateFlow(
@@ -295,7 +307,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // ── Proc State tab data ─────────────────────────────────────────────────
 
     val snapshotsWithCounts: StateFlow<List<SnapshotWithCounts>> =
-        combine(_timeRange, _ticker) { range, tick -> tick - range.millis }
+        effectiveStart
             .flatMapLatest { start ->
                 combine(
                     dao.getSnapshotStateCounts(start),
@@ -420,14 +432,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Timeline rows, filtered by pinned names then by uid in Kotlin. */
     val processTimeline =
-        combine(_pinnedProcesses, _timeRange, _ticker) { keys, range, tick ->
-            Triple(keys, range, tick)
-        }.flatMapLatest { (keys, range, tick) ->
+        combine(_pinnedProcesses, effectiveStart) { keys, start ->
+            keys to start
+        }.flatMapLatest { (keys, start) ->
             if (keys.isEmpty()) flowOf(emptyList())
             else {
                 val names = keys.map { it.name }.distinct()
                 val keySet = keys.toSet()
-                dao.getProcessTimeline(names, tick - range.millis).map { rows ->
+                dao.getProcessTimeline(names, start).map { rows ->
                     rows.filter { ProcessKey(it.name, it.uid) in keySet }
                 }
             }
@@ -435,13 +447,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** All snapshot timestamps in range (ensures process tab shows rows even when all pinned are dead). */
     val snapshotTimestamps: StateFlow<List<Long>> =
-        combine(_timeRange, _ticker) { range, tick -> tick - range.millis }
+        effectiveStart
             .flatMapLatest { start -> dao.getSnapshotTimestamps(start) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** All process keys with transition counts, computed on IO thread. */
     val allProcessKeysWithTransitions: StateFlow<List<ProcessKeyWithTransitions>> =
-        combine(_timeRange, _ticker) { range, tick -> tick - range.millis }
+        effectiveStart
             .flatMapLatest { start -> dao.getTransitionRows(start) }
             .map { rows ->
                 // rows are pre-sorted by name, uid, timestamp from SQL
@@ -569,7 +581,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Set of (timestamp, name, uid) for dots with memory data. */
     val memoryEnrichedDots: StateFlow<Set<MemoryDotKey>> =
-        combine(_timeRange, _ticker) { range, tick -> tick - range.millis }
+        effectiveStart
             .flatMapLatest { start -> dao.getMemoryEnrichedDots(start) }
             .map { rows -> rows.toSet() }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())

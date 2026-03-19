@@ -192,6 +192,7 @@ private fun ProcStateApp(vm: MainViewModel) {
     val isCapturing by vm.isCapturing.collectAsState()
     val isRefreshing by vm.isRefreshing.collectAsState()
     val timeRange by vm.timeRange.collectAsState()
+    val pinnedStart by vm.pinnedStartMs.collectAsState()
     val captureInterval by vm.captureInterval.collectAsState()
     val stopAfter by vm.stopAfter.collectAsState()
     val snapshotCount by vm.snapshotCount.collectAsState()
@@ -271,9 +272,20 @@ private fun ProcStateApp(vm: MainViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     // Time range
-                    androidx.compose.material3.TextButton(onClick = { showTimeDropdown = true }) {
-                        Text(timeRange.label, style = MaterialTheme.typography.labelLarge)
-                        Icon(Icons.Default.KeyboardArrowDown, null)
+                    if (pinnedStart != null) {
+                        // Pinned to a specific recording/snapshot
+                        val fmt = remember { java.text.SimpleDateFormat("MMM d HH:mm", java.util.Locale.getDefault()) }
+                        androidx.compose.material3.TextButton(onClick = { vm.clearPinnedStart() }) {
+                            Icon(Icons.Default.Close, null, Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text(fmt.format(pinnedStart!!), style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.primary)
+                        }
+                    } else {
+                        androidx.compose.material3.TextButton(onClick = { showTimeDropdown = true }) {
+                            Text(timeRange.label, style = MaterialTheme.typography.labelLarge)
+                            Icon(Icons.Default.KeyboardArrowDown, null)
+                        }
                     }
 
                     // Left actions (next to time range)
@@ -503,7 +515,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     for (range in TimeRange.entries) {
                         FilterChip(
                             selected = timeRange == range,
-                            onClick = { vm.setTimeRange(range); showTimeDropdown = false },
+                            onClick = { vm.setTimeRange(range); vm.clearPinnedStart(); showTimeDropdown = false },
                             label = { Text(range.label) },
                         )
                     }
@@ -633,6 +645,10 @@ private fun ProcStateApp(vm: MainViewModel) {
                 },
                 onExportRangeChange = vm::setExportRange,
                 onLoadSessions = { vm.getDataSessions() },
+                onPinSession = { startMs ->
+                    vm.pinStartTime(startMs)
+                    showSettings = false
+                },
             )
         }
     }
