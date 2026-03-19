@@ -121,6 +121,7 @@ class CaptureService : Service() {
         }
 
         val dao = AppDatabase.get(this).snapshotDao()
+        val sessionId = java.util.UUID.randomUUID().toString()
 
         val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         serviceScope = scope
@@ -136,7 +137,7 @@ class CaptureService : Service() {
                 try {
                     val processes = ShellHelper.getProcessList()
                     val frozenPids = ShellHelper.getFrozenPids()
-                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis())
+                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = sessionId)
                     val entries = processes.map { p ->
                         ProcessEntryEntity(
                             snapshotId = 0,

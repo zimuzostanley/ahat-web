@@ -13,6 +13,7 @@ import androidx.room.PrimaryKey
 data class SnapshotEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val timestamp: Long,
+    val sessionId: String = "",
 )
 
 @Entity(

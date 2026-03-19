@@ -82,7 +82,7 @@ enum class StopAfter(val label: String, val minutes: Int) {
     HOUR_24("24h", 1440),
 }
 
-data class DataSession(val startMs: Long, val endMs: Long, val count: Int) {
+data class DataSession(val sessionId: String, val startMs: Long, val endMs: Long, val count: Int) {
     val durationMs: Long get() = endMs - startMs
     val isSingleSnapshot: Boolean get() = count == 1
 }
@@ -253,7 +253,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.IO) {
                     val processes = ShellHelper.getProcessList()
                     val frozenPids = ShellHelper.getFrozenPids()
-                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis())
+                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = java.util.UUID.randomUUID().toString())
                     val entries = processes.map { p ->
                         ProcessEntryEntity(
                             snapshotId = 0,
@@ -528,7 +528,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 val snapshotTs = withContext(Dispatchers.IO) {
                     val processes = ShellHelper.getProcessList()
                     val frozenPids = ShellHelper.getFrozenPids()
-                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis())
+                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = java.util.UUID.randomUUID().toString())
                     val entries = processes.map { p ->
                         ProcessEntryEntity(
                             snapshotId = 0,
@@ -608,8 +608,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     suspend fun getDataSessions(): List<DataSession> {
-        val timestamps = withContext(Dispatchers.IO) { dao.getAllSnapshotTimestamps() }
-        return timestamps.map { DataSession(it, it, 1) }
+        val rows = withContext(Dispatchers.IO) { dao.getSessions() }
+        return rows.map { DataSession(it.sessionId, it.startMs, it.endMs, it.count) }
     }
 
     // ── Data management ─────────────────────────────────────────────────────

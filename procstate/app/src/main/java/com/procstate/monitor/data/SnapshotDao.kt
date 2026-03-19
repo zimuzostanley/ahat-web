@@ -95,8 +95,13 @@ interface SnapshotDao {
     @Query("SELECT COUNT(*) FROM snapshots")
     fun getSnapshotCount(): Flow<Int>
 
-    @Query("SELECT timestamp FROM snapshots ORDER BY timestamp")
-    suspend fun getAllSnapshotTimestamps(): List<Long>
+    @Query("""
+        SELECT sessionId, MIN(timestamp) as startMs, MAX(timestamp) as endMs, COUNT(*) as count
+        FROM snapshots
+        GROUP BY sessionId
+        ORDER BY startMs DESC
+    """)
+    suspend fun getSessions(): List<SessionRow>
 
     @Query("DELETE FROM snapshots WHERE timestamp < :cutoff")
     suspend fun deleteSnapshotsOlderThan(cutoff: Long)
@@ -170,3 +175,10 @@ interface SnapshotDao {
     """)
     suspend fun getAllMemoryForExport(start: Long): List<MemorySnapshotEntity>
 }
+
+data class SessionRow(
+    val sessionId: String,
+    val startMs: Long,
+    val endMs: Long,
+    val count: Int,
+)
