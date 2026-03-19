@@ -582,7 +582,8 @@ export class AdbConnection {
     }
   }
 
-  /** Extract printable strings from process VMAs using on-device grep. */
+  /** Extract printable strings from process VMAs using on-device grep.
+   *  Runs up to GREP_CONCURRENCY VMA greps in parallel for speed. */
   async grepVmaStrings(
     pid: number,
     entries: SmapsEntry[],
@@ -592,6 +593,7 @@ export class AdbConnection {
     if (!this.device) throw new Error("Not connected");
     if (!this._isRoot) throw new Error("Root required");
 
+    const CONCURRENCY = 4;
     const readable = entries.filter(e => e.perms[0] === "r");
     const regions: VmaRegionInfo[] = readable.map(e => ({
       addrStart: e.addrStart,
@@ -601,11 +603,13 @@ export class AdbConnection {
       sizeKb: e.sizeKb,
       stringCount: 0,
     }));
-    const strings: VmaString[] = [];
 
-    for (let i = 0; i < readable.length; i++) {
-      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    // Per-VMA results collected in order
+    const perVma: VmaString[][] = readable.map(() => []);
+    let completed = 0;
+    let nextIndex = 0;
 
+    const grepOne = async (i: number): Promise<void> => {
       const e = readable[i];
       const region = regions[i];
       const startByte = parseInt(e.addrStart, 16);
@@ -613,21 +617,16 @@ export class AdbConnection {
       const startPage = Math.floor(startByte / 4096);
       const numPages = Math.ceil((endByte - startByte) / 4096);
 
-      const shortName = e.name.length > 30 ? "\u2026" + e.name.slice(-29) : e.name;
-      onProgress(`${i + 1}/${readable.length}: ${shortName}`, i, readable.length);
-
       try {
-        // Use -E for extended regex; [ -~] matches printable ASCII (0x20-0x7e)
         const grepCmd = `dd if=/proc/${pid}/mem bs=4096 skip=${startPage} count=${numPages} 2>/dev/null | grep -baoE "[ -~]{4,}"`;
-        // Wrap in su; inner double-quotes are safe inside single-quoted su argument
         const shellCmd = this._suPrefix === "su -c"
           ? `su -c '${grepCmd}'`
           : `su 0 sh -c '${grepCmd}'`;
-        const output = await this.device.shell(shellCmd, signal);
+        const output = await this.device!.shell(shellCmd, signal);
         const parsed = parseGrepOutput(output);
         region.stringCount = parsed.length;
         for (const p of parsed) {
-          strings.push({
+          perVma[i].push({
             offset: p.offset,
             vmaAddr: startByte + p.offset,
             str: p.str,
@@ -637,6 +636,29 @@ export class AdbConnection {
       } catch {
         // VMA may have disappeared or be unreadable — skip
       }
+
+      completed++;
+      const shortName = e.name.length > 30 ? "\u2026" + e.name.slice(-29) : e.name;
+      onProgress(`${completed}/${readable.length}: ${shortName}`, completed, readable.length);
+    };
+
+    // Worker loop: each worker pulls the next VMA index and greps it
+    const worker = async (): Promise<void> => {
+      while (nextIndex < readable.length) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const i = nextIndex++;
+        await grepOne(i);
+      }
+    };
+
+    // Launch CONCURRENCY workers
+    const workers = Array.from({ length: Math.min(CONCURRENCY, readable.length) }, () => worker());
+    await Promise.all(workers);
+
+    // Flatten results in VMA order
+    const strings: VmaString[] = [];
+    for (const vmaStrings of perVma) {
+      for (const s of vmaStrings) strings.push(s);
     }
 
     onProgress("Done", readable.length, readable.length);
