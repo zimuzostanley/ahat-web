@@ -140,7 +140,6 @@ fun ProcessTab(
     pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
     allSnapshotTimestamps: List<Long>,
-    allProcessKeys: List<ProcessKey>,
     onPinProcess: (ProcessKey) -> Unit,
     onUnpinProcess: (ProcessKey) -> Unit,
     collapsed: Boolean = false,
@@ -717,7 +716,7 @@ private fun ProcessPickerSheet(
 ) {
     var search by remember { mutableStateOf("") }
     // Local pinned state for immediate UI feedback inside ModalBottomSheet
-    var localPinned by remember { mutableStateOf(pinnedKeys.toSet()) }
+    var localPinned by remember(pinnedKeys) { mutableStateOf(pinnedKeys.toSet()) }
     val pinnedSet = localPinned
 
     // Track sort direction: false = descending (default), true = ascending

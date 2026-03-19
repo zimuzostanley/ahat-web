@@ -263,7 +263,7 @@ fun SettingsSheet(
                     val now = System.currentTimeMillis()
                     val fmt = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(sessions!!.reversed()) { session ->
+                        items(sessions.orEmpty()) { session ->
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()

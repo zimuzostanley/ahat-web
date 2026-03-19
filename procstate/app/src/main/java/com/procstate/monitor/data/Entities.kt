@@ -8,7 +8,7 @@ import androidx.room.PrimaryKey
 
 @Entity(
     tableName = "snapshots",
-    indices = [Index("timestamp")],
+    indices = [Index("timestamp"), Index("sessionId")],
 )
 data class SnapshotEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,

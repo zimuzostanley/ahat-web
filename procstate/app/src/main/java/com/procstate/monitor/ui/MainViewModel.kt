@@ -48,7 +48,7 @@ enum class TimeRange(val label: String, val millis: Long) {
     HOUR_12("12h", 12 * 60 * 60_000L),
     HOUR_24("24h", 24 * 60 * 60_000L),
     DAY_3("3d", 3L * 24 * 60 * 60_000L),
-    DAY_7("7d", 7 * 24 * 60 * 60_000L),
+    DAY_7("7d", 7L * 24 * 60 * 60_000L),
     DAY_30("30d", 30L * 24 * 60 * 60_000L),
 }
 
@@ -502,11 +502,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .flowOn(Dispatchers.IO)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** Just the keys (for backward compat). */
-    val allProcessKeys: StateFlow<List<ProcessKey>> =
-        allProcessKeysWithTransitions.map { list -> list.map { it.key } }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     val snapshotCount: StateFlow<Int> =
         dao.getSnapshotCount()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
@@ -575,7 +570,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         dao.getMemoryForDot(name, uid, pid, timestamp)
 
     suspend fun getMemoryStats(name: String, uid: String, upToMs: Long): MemoryStatsAggregate? {
-        val start = System.currentTimeMillis() - _timeRange.value.millis
+        val start = _pinnedStartMs.value ?: (System.currentTimeMillis() - _timeRange.value.millis)
         return dao.getMemoryStats(name, uid, start, upToMs)
     }
 

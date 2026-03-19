@@ -206,7 +206,6 @@ private fun ProcStateApp(vm: MainViewModel) {
     val pinnedProcesses by vm.pinnedProcesses.collectAsState()
     val timelineRows by vm.processTimeline.collectAsState()
     val snapshotTimestamps by vm.snapshotTimestamps.collectAsState()
-    val allProcessKeys by vm.allProcessKeys.collectAsState()
     val allProcessKeysWithTransitions by vm.allProcessKeysWithTransitions.collectAsState()
     val visibleStates by vm.visibleStates.collectAsState()
     val stateFilter by vm.stateFilter.collectAsState()
@@ -473,7 +472,6 @@ private fun ProcStateApp(vm: MainViewModel) {
                             pinnedProcesses = pinnedProcesses,
                             timelineRows = timelineRows,
                             allSnapshotTimestamps = snapshotTimestamps,
-                            allProcessKeys = allProcessKeys,
                             allProcessKeysWithTransitions = allProcessKeysWithTransitions,
                             allProcessKeysFlow = vm.allProcessKeysWithTransitions,
                             pickerSort = vm.pickerSort.collectAsState().value,
