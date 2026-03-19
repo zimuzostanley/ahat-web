@@ -717,6 +717,8 @@ private fun ProcessPickerSheet(
     var search by remember { mutableStateOf("") }
     // Local pinned state for immediate UI feedback inside ModalBottomSheet
     var localPinned by remember(pinnedKeys) { mutableStateOf(pinnedKeys.toSet()) }
+    var showPinWarning by remember { mutableStateOf(false) }
+    var pendingPin by remember { mutableStateOf<ProcessKey?>(null) }
     val pinnedSet = localPinned
 
     // Track sort direction: false = descending (default), true = ascending
@@ -754,8 +756,12 @@ private fun ProcessPickerSheet(
                 androidx.compose.material3.TextButton(
                     onClick = {
                         val toPins = sorted.filter { it.key !in pinnedSet }.map { it.key }
-                        localPinned = localPinned + toPins
-                        toPins.forEach { onSelect(it) }
+                        if (localPinned.size + toPins.size > 10) {
+                            showPinWarning = true
+                        } else {
+                            localPinned = localPinned + toPins
+                            toPins.forEach { onSelect(it) }
+                        }
                     },
                 ) {
                     Text("Pin all $unpinnedCount")
@@ -820,6 +826,7 @@ private fun ProcessPickerSheet(
         ) {
             items(sorted) { item ->
                 val isPinned = item.key in pinnedSet
+                val context = androidx.compose.ui.platform.LocalContext.current
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -829,8 +836,14 @@ private fun ProcessPickerSheet(
                                 localPinned = localPinned - item.key
                                 onUnpin(item.key)
                             } else {
-                                localPinned = localPinned + item.key
-                                onSelect(item.key)
+                                if (localPinned.size >= 10) {
+                                    showPinWarning = true
+                                    pendingPin = item.key
+                                } else {
+                                    localPinned = localPinned + item.key
+                                    onSelect(item.key)
+                                    android.widget.Toast.makeText(context, item.key.name, android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             }
                         }
                         .then(if (isPinned) Modifier.background(
@@ -863,6 +876,9 @@ private fun ProcessPickerSheet(
                             if (isPinned) {
                                 localPinned = localPinned - item.key
                                 onUnpin(item.key)
+                            } else if (localPinned.size >= 10) {
+                                showPinWarning = true
+                                pendingPin = item.key
                             } else {
                                 localPinned = localPinned + item.key
                                 onSelect(item.key)
@@ -906,6 +922,30 @@ private fun ProcessPickerSheet(
             }
         }
         Spacer(Modifier.height(16.dp))
+    }
+
+    if (showPinWarning) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showPinWarning = false; pendingPin = null },
+            title = { Text("Pin ${localPinned.size + 1} processes?") },
+            text = { Text("Pinning many processes may slow the UI. Continue?") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    pendingPin?.let {
+                        localPinned = localPinned + it
+                        onSelect(it)
+                    }
+                    showPinWarning = false
+                    pendingPin = null
+                }) { Text("Pin") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    showPinWarning = false
+                    pendingPin = null
+                }) { Text("Cancel") }
+            },
+        )
     }
 }
 
