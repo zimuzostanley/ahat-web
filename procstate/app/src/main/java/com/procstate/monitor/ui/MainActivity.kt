@@ -632,6 +632,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     activity.exportFileLauncher.launch(filename)
                 },
                 onExportRangeChange = vm::setExportRange,
+                onLoadSessions = { vm.getDataSessions() },
             )
         }
     }

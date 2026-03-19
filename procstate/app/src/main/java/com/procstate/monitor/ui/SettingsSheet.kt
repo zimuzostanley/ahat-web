@@ -1,6 +1,9 @@
 package com.procstate.monitor.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,7 +32,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import com.procstate.monitor.ui.theme.ThemeMode
+import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 @Composable
 fun SettingsSheet(
@@ -45,6 +52,7 @@ fun SettingsSheet(
     onPrune: (Long) -> Unit,
     onExport: (Long) -> Unit,
     onExportRangeChange: (Long) -> Unit,
+    onLoadSessions: (suspend () -> List<DataSession>)? = null,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     var confirmPrune by remember { mutableStateOf<Long?>(null) }
@@ -167,12 +175,21 @@ fun SettingsSheet(
         Spacer(Modifier.height(16.dp))
 
         // Data management
+        var showSessions by remember { mutableStateOf(false) }
+        var sessions by remember { mutableStateOf<List<DataSession>?>(null) }
         Text("Data", style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
         Text(
             if (hasData) "$snapshotCount snapshots stored" else "No data stored yet",
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (hasData) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = if (hasData && onLoadSessions != null) {
+                Modifier.clickable {
+                    showSessions = true
+                    scope.launch { sessions = onLoadSessions() }
+                }
+            } else Modifier,
         )
         Spacer(Modifier.height(8.dp))
 
@@ -225,5 +242,107 @@ fun SettingsSheet(
             },
             dismissButton = { TextButton(onClick = { confirmPrune = null }) { Text("Cancel") } },
         )
+    }
+
+    if (showSessions) {
+        AlertDialog(
+            onDismissRequest = { showSessions = false },
+            title = { Text("Collection History") },
+            text = {
+                if (sessions == null) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                    ) {
+                        CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    }
+                } else if (sessions!!.isEmpty()) {
+                    Text("No data collected yet")
+                } else {
+                    val now = System.currentTimeMillis()
+                    val fmt = remember { SimpleDateFormat("MMM d, HH:mm", Locale.getDefault()) }
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(sessions!!.reversed()) { session ->
+                            Column(Modifier.fillMaxWidth()) {
+                                if (session.isSingleSnapshot) {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(
+                                            "Snapshot",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                        Text(
+                                            formatAgo(now - session.startMs),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Text(
+                                        fmt.format(session.startMs),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Text(
+                                            "Recording \u00b7 ${session.count} snapshots",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                        Text(
+                                            formatAgo(now - session.startMs),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    Text(
+                                        "${fmt.format(session.startMs)} \u2013 ${fmt.format(session.endMs)} \u00b7 ${formatDuration(session.durationMs)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),
+                                    modifier = Modifier.padding(top = 8.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showSessions = false }) { Text("Close") }
+            },
+        )
+    }
+}
+
+private fun formatAgo(ms: Long): String {
+    val sec = ms / 1000
+    val min = sec / 60
+    val hr = min / 60
+    val day = hr / 24
+    return when {
+        day > 0 -> "${day}d ago"
+        hr > 0 -> "${hr}h ago"
+        min > 0 -> "${min}m ago"
+        else -> "just now"
+    }
+}
+
+private fun formatDuration(ms: Long): String {
+    val sec = ms / 1000
+    val min = sec / 60
+    val hr = min / 60
+    return when {
+        hr > 0 -> "${hr}h ${min % 60}m"
+        min > 0 -> "${min}m ${sec % 60}s"
+        else -> "${sec}s"
     }
 }

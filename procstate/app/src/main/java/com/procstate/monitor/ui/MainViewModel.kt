@@ -82,6 +82,11 @@ enum class StopAfter(val label: String, val minutes: Int) {
     HOUR_24("24h", 1440),
 }
 
+data class DataSession(val startMs: Long, val endMs: Long, val count: Int) {
+    val durationMs: Long get() = endMs - startMs
+    val isSingleSnapshot: Boolean get() = count == 1
+}
+
 class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private val dao = AppDatabase.get(app).snapshotDao()
@@ -588,6 +593,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setExportRange(millis: Long) {
         _exportRange.value = millis
         prefs.edit().putLong("export_range", millis).apply()
+    }
+
+    suspend fun getDataSessions(): List<DataSession> {
+        val timestamps = withContext(Dispatchers.IO) { dao.getAllSnapshotTimestamps() }
+        if (timestamps.isEmpty()) return emptyList()
+        // Group into sessions: gap > 5 minutes = new session
+        val sessions = mutableListOf<DataSession>()
+        var sessionStart = timestamps[0]
+        var sessionCount = 1
+        for (i in 1 until timestamps.size) {
+            val gap = timestamps[i] - timestamps[i - 1]
+            if (gap > 5 * 60_000) {
+                sessions.add(DataSession(sessionStart, timestamps[i - 1], sessionCount))
+                sessionStart = timestamps[i]
+                sessionCount = 1
+            } else {
+                sessionCount++
+            }
+        }
+        sessions.add(DataSession(sessionStart, timestamps.last(), sessionCount))
+        return sessions
     }
 
     // ── Data management ─────────────────────────────────────────────────────

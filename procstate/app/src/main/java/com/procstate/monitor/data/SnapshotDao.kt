@@ -95,6 +95,9 @@ interface SnapshotDao {
     @Query("SELECT COUNT(*) FROM snapshots")
     fun getSnapshotCount(): Flow<Int>
 
+    @Query("SELECT timestamp FROM snapshots ORDER BY timestamp")
+    suspend fun getAllSnapshotTimestamps(): List<Long>
+
     @Query("DELETE FROM snapshots WHERE timestamp < :cutoff")
     suspend fun deleteSnapshotsOlderThan(cutoff: Long)
 
