@@ -1288,6 +1288,9 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     regions: { addrStart: string; addrEnd: string }[],
   ) {
     if (!connected || vmaDumpStatus) return;
+    // Cancel any background work to avoid concurrent ADB streams
+    cancelEnrichment();
+    cancelSmapsFetch();
     const ac = new AbortController();
     vmaDumpAbortCtrl = ac;
     try {
@@ -1323,6 +1326,9 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
   async function handleStrings(pid: number, processName: string) {
     if (!connected || stringsStatus) return;
+    // Cancel any background work to avoid concurrent ADB streams
+    cancelEnrichment();
+    cancelSmapsFetch();
     const ac = new AbortController();
     stringsAbortCtrl = ac;
     try {
