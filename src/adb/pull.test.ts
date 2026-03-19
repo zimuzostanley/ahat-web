@@ -70,6 +70,7 @@ function createMockDevice(shellReturn = "1000") {
       shellRaw: vi.fn(),
       createStream: vi.fn().mockResolvedValue(stream),
       close: vi.fn(),
+      _notifyConsumed: vi.fn(),
     } as any,  // eslint-disable-line @typescript-eslint/no-explicit-any
     stream,
   };

@@ -127,6 +127,19 @@ interface TxEntry {
 const textEnc = new TextEncoder();
 const textDec = new TextDecoder();
 
+// ─── RX flow control ─────────────────────────────────────────────────────────
+// WebUSB can't handle sustained high-throughput RX. If we ACK every WRTE
+// immediately, the device floods the USB pipe faster than the browser can
+// drain it, eventually causing a disconnect.
+//
+// Strategy: track buffered (un-consumed) bytes. When the buffer exceeds a
+// high-water mark, delay ACKs so the device pauses. When the consumer
+// drains below a low-water mark, resume.
+
+const RX_HIGH_WATER = 2 * 1024 * 1024;   // 2 MiB: pause ACKs
+const RX_LOW_WATER  = 512 * 1024;         // 512 KiB: resume ACKs
+const RX_ACK_DELAY  = 8;                  // ms to delay ACK when above high water
+
 export class AdbDevice {
   private lastStreamId = 0;
   private _connected = true;
@@ -134,6 +147,11 @@ export class AdbDevice {
   private pendingStreams = new Map<number, PendingStream>();
   private txQueue: TxEntry[] = [];
   private txPending = false;
+
+  // RX flow control state
+  private rxBuffered = 0;                  // bytes received but not yet consumed
+  private rxPaused = false;                // true when above high water
+  private pendingAcks: { localId: number; remoteId: number }[] = [];
 
   get connected(): boolean { return this._connected; }
   get serial(): string { return this.usb.dev.serialNumber ?? "unknown"; }
@@ -252,7 +270,10 @@ export class AdbDevice {
       done.reject(new DOMException("Aborted", "AbortError"));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
-    stream.onData = (data: Uint8Array) => chunks.push(data.slice());
+    stream.onData = (data: Uint8Array) => {
+      chunks.push(data.slice());
+      this._notifyConsumed(data.byteLength);
+    };
     stream.onClose = () => {
       if (settled) return;
       settled = true;
@@ -280,7 +301,10 @@ export class AdbDevice {
       done.reject(new DOMException("Aborted", "AbortError"));
     };
     signal?.addEventListener("abort", onAbort, { once: true });
-    stream.onData = (data: Uint8Array) => chunks.push(data.slice());
+    stream.onData = (data: Uint8Array) => {
+      chunks.push(data.slice());
+      this._notifyConsumed(data.byteLength);
+    };
     stream.onClose = () => {
       if (settled) return;
       settled = true;
@@ -296,11 +320,55 @@ export class AdbDevice {
 
   close(): void {
     this._connected = false;
+    this.rxBuffered = 0;
+    this.rxPaused = false;
+    this.pendingAcks = [];
     for (const stream of this.streams.values()) {
       this._streamClose(stream);
     }
     if (this.usb.dev.opened) {
       this.usb.dev.close().catch(() => {});
+    }
+  }
+
+  // ── RX flow control ─────────────────────────────────────────────────────
+
+  /**
+   * Notify that the consumer has processed `bytes` of received data.
+   * When buffered bytes drop below the low-water mark, flush pending ACKs
+   * so the device resumes sending.
+   */
+  _notifyConsumed(bytes: number): void {
+    this.rxBuffered = Math.max(0, this.rxBuffered - bytes);
+    if (this.rxPaused && this.rxBuffered <= RX_LOW_WATER) {
+      this.rxPaused = false;
+      this.flushPendingAcks();
+    }
+  }
+
+  private flushPendingAcks(): void {
+    for (const ack of this.pendingAcks) {
+      this.send("OKAY", ack.localId, ack.remoteId);
+    }
+    this.pendingAcks = [];
+  }
+
+  private ackOrDefer(localId: number, remoteId: number, dataLen: number): void {
+    this.rxBuffered += dataLen;
+    if (this.rxBuffered > RX_HIGH_WATER) {
+      this.rxPaused = true;
+      this.pendingAcks.push({ localId, remoteId });
+      // Send delayed ACK as safety valve — even if consumer stalls, we
+      // eventually unblock the device to avoid deadlock.
+      setTimeout(() => {
+        const idx = this.pendingAcks.findIndex(a => a.localId === localId && a.remoteId === remoteId);
+        if (idx >= 0) {
+          this.pendingAcks.splice(idx, 1);
+          this.send("OKAY", localId, remoteId);
+        }
+      }, RX_ACK_DELAY);
+    } else {
+      this.send("OKAY", localId, remoteId);
     }
   }
 
@@ -331,6 +399,14 @@ export class AdbDevice {
   /** @internal */
   _streamClose(stream: AdbStream): void {
     this.txQueue = this.txQueue.filter(tx => tx.stream !== stream);
+    // Flush any pending ACKs for this stream to avoid deadlock
+    this.pendingAcks = this.pendingAcks.filter(a => {
+      if (a.localId === stream.localId) {
+        this.send("OKAY", a.localId, a.remoteId);
+        return false;
+      }
+      return true;
+    });
     this.send("CLSE", stream.localId, stream.remoteId);
     this.streams.delete(stream.localId);
     stream._notifyClose();
@@ -380,8 +456,8 @@ export class AdbDevice {
       const localId = msg.arg1;
       const stream = this.streams.get(localId);
       if (!stream) return;
-      // ACK the write
-      this.send("OKAY", stream.localId, stream.remoteId);
+      // ACK the write — may be deferred if RX buffer is above high water
+      this.ackOrDefer(stream.localId, stream.remoteId, msg.data.byteLength);
       stream.onData(msg.data);
     } else if (msg.cmd === "CLSE") {
       const localId = msg.arg1;

@@ -117,6 +117,8 @@ export async function pullFile(
           const chunk = buf.slice(offset, dataEnd);
           chunks.push(chunk);
           received += chunk.length;
+          // Notify flow control that we've consumed the data
+          device._notifyConsumed(chunk.length);
           onProgress?.(received, fileSize);
           offset = dataEnd;
         } else if (resp.cmd === "DONE") {
