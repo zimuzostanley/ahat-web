@@ -1,5 +1,8 @@
 package com.procstate.monitor
 
+import com.procstate.monitor.data.ProcessKey
+import com.procstate.monitor.data.ProcessKeyWithTransitions
+import com.procstate.monitor.data.STATE_PRIORITY
 import com.procstate.monitor.data.SnapshotWithCounts
 import com.procstate.monitor.ui.TimeRange
 import com.procstate.monitor.ui.CaptureInterval
@@ -55,5 +58,63 @@ class EntitiesTest {
         assertEquals(5, StopAfter.MIN_5.minutes)
         assertEquals(60, StopAfter.HOUR_1.minutes)
         assertEquals(1440, StopAfter.HOUR_24.minutes)
+    }
+
+    // ── STATE_PRIORITY tests ─────────────────────────────────────────────────
+
+    @Test
+    fun `STATE_PRIORITY foreground is higher than cached`() {
+        assertTrue(STATE_PRIORITY["fg"]!! > STATE_PRIORITY["cch"]!!)
+    }
+
+    @Test
+    fun `STATE_PRIORITY sys is highest`() {
+        val max = STATE_PRIORITY.values.max()
+        assertEquals(max, STATE_PRIORITY["sys"])
+    }
+
+    @Test
+    fun `STATE_PRIORITY covers all canonical states`() {
+        val expected = setOf("ntv", "sys", "pers", "psvc", "fg", "vis", "prcp", "prcm", "prcl",
+            "bkup", "hvy", "svc", "home", "prev", "svcb", "cch", "frzn", "fgs")
+        assertEquals(expected, STATE_PRIORITY.keys)
+    }
+
+    @Test
+    fun `STATE_PRIORITY order is correct`() {
+        // fg > vis > prcp > cch
+        assertTrue(STATE_PRIORITY["fg"]!! > STATE_PRIORITY["vis"]!!)
+        assertTrue(STATE_PRIORITY["vis"]!! > STATE_PRIORITY["prcp"]!!)
+        assertTrue(STATE_PRIORITY["prcp"]!! > STATE_PRIORITY["cch"]!!)
+    }
+
+    // ── Sort by last change tests ────────────────────────────────────────────
+
+    @Test
+    fun `sort by lastChangeMs descending puts most recent first`() {
+        val a = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 5, 0, 0, lastChangeMs = 1000, lastChangePriority = 3)
+        val b = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 2, 0, 0, lastChangeMs = 5000, lastChangePriority = 3)
+        val sorted = listOf(a, b).sortedByDescending { it.lastChangeMs }
+        assertEquals("com.b", sorted[0].key.name)
+    }
+
+    @Test
+    fun `sort tie-breaks by priority descending`() {
+        val a = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 5, 0, 0,
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["cch"]!!)
+        val b = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 2, 0, 0,
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["fg"]!!)
+        val sorted = listOf(a, b)
+            .sortedWith(compareByDescending<ProcessKeyWithTransitions> { it.lastChangeMs }
+                .thenByDescending { it.lastChangePriority })
+        assertEquals("com.b", sorted[0].key.name) // fg > cch at same timestamp
+    }
+
+    @Test
+    fun `process with no state change has lastChangeMs 0 and sorts last`() {
+        val changed = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 1, 0, 0, lastChangeMs = 5000, lastChangePriority = 3)
+        val unchanged = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 0, 0, 0, lastChangeMs = 0, lastChangePriority = 0)
+        val sorted = listOf(unchanged, changed).sortedByDescending { it.lastChangeMs }
+        assertEquals("com.a", sorted[0].key.name)
     }
 }

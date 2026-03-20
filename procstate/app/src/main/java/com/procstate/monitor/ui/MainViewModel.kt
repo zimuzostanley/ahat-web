@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.procstate.monitor.data.AppDatabase
 import com.procstate.monitor.data.MemoryDotKey
 import com.procstate.monitor.data.ProcessKeyWithTransitions
+import com.procstate.monitor.data.STATE_PRIORITY
 import com.procstate.monitor.data.MemorySnapshotEntity
 import com.procstate.monitor.data.MemoryStatsAggregate
 import com.procstate.monitor.data.ProcessEntryEntity
@@ -467,12 +468,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 var transitions = 0
                 var starts = 0
                 var frozenTransitions = 0
-                var lastSeenMs = 0L
+                var lastChangeMs = 0L
+                var lastChangePriority = 0
 
                 fun flush() {
                     if (curName.isNotEmpty()) {
                         result.add(ProcessKeyWithTransitions(
-                            ProcessKey(curName, curUid), transitions, starts, frozenTransitions, lastSeenMs,
+                            ProcessKey(curName, curUid), transitions, starts, frozenTransitions, lastChangeMs, lastChangePriority,
                         ))
                     }
                 }
@@ -488,10 +490,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         transitions = 0
                         starts = 0
                         frozenTransitions = 0
-                        lastSeenMs = row.timestamp
+                        lastChangeMs = row.timestamp
+                        lastChangePriority = STATE_PRIORITY[row.procState] ?: 0
                     } else {
-                        if (row.procState != prevState) { transitions++; lastSeenMs = row.timestamp }
-                        if (row.frozen != prevFrozen) { frozenTransitions++; lastSeenMs = row.timestamp }
+                        if (row.procState != prevState) {
+                            transitions++
+                            lastChangeMs = row.timestamp
+                            lastChangePriority = STATE_PRIORITY[row.procState] ?: 0
+                        }
+                        if (row.frozen != prevFrozen) {
+                            frozenTransitions++
+                            if (row.timestamp > lastChangeMs) {
+                                lastChangeMs = row.timestamp
+                                lastChangePriority = STATE_PRIORITY[row.procState] ?: 0
+                            }
+                        }
                         if (row.pid != prevPid && row.pid != 0 && prevPid != 0) starts++
                         prevState = row.procState
                         prevFrozen = row.frozen

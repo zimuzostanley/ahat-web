@@ -118,12 +118,21 @@ data class SnapshotWithCounts(
 }
 
 /** Process key with transition stats for the picker. */
+/** OOM adj priority: higher = more important (user-facing). Based on Android ProcessList. */
+val STATE_PRIORITY = mapOf(
+    "sys" to 18, "pers" to 17, "psvc" to 16, "fg" to 15, "fgs" to 14,
+    "vis" to 13, "prcp" to 12, "prcm" to 11, "prcl" to 10,
+    "bkup" to 9, "hvy" to 8, "svc" to 7, "home" to 6, "prev" to 5,
+    "svcb" to 4, "cch" to 3, "frzn" to 2, "ntv" to 1,
+)
+
 data class ProcessKeyWithTransitions(
     val key: ProcessKey,
     val transitions: Int,
     val starts: Int,
     val frozenCount: Int,
-    val lastSeenMs: Long = 0,
+    val lastChangeMs: Long = 0,
+    val lastChangePriority: Int = 0,
 )
 
 data class MemoryDotKey(
