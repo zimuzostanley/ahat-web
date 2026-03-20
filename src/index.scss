@@ -2514,6 +2514,27 @@ code {
   &:focus { outline: none; border-color: #38bdf8; }
 }
 
+.ah-proc-strings__minlen {
+  font-size: 10px;
+  color: var(--ah-text-faint);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.ah-proc-strings__minlen-input {
+  width: 3rem;
+  font-size: 10px;
+  line-height: 1rem;
+  border: 1px solid var(--ah-border);
+  background: var(--ah-surface);
+  padding: 0.125rem 0.25rem;
+  text-align: center;
+  color: var(--ah-text-secondary);
+  &:focus { outline: none; border-color: #38bdf8; }
+}
+
 .ah-proc-strings__count {
   font-size: 10px;
   color: var(--ah-text-faint);

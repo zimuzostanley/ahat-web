@@ -84,6 +84,7 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
   let vmaFilter = "";
   let vmaSortField: VmaSortField = "stringCount";
   let vmaSortAsc = false;
+  let minLen = 4;
 
   // Cached computations
   let cachedStrings: VmaString[] | undefined;
@@ -129,7 +130,8 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
   return {
     view(vnode) {
       const { data, onDumpVma } = vnode.attrs;
-      const { strings, regions, pid, processName, scanning, scannedVmas, totalVmas } = data;
+      const { strings: rawStrings, regions, pid, processName, scanning, scannedVmas, totalVmas } = data;
+      const strings = minLen > 4 ? rawStrings.filter(s => s.str.length >= minLen) : rawStrings;
       const addrWidth = strings.length > 0 && strings.some(s => s.vmaAddr > 0xFFFFFFFF) ? 12 : 8;
       const dups = getDups(strings);
       const vmaDupCounts = getVmaDupCounts(strings);
@@ -228,16 +230,31 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
               else { vmaFilter = v; }
             },
           }),
+          m("label", { className: "ah-proc-strings__minlen" }, [
+            "min ",
+            m("input", {
+              className: "ah-proc-strings__minlen-input",
+              type: "number",
+              min: 4,
+              max: 999,
+              value: minLen,
+              oninput: (e: Event) => {
+                const v = parseInt((e.target as HTMLInputElement).value, 10);
+                if (isFinite(v) && v >= 4) minLen = v;
+              },
+            }),
+          ]),
           m("span", { className: "ah-proc-strings__count" }, (() => {
+            const lenNote = minLen > 4 ? ` (\u2265${minLen})` : "";
             if (tab === "all") {
               return filteredAll.length === strings.length
-                ? `${strings.length.toLocaleString()} strings`
-                : `${filteredAll.length.toLocaleString()} / ${strings.length.toLocaleString()}`;
+                ? `${strings.length.toLocaleString()} strings${lenNote}`
+                : `${filteredAll.length.toLocaleString()} / ${strings.length.toLocaleString()}${lenNote}`;
             }
             if (tab === "duplicates") {
               return filteredDups.length === dups.length
-                ? `${dups.length.toLocaleString()} groups`
-                : `${filteredDups.length.toLocaleString()} / ${dups.length.toLocaleString()}`;
+                ? `${dups.length.toLocaleString()} groups${lenNote}`
+                : `${filteredDups.length.toLocaleString()} / ${dups.length.toLocaleString()}${lenNote}`;
             }
             return filteredRegions.length === regions.length
               ? `${regions.length} VMAs`
