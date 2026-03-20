@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -290,18 +291,21 @@ fun SettingsSheet(
                                             Text("${fmt.format(session.startMs)} \u2013 ${fmt.format(session.endMs)} \u00b7 ${formatDuration(session.durationMs)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     }
-                                    Text(formatAgo(now - session.startMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        formatAgo(now - session.startMs),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Spacer(Modifier.width(8.dp))
                                     IconButton(
                                         onClick = {
                                             onExportSession?.invoke(session.sessionId)
                                             showSessions = false
                                         },
-                                        modifier = Modifier.size(32.dp),
                                     ) {
                                         Icon(
                                             Icons.Default.Share,
                                             "Export",
-                                            modifier = Modifier.size(16.dp),
                                             tint = MaterialTheme.colorScheme.primary,
                                         )
                                     }
