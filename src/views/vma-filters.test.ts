@@ -46,17 +46,10 @@ describe("classifyVma", () => {
     expect(classifyVma(makeEntry({ name: "/data/app/base.apk", dev: "fd:10", inode: 99 }))).toBe("file");
   });
 
-  it("classifies shmem: path name with dev=00:00", () => {
-    expect(classifyVma(makeEntry({ name: "/dev/ashmem/dalvik-main", dev: "00:00", inode: 0 }))).toBe("shmem");
-  });
-
-  it("classifies shmem: memfd path", () => {
-    expect(classifyVma(makeEntry({ name: "/memfd:jit-cache", dev: "00:00", inode: 42 }))).toBe("shmem");
-  });
-
-  it("classifies shmem: tmpfs path with dev=00:00 even with inode", () => {
-    // Some tmpfs files have non-zero inodes but dev=00:00
-    expect(classifyVma(makeEntry({ name: "/dev/zero", dev: "00:00", inode: 5 }))).toBe("shmem");
+  it("classifies path with dev=00:00 as anon (not file-backed)", () => {
+    expect(classifyVma(makeEntry({ name: "/dev/ashmem/dalvik-main", dev: "00:00", inode: 0 }))).toBe("anon");
+    expect(classifyVma(makeEntry({ name: "/memfd:jit-cache", dev: "00:00", inode: 42 }))).toBe("anon");
+    expect(classifyVma(makeEntry({ name: "/dev/zero", dev: "00:00", inode: 5 }))).toBe("anon");
   });
 
   it("classifies anon: bracketed names", () => {
@@ -80,34 +73,27 @@ describe("classifyVma", () => {
 
 describe("matchesEntryFilters", () => {
   const fileEntry = makeEntry({ name: "/system/lib/libc.so", dev: "fc:00", inode: 1, perms: "r-xp" });
-  const shmemEntry = makeEntry({ name: "/dev/ashmem/test", dev: "00:00", inode: 0, perms: "rw-p" });
   const anonEntry = makeEntry({ name: "[anon:libc_malloc]", dev: "00:00", inode: 0, perms: "rw-p" });
+  const pathAnonEntry = makeEntry({ name: "/dev/ashmem/test", dev: "00:00", inode: 0, perms: "rw-p" });
 
   it("all filter matches everything", () => {
     expect(matchesEntryFilters(fileEntry, NO_FILTER)).toBe(true);
-    expect(matchesEntryFilters(shmemEntry, NO_FILTER)).toBe(true);
     expect(matchesEntryFilters(anonEntry, NO_FILTER)).toBe(true);
+    expect(matchesEntryFilters(pathAnonEntry, NO_FILTER)).toBe(true);
   });
 
-  it("file filter matches only file-backed", () => {
+  it("file filter matches only file-backed (non-zero dev and inode)", () => {
     const f: VmaFilters = { type: "file", r: null, w: null, x: null };
     expect(matchesEntryFilters(fileEntry, f)).toBe(true);
-    expect(matchesEntryFilters(shmemEntry, f)).toBe(false);
     expect(matchesEntryFilters(anonEntry, f)).toBe(false);
+    expect(matchesEntryFilters(pathAnonEntry, f)).toBe(false);
   });
 
-  it("shmem filter matches only shared memory", () => {
-    const f: VmaFilters = { type: "shmem", r: null, w: null, x: null };
-    expect(matchesEntryFilters(fileEntry, f)).toBe(false);
-    expect(matchesEntryFilters(shmemEntry, f)).toBe(true);
-    expect(matchesEntryFilters(anonEntry, f)).toBe(false);
-  });
-
-  it("anon filter matches only anonymous", () => {
+  it("anon filter matches everything that isn't file-backed", () => {
     const f: VmaFilters = { type: "anon", r: null, w: null, x: null };
     expect(matchesEntryFilters(fileEntry, f)).toBe(false);
-    expect(matchesEntryFilters(shmemEntry, f)).toBe(false);
     expect(matchesEntryFilters(anonEntry, f)).toBe(true);
+    expect(matchesEntryFilters(pathAnonEntry, f)).toBe(true);
   });
 
   it("perm filter r=true requires readable", () => {

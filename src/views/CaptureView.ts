@@ -693,20 +693,15 @@ function DumpButton(): m.Component<{
 
 // --- VMA type classification -----------------------------------------------------
 
-export type VmaType = "all" | "file" | "shmem" | "anon";
+export type VmaType = "all" | "file" | "anon";
 
-export function classifyVma(entry: SmapsEntry): "file" | "shmem" | "anon" {
+export function classifyVma(entry: SmapsEntry): "file" | "anon" {
   if (entry.dev !== "00:00" && entry.inode !== 0) return "file";
-  if (entry.name.startsWith("/")) return "shmem"; // path but dev=00:00 → tmpfs/ashmem/memfd
   return "anon";
 }
 
-// For shared mappings (no dev/inode), classify by name only
-function classifyByName(name: string): "file" | "shmem" | "anon" {
-  if (!name.startsWith("/")) return "anon";
-  // Heuristic: names starting with /dev/ or /memfd: are shmem
-  if (name.startsWith("/dev/") || name.startsWith("/memfd:")) return "shmem";
-  return "file";
+function classifyByName(name: string): "file" | "anon" {
+  return name.startsWith("/") ? "file" : "anon";
 }
 
 export interface VmaFilters {
@@ -1988,11 +1983,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     onclick: () => { vmaTypeFilter = "file"; },
                     title: "File-backed (non-zero dev:inode)",
                   }, "File"),
-                  m("button", {
-                    className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === "shmem" ? " ah-hex-btn--active" : ""}`,
-                    onclick: () => { vmaTypeFilter = "shmem"; },
-                    title: "Shared memory (dev 00:00, path-named)",
-                  }, "Shmem"),
                   m("button", {
                     className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === "anon" ? " ah-hex-btn--active" : ""}`,
                     onclick: () => { vmaTypeFilter = "anon"; },
