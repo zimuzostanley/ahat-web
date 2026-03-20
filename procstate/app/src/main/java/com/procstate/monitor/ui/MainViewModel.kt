@@ -492,7 +492,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     } else {
                         if (row.procState != prevState) { transitions++; lastSeenMs = row.timestamp }
                         if (row.frozen != prevFrozen) { frozenTransitions++; lastSeenMs = row.timestamp }
-                        if (row.pid != prevPid && row.pid != 0 && prevPid != 0) { starts++; lastSeenMs = row.timestamp }
+                        if (row.pid != prevPid && row.pid != 0 && prevPid != 0) starts++
                         prevState = row.procState
                         prevFrozen = row.frozen
                         prevPid = row.pid
