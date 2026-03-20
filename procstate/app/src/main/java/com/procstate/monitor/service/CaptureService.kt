@@ -137,6 +137,23 @@ class CaptureService : Service() {
                 try {
                     val processes = ShellHelper.getProcessList()
                     val frozenPids = ShellHelper.getFrozenPids()
+
+                    // Dump memory first (slow), then snapshot (fast)
+                    val memDumps = mutableListOf<Pair<ShellHelper.ProcessEntry, ShellHelper.MemInfo>>()
+                    if (autoMemoryEnabled && autoMemoryNames.isNotEmpty()) {
+                        for ((mName, mUid) in autoMemoryNames.toList()) {
+                            val proc = processes.find { it.name == mName && it.uid == mUid }
+                            if (proc != null) {
+                                try {
+                                    memDumps.add(proc to ShellHelper.getMemInfo(proc.pid))
+                                } catch (e: Exception) {
+                                    Log.w(TAG, "Auto meminfo $mName failed: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+
+                    // Now create snapshot — timestamp reflects when all data is ready
                     val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = sessionId)
                     val entries = processes.map { p ->
                         ProcessEntryEntity(
@@ -149,32 +166,20 @@ class CaptureService : Service() {
                         )
                     }
                     dao.insertSnapshotWithEntries(snapshot, entries)
-
-                    // Auto memory dump for pinned processes (reads live list)
-                    if (autoMemoryEnabled && autoMemoryNames.isNotEmpty()) {
-                        for ((mName, mUid) in autoMemoryNames.toList()) {
-                            val proc = processes.find { it.name == mName && it.uid == mUid }
-                            if (proc != null) {
-                                try {
-                                    val memInfo = ShellHelper.getMemInfo(proc.pid)
-                                    dao.insertMemorySnapshot(MemorySnapshotEntity(
-                                        timestamp = snapshot.timestamp,
-                                        pid = proc.pid, name = mName, uid = mUid,
-                                        totalPssKb = memInfo.totalPssKb,
-                                        totalRssKb = memInfo.totalRssKb,
-                                        javaHeapKb = memInfo.javaHeapKb,
-                                        nativeHeapKb = memInfo.nativeHeapKb,
-                                        codeKb = memInfo.codeKb,
-                                        stackKb = memInfo.stackKb,
-                                        graphicsKb = memInfo.graphicsKb,
-                                        systemKb = memInfo.systemKb,
-                                        totalSwapKb = memInfo.totalSwapKb,
-                                    ))
-                                } catch (e: Exception) {
-                                    Log.w(TAG, "Auto meminfo $mName failed: ${e.message}")
-                                }
-                            }
-                        }
+                    for ((proc, memInfo) in memDumps) {
+                        dao.insertMemorySnapshot(MemorySnapshotEntity(
+                            timestamp = snapshot.timestamp,
+                            pid = proc.pid, name = proc.name, uid = proc.uid,
+                            totalPssKb = memInfo.totalPssKb,
+                            totalRssKb = memInfo.totalRssKb,
+                            javaHeapKb = memInfo.javaHeapKb,
+                            nativeHeapKb = memInfo.nativeHeapKb,
+                            codeKb = memInfo.codeKb,
+                            stackKb = memInfo.stackKb,
+                            graphicsKb = memInfo.graphicsKb,
+                            systemKb = memInfo.systemKb,
+                            totalSwapKb = memInfo.totalSwapKb,
+                        ))
                     }
 
                     Log.d(TAG, "Cycle #$cycleCount: ${processes.size} processes saved")

@@ -253,44 +253,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 withContext(Dispatchers.IO) {
                     val processes = ShellHelper.getProcessList()
                     val frozenPids = ShellHelper.getFrozenPids()
-                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = java.util.UUID.randomUUID().toString())
-                    val entries = processes.map { p ->
-                        ProcessEntryEntity(
-                            snapshotId = 0,
-                            pid = p.pid,
-                            name = p.name,
-                            uid = p.uid,
-                            procState = p.procState,
-                            frozen = p.pid in frozenPids,
-                        )
-                    }
-                    dao.insertSnapshotWithEntries(snapshot, entries)
 
-                    // Auto memory dump for pinned processes on manual snapshot
+                    // Dump memory first (slow), then snapshot (fast)
+                    val memDumps = mutableListOf<Triple<Int, ProcessKey, ShellHelper.MemInfo>>()
                     if (_autoMemoryDump.value && _pinnedProcesses.value.isNotEmpty()) {
                         for (key in _pinnedProcesses.value) {
                             val proc = processes.find { it.name == key.name && it.uid == key.uid }
                             if (proc != null) {
                                 try {
-                                    val memInfo = ShellHelper.getMemInfo(proc.pid)
-                                    dao.insertMemorySnapshot(MemorySnapshotEntity(
-                                        timestamp = snapshot.timestamp,
-                                        pid = proc.pid, name = key.name, uid = key.uid,
-                                        totalPssKb = memInfo.totalPssKb,
-                                        totalRssKb = memInfo.totalRssKb,
-                                        javaHeapKb = memInfo.javaHeapKb,
-                                        nativeHeapKb = memInfo.nativeHeapKb,
-                                        codeKb = memInfo.codeKb,
-                                        stackKb = memInfo.stackKb,
-                                        graphicsKb = memInfo.graphicsKb,
-                                        systemKb = memInfo.systemKb,
-                                        totalSwapKb = memInfo.totalSwapKb,
-                                    ))
+                                    memDumps.add(Triple(proc.pid, key, ShellHelper.getMemInfo(proc.pid)))
                                 } catch (e: Exception) {
                                     Log.w("MainVM", "Auto meminfo ${key.name} failed: ${e.message}")
                                 }
                             }
                         }
+                    }
+
+                    val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = java.util.UUID.randomUUID().toString())
+                    val entries = processes.map { p ->
+                        ProcessEntryEntity(
+                            snapshotId = 0,
+                            pid = p.pid, name = p.name, uid = p.uid,
+                            procState = p.procState,
+                            frozen = p.pid in frozenPids,
+                        )
+                    }
+                    dao.insertSnapshotWithEntries(snapshot, entries)
+                    for ((pid, key, memInfo) in memDumps) {
+                        dao.insertMemorySnapshot(MemorySnapshotEntity(
+                            timestamp = snapshot.timestamp,
+                            pid = pid, name = key.name, uid = key.uid,
+                            totalPssKb = memInfo.totalPssKb,
+                            totalRssKb = memInfo.totalRssKb,
+                            javaHeapKb = memInfo.javaHeapKb,
+                            nativeHeapKb = memInfo.nativeHeapKb,
+                            codeKb = memInfo.codeKb,
+                            stackKb = memInfo.stackKb,
+                            graphicsKb = memInfo.graphicsKb,
+                            systemKb = memInfo.systemKb,
+                            totalSwapKb = memInfo.totalSwapKb,
+                        ))
                     }
                 }
             } catch (e: Exception) {
@@ -517,10 +519,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun dumpMemory(pid: Int, name: String, uid: String, onDone: () -> Unit = {}) {
         viewModelScope.launch {
-            _memoryDumpProgress.value = "Capturing snapshot..."
             try {
-                // 1. Capture a fresh snapshot first
-                val snapshotTs = withContext(Dispatchers.IO) {
+                // 1. Dump meminfo first (slow op)
+                _memoryDumpProgress.value = "Dumping meminfo PID $pid\u2026"
+                val memInfo = withContext(Dispatchers.IO) { ShellHelper.getMemInfo(pid) }
+
+                // 2. Capture snapshot (fast), then insert everything with same timestamp
+                _memoryDumpProgress.value = "Saving\u2026"
+                withContext(Dispatchers.IO) {
                     val processes = ShellHelper.getProcessList()
                     val frozenPids = ShellHelper.getFrozenPids()
                     val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = java.util.UUID.randomUUID().toString())
@@ -533,17 +539,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         )
                     }
                     dao.insertSnapshotWithEntries(snapshot, entries)
-                    snapshot.timestamp
-                }
-
-                // 2. Dump meminfo for the specific PID
-                _memoryDumpProgress.value = "Dumping meminfo PID $pid..."
-                val memInfo = withContext(Dispatchers.IO) { ShellHelper.getMemInfo(pid) }
-
-                // 3. Store memory snapshot
-                withContext(Dispatchers.IO) {
                     dao.insertMemorySnapshot(MemorySnapshotEntity(
-                        timestamp = snapshotTs,
+                        timestamp = snapshot.timestamp,
                         pid = pid, name = name, uid = uid,
                         totalPssKb = memInfo.totalPssKb,
                         totalRssKb = memInfo.totalRssKb,
