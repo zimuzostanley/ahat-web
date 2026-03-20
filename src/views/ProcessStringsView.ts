@@ -94,7 +94,7 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
   return {
     view(vnode) {
       const { data, onDumpVma } = vnode.attrs;
-      const { strings, regions, pid, processName } = data;
+      const { strings, regions, pid, processName, scanning, scannedVmas, totalVmas } = data;
       const addrWidth = strings.length > 0 && strings.some(s => s.vmaAddr > 0xFFFFFFFF) ? 12 : 8;
       const dups = getDups(strings);
 
@@ -145,6 +145,22 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
           dups.length > 0 && m("span", { style: { fontSize: "0.75rem", color: "var(--ah-text-faint)", whiteSpace: "nowrap" } },
             `${dups.length.toLocaleString()} duplicates`),
         ]),
+
+        // ── Scanning progress ──
+        scanning && totalVmas && totalVmas > 0 && (
+          m("div", { className: "ah-capture-progress", style: { margin: "0 1rem" } }, [
+            m("div", { className: "ah-capture-progress__row" }, [
+              m("span", { className: "ah-capture-progress__text" }, "Scanning VMAs\u2026"),
+              m("span", { className: "ah-capture-progress__count" }, `${scannedVmas ?? 0}/${totalVmas}`),
+            ]),
+            m("div", { className: "ah-capture-progress-bar" }, [
+              m("div", {
+                className: "ah-capture-progress-bar__fill ah-capture-progress-bar__fill--accent",
+                style: { width: `${((scannedVmas ?? 0) / totalVmas) * 100}%` },
+              }),
+            ]),
+          ])
+        ),
 
         // ── Tab bar ──
         m("div", { className: "ah-proc-strings__tabs" }, [

@@ -90,6 +90,9 @@ export interface ProcessStringsResult {
   processName: string;
   regions: VmaRegionInfo[];
   strings: VmaString[];
+  scanning?: boolean;          // true while grep is in progress
+  scannedVmas?: number;        // VMAs completed so far
+  totalVmas?: number;          // total readable VMAs
 }
 
 /** Parse grep -b output lines into offset/string pairs. */
@@ -584,12 +587,14 @@ export class AdbConnection {
 
   /** Extract printable strings from process VMAs using on-device grep.
    *  Batches multiple VMAs per shell command to reduce round-trips while
-   *  using only a single ADB stream at a time (avoids USB disconnect). */
+   *  using only a single ADB stream at a time (avoids USB disconnect).
+   *  @param onBatch - called after each batch with new strings and updated regions */
   async grepVmaStrings(
     pid: number,
     entries: SmapsEntry[],
     onProgress: (status: string, completed: number, total: number) => void,
     signal?: AbortSignal,
+    onBatch?: (newStrings: VmaString[], regions: VmaRegionInfo[], completed: number, total: number) => void,
   ): Promise<{ regions: VmaRegionInfo[]; strings: VmaString[] }> {
     if (!this.device) throw new Error("Not connected");
     if (!this._isRoot) throw new Error("Root required");
@@ -637,22 +642,27 @@ export class AdbConnection {
 
         // Split output by marker — first section before the first marker is empty
         const sections = output.split(MARKER);
+        const batchStrings: VmaString[] = [];
         for (let si = 0; si < batchMeta.length; si++) {
           const section = sections[si + 1] ?? ""; // +1 because first split is before first marker
           const { index, startByte } = batchMeta[si];
           const parsed = parseGrepOutput(section);
           regions[index].stringCount = parsed.length;
           for (const p of parsed) {
-            strings.push({
+            const vs: VmaString = {
               offset: p.offset,
               vmaAddr: startByte + p.offset,
               str: p.str,
               vmaIndex: index,
-            });
+            };
+            strings.push(vs);
+            batchStrings.push(vs);
           }
         }
+        onBatch?.(batchStrings, regions, batchEnd, readable.length);
       } catch {
         // Batch failed — individual VMAs may have disappeared
+        onBatch?.([], regions, batchEnd, readable.length);
       }
     }
 

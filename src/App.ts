@@ -358,7 +358,7 @@ export default function App(): m.Component {
     activeTab = sessionId;
   }
 
-  function loadProcessStrings(name: string, data: ProcessStringsResult) {
+  function loadProcessStrings(name: string, data: ProcessStringsResult): string {
     const sessionId = `session-${nextSessionId++}`;
     const newSession: Session = {
       id: sessionId, name, kind: "procstrings", status: "ready",
@@ -369,6 +369,12 @@ export default function App(): m.Component {
     };
     sessions = [...sessions, newSession];
     activeTab = sessionId;
+    return sessionId;
+  }
+
+  function updateProcessStrings(sessionId: string, data: ProcessStringsResult) {
+    sessions = sessions.map(s => s.id === sessionId ? { ...s, procStrings: data } : s);
+    m.redraw();
   }
 
   async function loadSmapsFile(file: File) {
@@ -772,7 +778,7 @@ export default function App(): m.Component {
               )
             ),
             m("div", { className: sessions.length > 0 ? "ah-capture-wrap--compact" : "ah-capture-wrap" },
-              m(CaptureView, { onCaptured: loadBuffer, onVmaDump: loadVmaDump, onProcessStrings: loadProcessStrings, conn: adbConn, sessionFile: pendingSessionFile })
+              m(CaptureView, { onCaptured: loadBuffer, onVmaDump: loadVmaDump, onProcessStrings: loadProcessStrings, onUpdateProcessStrings: updateProcessStrings, conn: adbConn, sessionFile: pendingSessionFile })
             )
           )
         ),

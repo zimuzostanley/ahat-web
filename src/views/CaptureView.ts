@@ -714,7 +714,8 @@ function getFieldValue(p: ProcessInfo, field: SmapsNumericField, rollup?: SmapsR
 interface CaptureViewAttrs {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
   onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
-  onProcessStrings: (name: string, data: ProcessStringsResult) => void;
+  onProcessStrings: (name: string, data: ProcessStringsResult) => string;
+  onUpdateProcessStrings: (sessionId: string, data: ProcessStringsResult) => void;
   conn: AdbConnection;
   sessionFile?: File | null;
 }
@@ -1339,23 +1340,45 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       }
 
       const allEntries = aggregated.flatMap(a => a.entries);
-      stringsStatus = "Scanning strings\u2026";
+      const readable = allEntries.filter(e => e.perms[0] === "r");
+      const procSan = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+      // Open tab immediately with empty data + scanning flag
+      const initialRegions = readable.map(e => ({
+        addrStart: e.addrStart, addrEnd: e.addrEnd,
+        perms: e.perms, name: e.name, sizeKb: e.sizeKb, stringCount: 0,
+      }));
+      const liveData: ProcessStringsResult = {
+        pid, processName,
+        regions: initialRegions,
+        strings: [],
+        scanning: true,
+        scannedVmas: 0,
+        totalVmas: readable.length,
+      };
+      const sessionId = _onProcessStrings(`${procSan}_strings`, liveData);
+
+      stringsStatus = null;
+      stringsProgress = null;
       m.redraw();
 
-      const result = await conn.grepVmaStrings(pid, allEntries, (status, done, total) => {
-        stringsStatus = status;
-        stringsProgress = { done, total };
-        m.redraw();
-      }, ac.signal);
+      // Stream results — onBatch pushes new strings into the live data
+      await conn.grepVmaStrings(pid, allEntries, () => {}, ac.signal,
+        (newStrings, regions, completed, total) => {
+          for (const s of newStrings) liveData.strings.push(s);
+          liveData.regions = regions;
+          liveData.scannedVmas = completed;
+          liveData.totalVmas = total;
+          // Spread to create a new object ref so Mithril sees the change
+          _onUpdateProcessStrings(sessionId, { ...liveData, strings: [...liveData.strings] });
+        },
+      );
 
       if (ac.signal.aborted) return;
 
-      const procSan = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
-      _onProcessStrings(`${procSan}_strings`, {
-        pid,
-        processName,
-        ...result,
-      });
+      // Mark scanning complete
+      liveData.scanning = false;
+      _onUpdateProcessStrings(sessionId, { ...liveData, strings: [...liveData.strings] });
     } catch (e) {
       if (ac.signal.aborted) return;
       if (e instanceof DOMException && e.name === "AbortError") return;
@@ -1387,7 +1410,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   // Attrs-derived callbacks stored each render
   let _onCaptured: (name: string, buffer: ArrayBuffer) => void;
   let _onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
-  let _onProcessStrings: (name: string, data: ProcessStringsResult) => void;
+  let _onProcessStrings: (name: string, data: ProcessStringsResult) => string;
+  let _onUpdateProcessStrings: (sessionId: string, data: ProcessStringsResult) => void;
   let _importedSessionFile: File | null = null;
 
   return {
@@ -1396,6 +1420,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
       _onProcessStrings = vnode.attrs.onProcessStrings;
+      _onUpdateProcessStrings = vnode.attrs.onUpdateProcessStrings;
       if (vnode.attrs.sessionFile) {
         _importedSessionFile = vnode.attrs.sessionFile;
         importSession(vnode.attrs.sessionFile);
@@ -1415,6 +1440,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       _onCaptured = vnode.attrs.onCaptured;
       _onVmaDump = vnode.attrs.onVmaDump;
       _onProcessStrings = vnode.attrs.onProcessStrings;
+      _onUpdateProcessStrings = vnode.attrs.onUpdateProcessStrings;
       if (vnode.attrs.sessionFile && vnode.attrs.sessionFile !== _importedSessionFile) {
         _importedSessionFile = vnode.attrs.sessionFile;
         importSession(vnode.attrs.sessionFile);
