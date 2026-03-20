@@ -1423,10 +1423,9 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         smapsData.set(pid, aggregated);
       }
 
-      // Apply global VMA filters before scanning
-      const filters: VmaFilters = { type: vmaTypeFilter, r: permFilterR, w: permFilterW, x: permFilterX };
-      const allEntries = aggregated.flatMap(a => a.entries)
-        .filter(e => matchesEntryFilters(e, filters));
+      // Scan all readable VMAs — global filters are applied client-side
+      // in ProcessStringsView, not at capture time.
+      const allEntries = aggregated.flatMap(a => a.entries);
       const readable = allEntries.filter(e => e.perms[0] === "r");
       const procSan = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
 
