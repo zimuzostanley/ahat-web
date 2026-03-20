@@ -75,7 +75,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.procstate.monitor.data.MemoryDotKey
 import com.procstate.monitor.data.MemorySnapshotEntity
-import com.procstate.monitor.data.MemoryStatsAggregate
 import com.procstate.monitor.data.ProcessKey
 import com.procstate.monitor.data.ProcessKeyWithTransitions
 import com.procstate.monitor.data.ProcessTimelineRow
@@ -130,7 +129,6 @@ fun ProcessTab(
     getAppLabel: (String) -> String = { it.substringAfterLast('.') },
     onDumpMemory: ((pid: Int, name: String, uid: String, onDone: () -> Unit) -> Unit)? = null,
     getMemoryForDot: (suspend (name: String, uid: String, pid: Int, timestamp: Long) -> MemorySnapshotEntity?)? = null,
-    getMemoryStats: (suspend (name: String, uid: String, upToMs: Long) -> MemoryStatsAggregate?)? = null,
     getMemoryTimeline: (suspend (name: String, uid: String) -> List<MemorySnapshotEntity>)? = null,
     memoryDumpProgress: String? = null,
     memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
@@ -174,7 +172,6 @@ fun ProcessTab(
                 selectedDotId = null
             },
             getMemoryForDot = getMemoryForDot,
-            getMemoryStats = getMemoryStats,
             getMemoryTimeline = getMemoryTimeline,
             memoryDumpProgress = memoryDumpProgress,
             onDumpMemory = if (onDumpMemory != null) { pid, name, uid ->
@@ -949,7 +946,6 @@ fun ProcessDetailSheet(
     appLabel: String,
     onDismiss: () -> Unit,
     getMemoryForDot: (suspend (name: String, uid: String, pid: Int, timestamp: Long) -> MemorySnapshotEntity?)? = null,
-    getMemoryStats: (suspend (name: String, uid: String, upToMs: Long) -> MemoryStatsAggregate?)? = null,
     getMemoryTimeline: (suspend (name: String, uid: String) -> List<MemorySnapshotEntity>)? = null,
     memoryDumpProgress: String? = null,
     onDumpMemory: ((pid: Int, name: String, uid: String) -> Unit)? = null,
@@ -960,14 +956,10 @@ fun ProcessDetailSheet(
     ) {
         // Load memory data inside the sheet so it recomposes correctly
         var memoryData by remember(detail) { mutableStateOf<MemorySnapshotEntity?>(null) }
-        var memoryStats by remember(detail) { mutableStateOf<MemoryStatsAggregate?>(null) }
         var memoryTimeline by remember(detail) { mutableStateOf<List<MemorySnapshotEntity>>(emptyList()) }
         androidx.compose.runtime.LaunchedEffect(detail) {
             if (getMemoryForDot != null && detail.pid > 0) {
                 memoryData = getMemoryForDot(detail.name, detail.uid, detail.pid, detail.timestampMs)
-            }
-            if (getMemoryStats != null && detail.timestampMs > 0) {
-                memoryStats = getMemoryStats(detail.name, detail.uid, detail.timestampMs)
             }
             if (getMemoryTimeline != null) {
                 memoryTimeline = getMemoryTimeline(detail.name, detail.uid)
@@ -1153,7 +1145,11 @@ fun ProcessDetailSheet(
                 } else if (memoryData != null) {
                     val mem = memoryData!!
                     // Show memory breakdown — single scrollable row
-                    Text("Memory", style = MaterialTheme.typography.titleSmall)
+                    val sampleCount = memoryTimeline.size
+                    Text(
+                        if (sampleCount > 1) "Memory \u00b7 $sampleCount samples" else "Memory",
+                        style = MaterialTheme.typography.titleSmall,
+                    )
                     Spacer(Modifier.height(8.dp))
                     Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -1283,38 +1279,6 @@ fun ProcessDetailSheet(
                         }
                     }
 
-                    // Memory summary stats
-                    val stats = memoryStats
-                    if (stats != null && stats.count > 1) {
-                        Spacer(Modifier.height(12.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            "Memory history (${stats.count} samples)",
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        // Header
-                        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
-                            Text("", Modifier.width(80.dp), style = MaterialTheme.typography.labelSmall)
-                            Text("Min", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
-                                textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("Avg", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
-                                textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("Max", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
-                                textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        MemoryStatRow("PSS", stats.minPss, stats.avgPss, stats.maxPss)
-                        MemoryStatRow("RSS", stats.minRss, stats.avgRss, stats.maxRss)
-                        MemoryStatRow("Java", stats.minJavaHeap, stats.avgJavaHeap, stats.maxJavaHeap)
-                        MemoryStatRow("Native", stats.minNativeHeap, stats.avgNativeHeap, stats.maxNativeHeap)
-                        MemoryStatRow("Code", stats.minCode, stats.avgCode, stats.maxCode)
-                        MemoryStatRow("Stack", stats.minStack, stats.avgStack, stats.maxStack)
-                        MemoryStatRow("Graphics", stats.minGraphics, stats.avgGraphics, stats.maxGraphics)
-                        MemoryStatRow("System", stats.minSystem, stats.avgSystem, stats.maxSystem)
-                        MemoryStatRow("Swap", stats.minSwap, stats.avgSwap, stats.maxSwap)
-                    }
                 } else if (onDumpMemory != null) {
                     // Dump button
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1359,20 +1323,6 @@ private fun MemoryChip(label: String, kb: Long, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun MemoryStatRow(label: String, minKb: Long, avgKb: Double, maxKb: Long) {
-    if (maxKb <= 0) return
-    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-        Text(label, Modifier.width(80.dp), style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(formatKb(minKb), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.End)
-        Text(formatKb(avgKb.toLong()), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.End)
-        Text(formatKb(maxKb), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
-            textAlign = TextAlign.End)
-    }
-}
-
 private fun formatKb(kb: Long): String = when {
     kotlin.math.abs(kb) < 1024 -> "$kb KB"
     else -> "%.1f MB".format(kb / 1024.0)
