@@ -1742,6 +1742,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
               m("div", { className: "ah-warning-banner" }, "Non-rooted device \u2014 only debuggable apps can be captured")
             ),
 
+            // Error banner (disconnect, capture failure, etc.)
+            error && (
+              m("div", { className: "ah-error-banner ah-mt-4" }, error)
+            ),
+
             // VMA dump progress
             vmaDumpStatus && (
               m("div", { className: "ah-capture-progress" }, [
@@ -2188,9 +2193,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
           ])
         ),
 
-        error && (
-          m("div", { className: "ah-error-banner ah-mt-4" }, error)
-        ),
       ]);
     },
   };
