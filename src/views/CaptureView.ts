@@ -693,9 +693,9 @@ function DumpButton(): m.Component<{
 
 // --- VMA type classification -----------------------------------------------------
 
-type VmaType = "all" | "file" | "shmem" | "anon";
+export type VmaType = "all" | "file" | "shmem" | "anon";
 
-function classifyVma(entry: SmapsEntry): "file" | "shmem" | "anon" {
+export function classifyVma(entry: SmapsEntry): "file" | "shmem" | "anon" {
   if (entry.dev !== "00:00" && entry.inode !== 0) return "file";
   if (entry.name.startsWith("/")) return "shmem"; // path but dev=00:00 → tmpfs/ashmem/memfd
   return "anon";
@@ -709,14 +709,14 @@ function classifyByName(name: string): "file" | "shmem" | "anon" {
   return "file";
 }
 
-interface VmaFilters {
+export interface VmaFilters {
   type: VmaType;
   r: boolean | null;
   w: boolean | null;
   x: boolean | null;
 }
 
-function matchesEntryFilters(entry: SmapsEntry, filters: VmaFilters): boolean {
+export function matchesEntryFilters(entry: SmapsEntry, filters: VmaFilters): boolean {
   if (filters.type !== "all" && classifyVma(entry) !== filters.type) return false;
   if (filters.r !== null && (entry.perms[0] === "r") !== filters.r) return false;
   if (filters.w !== null && (entry.perms[1] === "w") !== filters.w) return false;
@@ -728,7 +728,7 @@ function hasActiveVmaFilters(filters: VmaFilters): boolean {
   return filters.type !== "all" || filters.r !== null || filters.w !== null || filters.x !== null;
 }
 
-function filterSmapsByFilters(aggregated: SmapsAggregated[], filters: VmaFilters): SmapsAggregated[] {
+export function filterSmapsByFilters(aggregated: SmapsAggregated[], filters: VmaFilters): SmapsAggregated[] {
   if (!hasActiveVmaFilters(filters)) return aggregated;
   return aggregated.map(g => {
     const entries = g.entries.filter(e => matchesEntryFilters(e, filters));
@@ -1559,6 +1559,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
       // When VMA filters are active and smaps data is loaded, compute
       // filtered rollups so process table values reflect the filter.
+      // Apply to both current and base snapshots for correct deltas.
       const effectiveRollups = filtersActive
         ? new Map<number, SmapsRollup>(
             [...dSmaps.keys()].map(pid => {
@@ -1567,8 +1568,18 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             }).filter((x): x is [number, SmapsRollup] => x !== null),
           )
         : null;
+      const effectiveBaseRollups = filtersActive && baseSmapsData
+        ? new Map<number, SmapsRollup>(
+            [...baseSmapsData.keys()].map(pid => {
+              const fr = computeFilteredRollup(pid, baseSmapsData, vmaFilters);
+              return fr ? [pid, fr] as const : null;
+            }).filter((x): x is [number, SmapsRollup] => x !== null),
+          )
+        : null;
       const getRollup = (pid: number): SmapsRollup | undefined =>
         effectiveRollups?.get(pid) ?? dRollups.get(pid);
+      const getBaseRollup = (pid: number): SmapsRollup | undefined =>
+        effectiveBaseRollups?.get(pid) ?? baseRollups?.get(pid);
 
       const sorted = (() => {
         if (!dProcs) return null;
@@ -1595,8 +1606,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             if (!baseField) return 0;
             const aR = getRollup(a.pid);
             const bR = getRollup(b.pid);
-            const aPR = baseRollups?.get(a.pid);
-            const bPR = baseRollups?.get(b.pid);
+            const aPR = getBaseRollup(a.pid);
+            const bPR = getBaseRollup(b.pid);
             const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
             const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
             return sort.asc ? aD - bD : bD - aD;
@@ -1632,8 +1643,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             if (!baseField) return 0;
             const aR = getRollup(a.current.pid);
             const bR = getRollup(b.current.pid);
-            const aPR = baseRollups?.get(a.current.pid);
-            const bPR = baseRollups?.get(b.current.pid);
+            const aPR = getBaseRollup(a.current.pid);
+            const bPR = getBaseRollup(b.current.pid);
             const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
             const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
             return sort.asc ? aD - bD : bD - aD;
@@ -2153,7 +2164,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                         if (diffMode) {
                           const totalDelta = filteredDiffs ? filteredDiffs.reduce((s, d) => {
                             const r = getRollup(d.current.pid);
-                            const pr = baseRollups?.get(d.current.pid);
+                            const pr = getBaseRollup(d.current.pid);
                             return s + (r && pr ? r[f] - pr[f] : 0);
                           }, 0) : 0;
                           cells.push(m("td", {
@@ -2177,7 +2188,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                       const isDiff = diffMode;
                       const colCount = 3 + (hasOomLabel ? 1 : 0) + ROLLUP_COLUMNS.length + (isDiff ? ROLLUP_COLUMNS.length : 0);
                       const rollup = getRollup(p.pid);
-                      const prevRollup = baseRollups?.get(p.pid);
+                      const prevRollup = getBaseRollup(p.pid);
                       const rowKey = `${d.status}-${p.pid}`;
                       return m(Fragment, { key: rowKey }, [
                         m("tr", {
@@ -2316,8 +2327,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                             onToggleVmaSort: (f: VmaSortFieldType) => vmaSort.toggle(f),
                             onDump: handleVmaDump,
                             dumpDisabled: !connected || !isLive || !!vmaDumpStatus,
-                            smapsDiffs: isDiff && baseSmapsData?.has(p.pid) ? diffSmaps(baseSmapsData.get(p.pid)!, dSmaps.get(p.pid)!) : null,
-                            prevAggregated: isDiff && baseSmapsData?.has(p.pid) ? baseSmapsData.get(p.pid)! : null,
+                            smapsDiffs: isDiff && baseSmapsData?.has(p.pid) ? diffSmaps(
+                              filterSmapsByFilters(baseSmapsData.get(p.pid)!, vmaFilters),
+                              filterSmapsByFilters(dSmaps.get(p.pid)!, vmaFilters),
+                            ) : null,
+                            prevAggregated: isDiff && baseSmapsData?.has(p.pid) ? filterSmapsByFilters(baseSmapsData.get(p.pid)!, vmaFilters) : null,
                             showDeltaCols: diffMode,
                             leadingColCount: 3 + (hasOomLabel ? 1 : 0),
                             searchMatch: isSearching ? searchResults.get(p.pid) ?? null : null,
