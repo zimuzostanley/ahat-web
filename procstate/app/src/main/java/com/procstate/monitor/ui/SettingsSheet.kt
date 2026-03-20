@@ -291,21 +291,19 @@ fun SettingsSheet(
                                         }
                                     }
                                     Text(formatAgo(now - session.startMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    if (onExportSession != null) {
-                                        IconButton(
-                                            onClick = {
-                                                onExportSession(session.sessionId)
-                                                showSessions = false
-                                            },
-                                            modifier = Modifier.size(32.dp),
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Share,
-                                                "Export",
-                                                modifier = Modifier.size(16.dp),
-                                                tint = MaterialTheme.colorScheme.primary,
-                                            )
-                                        }
+                                    IconButton(
+                                        onClick = {
+                                            onExportSession?.invoke(session.sessionId)
+                                            showSessions = false
+                                        },
+                                        modifier = Modifier.size(32.dp),
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Share,
+                                            "Export",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
                                     }
                                 }
                                 HorizontalDivider(
