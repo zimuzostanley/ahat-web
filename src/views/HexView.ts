@@ -831,10 +831,10 @@ function HexView(): m.Component<HexViewAttrs> {
                               key: d.value,
                               className: "ah-hex-strings__row",
                               onclick: () => {
+                                // Find first occurrence BEFORE changing state
+                                const match = strings.find(s => s.str === d.value);
                                 showDuplicates = false;
                                 stringFilter = d.value;
-                                // Scroll to first occurrence
-                                const match = strings.find(s => s.str === d.value);
                                 if (match) scrollToOffset(match.offset);
                               },
                               title: `Click to filter to this string`,

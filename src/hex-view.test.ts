@@ -532,4 +532,20 @@ describe("computeExtractedDuplicates", () => {
     const strings = [{ offset: 0, str: "only-one" }];
     expect(computeExtractedDuplicates(strings)).toEqual([]);
   });
+
+  it("duplicate value can find back into original strings via exact match", () => {
+    const strings = [
+      { offset: 100, str: "libhwui.so" },
+      { offset: 500, str: "other" },
+      { offset: 800, str: "libhwui.so" },
+      { offset: 1200, str: "another" },
+    ];
+    const dups = computeExtractedDuplicates(strings);
+    const dup = dups.find(d => d.value === "libhwui.so")!;
+    expect(dup).toBeDefined();
+    // Simulates the onclick handler: find first match in original strings
+    const match = strings.find(s => s.str === dup.value);
+    expect(match).toBeDefined();
+    expect(match!.offset).toBe(100); // first occurrence
+  });
 });
