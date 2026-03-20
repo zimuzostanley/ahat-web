@@ -470,6 +470,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                             },
                             getMemoryForDot = vm::getMemoryForDot,
                             getMemoryStats = vm::getMemoryStats,
+                            getMemoryTimeline = vm::getMemoryTimeline,
                             memoryDumpProgress = memDumpProgress,
                             memoryEnrichedDots = memEnrichedDots,
                             pinnedProcesses = pinnedProcesses,

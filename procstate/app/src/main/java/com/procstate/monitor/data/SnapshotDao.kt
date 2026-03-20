@@ -188,6 +188,14 @@ interface SnapshotDao {
     """)
     suspend fun getMemoryStats(name: String, uid: String, start: Long, end: Long): MemoryStatsAggregate?
 
+    /** Memory timeline for a process (for sparkline chart). */
+    @Query("""
+        SELECT * FROM memory_snapshots
+        WHERE name = :name AND uid = :uid AND timestamp >= :start
+        ORDER BY timestamp
+    """)
+    suspend fun getMemoryTimeline(name: String, uid: String, start: Long): List<MemorySnapshotEntity>
+
     /** All memory snapshots for export. */
     @Query("""
         SELECT * FROM memory_snapshots

@@ -5,6 +5,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
@@ -130,6 +131,7 @@ fun ProcessTab(
     onDumpMemory: ((pid: Int, name: String, uid: String, onDone: () -> Unit) -> Unit)? = null,
     getMemoryForDot: (suspend (name: String, uid: String, pid: Int, timestamp: Long) -> MemorySnapshotEntity?)? = null,
     getMemoryStats: (suspend (name: String, uid: String, upToMs: Long) -> MemoryStatsAggregate?)? = null,
+    getMemoryTimeline: (suspend (name: String, uid: String) -> List<MemorySnapshotEntity>)? = null,
     memoryDumpProgress: String? = null,
     memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
     allProcessKeysWithTransitions: List<ProcessKeyWithTransitions> = emptyList(),
@@ -173,6 +175,7 @@ fun ProcessTab(
             },
             getMemoryForDot = getMemoryForDot,
             getMemoryStats = getMemoryStats,
+            getMemoryTimeline = getMemoryTimeline,
             memoryDumpProgress = memoryDumpProgress,
             onDumpMemory = if (onDumpMemory != null) { pid, name, uid ->
                 onDumpMemory(pid, name, uid) {
@@ -947,6 +950,7 @@ fun ProcessDetailSheet(
     onDismiss: () -> Unit,
     getMemoryForDot: (suspend (name: String, uid: String, pid: Int, timestamp: Long) -> MemorySnapshotEntity?)? = null,
     getMemoryStats: (suspend (name: String, uid: String, upToMs: Long) -> MemoryStatsAggregate?)? = null,
+    getMemoryTimeline: (suspend (name: String, uid: String) -> List<MemorySnapshotEntity>)? = null,
     memoryDumpProgress: String? = null,
     onDumpMemory: ((pid: Int, name: String, uid: String) -> Unit)? = null,
 ) {
@@ -957,12 +961,16 @@ fun ProcessDetailSheet(
         // Load memory data inside the sheet so it recomposes correctly
         var memoryData by remember(detail) { mutableStateOf<MemorySnapshotEntity?>(null) }
         var memoryStats by remember(detail) { mutableStateOf<MemoryStatsAggregate?>(null) }
+        var memoryTimeline by remember(detail) { mutableStateOf<List<MemorySnapshotEntity>>(emptyList()) }
         androidx.compose.runtime.LaunchedEffect(detail) {
             if (getMemoryForDot != null && detail.pid > 0) {
                 memoryData = getMemoryForDot(detail.name, detail.uid, detail.pid, detail.timestampMs)
             }
             if (getMemoryStats != null && detail.timestampMs > 0) {
                 memoryStats = getMemoryStats(detail.name, detail.uid, detail.timestampMs)
+            }
+            if (getMemoryTimeline != null) {
+                memoryTimeline = getMemoryTimeline(detail.name, detail.uid)
             }
         }
         Column(
@@ -1193,6 +1201,92 @@ fun ProcessDetailSheet(
                         MemoryStatRow("Graphics", stats.minGraphics, stats.avgGraphics, stats.maxGraphics)
                         MemoryStatRow("System", stats.minSystem, stats.avgSystem, stats.maxSystem)
                         MemoryStatRow("Swap", stats.minSwap, stats.avgSwap, stats.maxSwap)
+                    }
+
+                    // Memory sparkline
+                    if (memoryTimeline.size >= 2) {
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                        Spacer(Modifier.height(12.dp))
+
+                        var selectedMetric by remember { mutableStateOf("PSS") }
+                        val metrics = listOf("PSS", "RSS", "Java", "Native", "Code", "Graphics")
+
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            for (m in metrics) {
+                                FilterChip(
+                                    selected = selectedMetric == m,
+                                    onClick = { selectedMetric = m },
+                                    label = { Text(m, style = MaterialTheme.typography.labelSmall) },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+
+                        val values = remember(memoryTimeline, selectedMetric) {
+                            memoryTimeline.map { e ->
+                                when (selectedMetric) {
+                                    "PSS" -> e.totalPssKb
+                                    "RSS" -> e.totalRssKb
+                                    "Java" -> e.javaHeapKb
+                                    "Native" -> e.nativeHeapKb
+                                    "Code" -> e.codeKb
+                                    "Graphics" -> e.graphicsKb
+                                    else -> e.totalPssKb
+                                }.toFloat()
+                            }
+                        }
+                        val lineColor = MaterialTheme.colorScheme.primary
+                        val fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                        val minVal = values.min()
+                        val maxVal = values.max()
+                        val range = (maxVal - minVal).coerceAtLeast(1f)
+
+                        Canvas(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(80.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                        ) {
+                            val w = size.width
+                            val h = size.height
+                            val pad = 4.dp.toPx()
+                            val drawH = h - pad * 2
+                            val step = w / (values.size - 1).coerceAtLeast(1)
+
+                            val path = androidx.compose.ui.graphics.Path()
+                            val fillPath = androidx.compose.ui.graphics.Path()
+
+                            for ((i, v) in values.withIndex()) {
+                                val x = i * step
+                                val y = pad + drawH * (1f - (v - minVal) / range)
+                                if (i == 0) {
+                                    path.moveTo(x, y)
+                                    fillPath.moveTo(x, h)
+                                    fillPath.lineTo(x, y)
+                                } else {
+                                    path.lineTo(x, y)
+                                    fillPath.lineTo(x, y)
+                                }
+                            }
+                            fillPath.lineTo((values.size - 1) * step, h)
+                            fillPath.close()
+
+                            drawPath(fillPath, fillColor)
+                            drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
+                        }
+
+                        // Min/Max labels
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(formatKb(minVal.toLong()), style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(formatKb(maxVal.toLong()), style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 } else if (onDumpMemory != null) {
                     // Dump button
