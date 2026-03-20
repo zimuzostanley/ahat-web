@@ -599,7 +599,7 @@ export class AdbConnection {
     if (!this.device) throw new Error("Not connected");
     if (!this._isRoot) throw new Error("Root required");
 
-    const BATCH_SIZE = 64; // VMAs per shell command — fewer round-trips
+    const BATCH_SIZE = 8; // VMAs per shell command — balance speed vs progress updates
     const MARKER = "===VMA===";
     const readable = entries.filter(e => e.perms[0] === "r");
     const regions: VmaRegionInfo[] = readable.map(e => ({
