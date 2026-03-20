@@ -600,7 +600,8 @@ export class AdbConnection {
     if (!this._isRoot) throw new Error("Root required");
 
     const BATCH_SIZE = 8; // VMAs per shell command — balance speed vs progress updates
-    const MARKER = "===VMA===";
+    const MARKER_PREFIX = "##AHAT_VMA_";
+    const MARKER_SUFFIX = "##";
     const readable = entries.filter(e => e.perms[0] === "r");
     const regions: VmaRegionInfo[] = readable.map(e => ({
       addrStart: e.addrStart,
@@ -618,18 +619,20 @@ export class AdbConnection {
       const batchEnd = Math.min(batchStart + BATCH_SIZE, readable.length);
       onProgress("Scanning VMAs\u2026", batchEnd, readable.length);
 
-      // Build a single shell command that greps all VMAs in this batch,
-      // separated by a unique marker line so we can split the output.
+      // Build a single shell command that greps all VMAs in this batch.
+      // Each VMA is preceded by a unique indexed marker line that can't
+      // collide with grep output (grep lines always start with a digit).
       const cmds: string[] = [];
-      const batchMeta: { index: number; startByte: number }[] = [];
+      const batchMeta: { localIdx: number; index: number; startByte: number }[] = [];
       for (let i = batchStart; i < batchEnd; i++) {
         const e = readable[i];
         const startByte = parseInt(e.addrStart, 16);
         const endByte = parseInt(e.addrEnd, 16);
         const startPage = Math.floor(startByte / 4096);
         const numPages = Math.ceil((endByte - startByte) / 4096);
-        batchMeta.push({ index: i, startByte });
-        cmds.push(`echo ${MARKER}`);
+        const localIdx = i - batchStart;
+        batchMeta.push({ localIdx, index: i, startByte });
+        cmds.push(`echo ${MARKER_PREFIX}${localIdx}${MARKER_SUFFIX}`);
         cmds.push(`dd if=/proc/${pid}/mem bs=4096 skip=${startPage} count=${numPages} 2>/dev/null | grep -baoE "[ -~]{4,}"`);
       }
 
@@ -640,20 +643,36 @@ export class AdbConnection {
           : `su 0 sh -c '${innerCmd}'`;
         const output = await this.device.shell(shellCmd, signal);
 
-        // Split output by marker — first section before the first marker is empty
-        const sections = output.split(MARKER);
+        // Parse line-by-line: marker lines switch the active VMA section,
+        // grep output lines (digit:string) go to the current section.
+        const perSection = new Map<number, { offset: number; str: string }[]>();
+        let currentSection = -1;
+        for (const line of output.split("\n")) {
+          if (!line) continue;
+          if (line.startsWith(MARKER_PREFIX) && line.endsWith(MARKER_SUFFIX)) {
+            const idx = parseInt(line.slice(MARKER_PREFIX.length, -MARKER_SUFFIX.length), 10);
+            if (isFinite(idx)) { currentSection = idx; perSection.set(idx, []); }
+            continue;
+          }
+          if (currentSection < 0) continue;
+          const colonIdx = line.indexOf(":");
+          if (colonIdx < 0) continue;
+          const offset = parseInt(line.substring(0, colonIdx), 10);
+          if (!isFinite(offset)) continue;
+          const str = line.substring(colonIdx + 1);
+          if (str.length >= 4) perSection.get(currentSection)!.push({ offset, str });
+        }
+
         const batchStrings: VmaString[] = [];
-        for (let si = 0; si < batchMeta.length; si++) {
-          const section = sections[si + 1] ?? ""; // +1 because first split is before first marker
-          const { index, startByte } = batchMeta[si];
-          const parsed = parseGrepOutput(section);
-          regions[index].stringCount = parsed.length;
+        for (const meta of batchMeta) {
+          const parsed = perSection.get(meta.localIdx) ?? [];
+          regions[meta.index].stringCount = parsed.length;
           for (const p of parsed) {
             const vs: VmaString = {
               offset: p.offset,
-              vmaAddr: startByte + p.offset,
+              vmaAddr: meta.startByte + p.offset,
               str: p.str,
-              vmaIndex: index,
+              vmaIndex: meta.index,
             };
             strings.push(vs);
             batchStrings.push(vs);
