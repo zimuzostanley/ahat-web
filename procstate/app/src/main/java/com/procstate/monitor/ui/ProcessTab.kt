@@ -193,10 +193,10 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
-            // Collect flow inside sheet for live updates (ModalBottomSheet recomposition fix)
-            val liveKeys = allProcessKeysFlow?.collectAsState()?.value ?: allProcessKeysWithTransitions
+            // Snapshot data on open — don't update while picker is visible
+            val snapshotKeys = remember { allProcessKeysFlow?.value ?: allProcessKeysWithTransitions }
             ProcessPickerSheet(
-                allKeysWithTransitions = liveKeys,
+                allKeysWithTransitions = snapshotKeys,
                 pinnedKeys = pinnedProcesses,
                 onSelect = onPinProcess,
                 onUnpin = onUnpinProcess,
