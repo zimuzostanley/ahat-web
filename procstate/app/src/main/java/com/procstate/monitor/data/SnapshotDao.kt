@@ -81,12 +81,13 @@ interface SnapshotDao {
     @Query("SELECT timestamp FROM snapshots WHERE timestamp >= :start ORDER BY timestamp")
     suspend fun getAllTimestampsForExport(start: Long): List<Long>
 
-    // Session-specific export queries
+    // Session-specific export queries (use snapshotId FK for exact match)
     @Query("""
-        SELECT timestamp, 0 as snapshotId, name, pid, uid, procState, frozen
-        FROM process_entries
-        WHERE timestamp IN (SELECT timestamp FROM snapshots WHERE sessionId = :sessionId)
-        ORDER BY name, uid, timestamp
+        SELECT s.timestamp, s.id as snapshotId, pe.name, pe.pid, pe.uid, pe.procState, pe.frozen
+        FROM snapshots s
+        JOIN process_entries pe ON s.id = pe.snapshotId
+        WHERE s.sessionId = :sessionId
+        ORDER BY pe.name, pe.uid, s.timestamp
     """)
     suspend fun getEntriesForSession(sessionId: String): List<ProcessTimelineRow>
 
@@ -94,9 +95,10 @@ interface SnapshotDao {
     suspend fun getTimestampsForSession(sessionId: String): List<Long>
 
     @Query("""
-        SELECT * FROM memory_snapshots
-        WHERE timestamp IN (SELECT timestamp FROM snapshots WHERE sessionId = :sessionId)
-        ORDER BY name, uid, timestamp
+        SELECT m.* FROM memory_snapshots m
+        JOIN snapshots s ON m.timestamp = s.timestamp
+        WHERE s.sessionId = :sessionId
+        ORDER BY m.name, m.uid, m.timestamp
     """)
     suspend fun getMemoryForSession(sessionId: String): List<MemorySnapshotEntity>
 
