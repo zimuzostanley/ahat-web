@@ -223,7 +223,7 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
 
         // ── Tab bar ──
         m("div", { className: "ah-proc-strings__tabs" }, [
-          m("div", { style: { display: "flex", gap: "0.25rem" } }, [
+          m("div", { style: { display: "flex", gap: "0.25rem", alignItems: "center" } }, [
             (["all", "duplicates", "byvma"] as Tab[]).map(t => {
               const label = t === "all" ? "All" : t === "duplicates" ? "Duplicates" : "By VMA";
               return m("button", {
@@ -232,6 +232,20 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
                 onclick: () => { tab = t; },
               }, label);
             }),
+            m("label", { className: "ah-proc-strings__minlen" }, [
+              "min ",
+              m("input", {
+                className: "ah-proc-strings__minlen-input",
+                type: "number",
+                min: 4,
+                max: 999,
+                value: minLen,
+                oninput: (e: Event) => {
+                  const v = parseInt((e.target as HTMLInputElement).value, 10);
+                  if (isFinite(v) && v >= 4) minLen = v;
+                },
+              }),
+            ]),
           ]),
           m("input", {
             className: "ah-proc-strings__search",
@@ -244,20 +258,6 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
               else { vmaFilter = v; }
             },
           }),
-          m("label", { className: "ah-proc-strings__minlen" }, [
-            "min ",
-            m("input", {
-              className: "ah-proc-strings__minlen-input",
-              type: "number",
-              min: 4,
-              max: 999,
-              value: minLen,
-              oninput: (e: Event) => {
-                const v = parseInt((e.target as HTMLInputElement).value, 10);
-                if (isFinite(v) && v >= 4) minLen = v;
-              },
-            }),
-          ]),
           m("span", { className: "ah-proc-strings__count" }, (() => {
             const lenNote = minLen > 4 ? ` (\u2265${minLen})` : "";
             if (tab === "all") {
