@@ -2599,6 +2599,7 @@ code {
 .ah-proc-strings__col--str {
   flex: 1;
   min-width: 0;
+  max-width: 36rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
