@@ -40,6 +40,7 @@ class ExportService : Service() {
         const val ACTION_DONE = "com.procstate.monitor.EXPORT_DONE"
         const val EXTRA_RANGE_MS = "range_ms"
         const val EXTRA_URI = "uri"
+        const val EXTRA_SESSION_ID = "session_id"
 
         private val _running = MutableStateFlow(false)
         val runningFlow = _running.asStateFlow()
@@ -63,6 +64,7 @@ class ExportService : Service() {
         }
 
         val rangeMs = intent.getLongExtra(EXTRA_RANGE_MS, 0L)
+        val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
         val uriStr = intent.getStringExtra(EXTRA_URI) ?: run { stopSelf(); return START_NOT_STICKY }
         val uri = Uri.parse(uriStr)
 
@@ -83,10 +85,19 @@ class ExportService : Service() {
         scope.launch {
             try {
                 updateNotification("Querying database\u2026")
-                val startMs = if (rangeMs > 0) System.currentTimeMillis() - rangeMs else 0L
-                val entries = dao.getAllEntriesForExport(startMs)
-                val timestamps = dao.getAllTimestampsForExport(startMs)
-                val memSnapshots = dao.getAllMemoryForExport(startMs)
+                val entries: List<com.procstate.monitor.data.ProcessTimelineRow>
+                val timestamps: List<Long>
+                val memSnapshots: List<com.procstate.monitor.data.MemorySnapshotEntity>
+                if (sessionId != null) {
+                    entries = dao.getEntriesForSession(sessionId)
+                    timestamps = dao.getTimestampsForSession(sessionId)
+                    memSnapshots = dao.getMemoryForSession(sessionId)
+                } else {
+                    val startMs = if (rangeMs > 0) System.currentTimeMillis() - rangeMs else 0L
+                    entries = dao.getAllEntriesForExport(startMs)
+                    timestamps = dao.getAllTimestampsForExport(startMs)
+                    memSnapshots = dao.getAllMemoryForExport(startMs)
+                }
 
                 updateNotification("Building trace (${entries.size} entries)\u2026")
                 val exportEntries = entries.map { row ->

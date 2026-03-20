@@ -81,6 +81,25 @@ interface SnapshotDao {
     @Query("SELECT timestamp FROM snapshots WHERE timestamp >= :start ORDER BY timestamp")
     suspend fun getAllTimestampsForExport(start: Long): List<Long>
 
+    // Session-specific export queries
+    @Query("""
+        SELECT timestamp, 0 as snapshotId, name, pid, uid, procState, frozen
+        FROM process_entries
+        WHERE timestamp IN (SELECT timestamp FROM snapshots WHERE sessionId = :sessionId)
+        ORDER BY name, uid, timestamp
+    """)
+    suspend fun getEntriesForSession(sessionId: String): List<ProcessTimelineRow>
+
+    @Query("SELECT timestamp FROM snapshots WHERE sessionId = :sessionId ORDER BY timestamp")
+    suspend fun getTimestampsForSession(sessionId: String): List<Long>
+
+    @Query("""
+        SELECT * FROM memory_snapshots
+        WHERE timestamp IN (SELECT timestamp FROM snapshots WHERE sessionId = :sessionId)
+        ORDER BY name, uid, timestamp
+    """)
+    suspend fun getMemoryForSession(sessionId: String): List<MemorySnapshotEntity>
+
     /** Lightweight rows for transition counting — minimal fields, pre-sorted. */
     data class TransitionRow(val name: String, val uid: String, val pid: Int, val procState: String, val frozen: Boolean)
 

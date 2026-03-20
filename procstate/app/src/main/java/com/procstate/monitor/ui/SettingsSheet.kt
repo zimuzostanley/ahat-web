@@ -13,7 +13,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -54,6 +58,7 @@ fun SettingsSheet(
     onExportRangeChange: (Long) -> Unit,
     onLoadSessions: (suspend () -> List<DataSession>)? = null,
     onPinSession: ((startMs: Long) -> Unit)? = null,
+    onExportSession: ((sessionId: String) -> Unit)? = null,
 ) {
     var confirmClear by remember { mutableStateOf(false) }
     var confirmPrune by remember { mutableStateOf<Long?>(null) }
@@ -272,48 +277,36 @@ fun SettingsSheet(
                                         showSessions = false
                                     } else Modifier),
                             ) {
-                                if (session.isSingleSnapshot) {
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(
-                                            "Snapshot",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        Text(
-                                            formatAgo(now - session.startMs),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column(Modifier.weight(1f)) {
+                                        if (session.isSingleSnapshot) {
+                                            Text("Snapshot", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                            Text(fmt.format(session.startMs), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        } else {
+                                            Text("Recording \u00b7 ${session.count} snapshots", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+                                            Text("${fmt.format(session.startMs)} \u2013 ${fmt.format(session.endMs)} \u00b7 ${formatDuration(session.durationMs)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
-                                    Text(
-                                        fmt.format(session.startMs),
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                } else {
-                                    Row(
-                                        Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Text(
-                                            "Recording \u00b7 ${session.count} snapshots",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        Text(
-                                            formatAgo(now - session.startMs),
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
+                                    Text(formatAgo(now - session.startMs), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (onExportSession != null) {
+                                        IconButton(
+                                            onClick = {
+                                                onExportSession(session.sessionId)
+                                                showSessions = false
+                                            },
+                                            modifier = Modifier.size(32.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Share,
+                                                "Export",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.primary,
+                                            )
+                                        }
                                     }
-                                    Text(
-                                        "${fmt.format(session.startMs)} \u2013 ${fmt.format(session.endMs)} \u00b7 ${formatDuration(session.durationMs)}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
                                 }
                                 HorizontalDivider(
                                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f),

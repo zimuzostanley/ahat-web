@@ -124,6 +124,7 @@ class MainActivity : ComponentActivity() {
 
     // For Perfetto export
     var pendingExportRange = 0L
+    var pendingSessionId: String? = null
 
     val exportFileLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/json"),
@@ -133,8 +134,10 @@ class MainActivity : ComponentActivity() {
             action = com.procstate.monitor.service.ExportService.ACTION_EXPORT
             putExtra(com.procstate.monitor.service.ExportService.EXTRA_RANGE_MS, pendingExportRange)
             putExtra(com.procstate.monitor.service.ExportService.EXTRA_URI, uri.toString())
+            pendingSessionId?.let { putExtra(com.procstate.monitor.service.ExportService.EXTRA_SESSION_ID, it) }
             addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
         }
+        pendingSessionId = null
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent)
         else startService(intent)
     }
@@ -646,6 +649,13 @@ private fun ProcStateApp(vm: MainViewModel) {
                 onLoadSessions = { vm.getDataSessions() },
                 onPinSession = { startMs ->
                     vm.pinStartTime(startMs)
+                    showSettings = false
+                },
+                onExportSession = { sessionId ->
+                    activity.pendingSessionId = sessionId
+                    activity.pendingExportRange = 0L
+                    val filename = "procstate_session_${System.currentTimeMillis()}.json"
+                    activity.exportFileLauncher.launch(filename)
                     showSettings = false
                 },
             )
