@@ -2036,15 +2036,15 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           },
                         }, [
                           m("td", { className: "ah-capture-td--center" }, [
-                            d.status !== "removed" && canCapture && (
-                              m(DumpButton, {
-                                pid: p.pid,
-                                job: captureJobs.get(p.pid),
-                                disabled: !connected || !isLive,
-                                onDump: startCapture,
-                                onCancel: cancelCapture,
-                              })
-                            ),
+                            d.status !== "removed" && canCapture
+                              ? m(DumpButton, {
+                                  pid: p.pid,
+                                  job: captureJobs.get(p.pid),
+                                  disabled: !connected || !isLive,
+                                  onDump: startCapture,
+                                  onCancel: cancelCapture,
+                                })
+                              : m("span", { style: { width: "104px", display: "inline-block" } }),
                             d.status !== "removed" && conn.isRoot && (
                               m("button", {
                                 className: "ah-smaps-action",
