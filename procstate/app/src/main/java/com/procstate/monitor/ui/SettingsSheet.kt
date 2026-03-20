@@ -296,14 +296,17 @@ fun SettingsSheet(
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
-                                    Spacer(Modifier.width(4.dp))
-                                    TextButton(
+                                    IconButton(
                                         onClick = {
                                             onExportSession?.invoke(session.sessionId)
                                             showSessions = false
                                         },
                                     ) {
-                                        Text("\u2197", style = MaterialTheme.typography.titleMedium)
+                                        Icon(
+                                            Icons.Default.Share,
+                                            "Export",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                        )
                                     }
                                 }
                                 HorizontalDivider(
