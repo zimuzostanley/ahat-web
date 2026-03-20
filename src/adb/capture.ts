@@ -647,7 +647,8 @@ export class AdbConnection {
         // grep output lines (digit:string) go to the current section.
         const perSection = new Map<number, { offset: number; str: string }[]>();
         let currentSection = -1;
-        for (const line of output.split("\n")) {
+        for (let line of output.split("\n")) {
+          line = line.replace(/\r$/, "");
           if (!line) continue;
           if (line.startsWith(MARKER_PREFIX) && line.endsWith(MARKER_SUFFIX)) {
             const idx = parseInt(line.slice(MARKER_PREFIX.length, -MARKER_SUFFIX.length), 10);
