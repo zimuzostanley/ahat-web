@@ -99,6 +99,7 @@ interface Session {
   smapsAggregated?: SmapsAggregated[];
   smapsProcesses?: { pid: number; name: string; aggregated: SmapsAggregated[] }[];
   procStrings?: ProcessStringsResult;
+  scanAbortCtrl?: AbortController;
 }
 
 let nextSessionId = 1;
@@ -144,6 +145,8 @@ export default function App(): m.Component {
   let sessions: Session[] = [];
   let activeTab: "device" | string = "device";
   let error: string | null = null;
+  let vmaDumpFromStringsStatus: string | null = null;
+  let vmaDumpFromStringsAc: AbortController | null = null;
   let captureUsed = false;
   let pendingSessionFile: File | null = null;
   let menuOpen = false;
@@ -358,7 +361,7 @@ export default function App(): m.Component {
     activeTab = sessionId;
   }
 
-  function loadProcessStrings(name: string, data: ProcessStringsResult): string {
+  function loadProcessStrings(name: string, data: ProcessStringsResult, scanAbortCtrl?: AbortController): string {
     const sessionId = `session-${nextSessionId++}`;
     const newSession: Session = {
       id: sessionId, name, kind: "procstrings", status: "ready",
@@ -366,6 +369,7 @@ export default function App(): m.Component {
       progress: { msg: "", pct: 100 },
       worker: null, errorMsg: null,
       procStrings: data,
+      scanAbortCtrl,
     };
     sessions = [...sessions, newSession];
     activeTab = sessionId;
@@ -839,12 +843,38 @@ export default function App(): m.Component {
                 m(ProcessStringsView, {
                   data: activeSession.procStrings,
                   name: activeSession.name,
+                  dumpStatus: vmaDumpFromStringsStatus,
+                  onCancelScan: () => {
+                    if (activeSession.scanAbortCtrl) {
+                      activeSession.scanAbortCtrl.abort();
+                      sessions = sessions.map(s => s.id === activeSession.id
+                        ? { ...s, scanAbortCtrl: undefined, procStrings: s.procStrings ? { ...s.procStrings, scanning: false } : undefined }
+                        : s);
+                      m.redraw();
+                    }
+                  },
+                  onCancelDump: () => {
+                    if (vmaDumpFromStringsAc) { vmaDumpFromStringsAc.abort(); vmaDumpFromStringsAc = null; }
+                    vmaDumpFromStringsStatus = null;
+                    m.redraw();
+                  },
                   onDumpVma: (dumpName: string, pid: number, region: { addrStart: string; addrEnd: string }, filterString?: string) => {
-                    // Trigger VMA dump via the ADB connection, then open hex view
+                    if (vmaDumpFromStringsStatus) return;
+                    const ac = new AbortController();
+                    vmaDumpFromStringsAc = ac;
                     const regions = [region];
-                    adbConn.dumpVmaMemory(pid, regions, () => {}).then(data => {
+                    vmaDumpFromStringsStatus = `Dumping ${region.addrStart}\u2026`;
+                    m.redraw();
+                    adbConn.dumpVmaMemory(pid, regions, (status) => {
+                      vmaDumpFromStringsStatus = status;
+                      m.redraw();
+                    }, ac.signal).then(data => {
+                      vmaDumpFromStringsAc = null;
+                      vmaDumpFromStringsStatus = null;
                       loadVmaDump(dumpName, data.buffer as ArrayBuffer, regions, filterString);
                     }).catch(e => {
+                      vmaDumpFromStringsAc = null;
+                      vmaDumpFromStringsStatus = null;
                       if (e instanceof DOMException && e.name === "AbortError") return;
                       error = e instanceof Error ? e.message : "VMA dump failed";
                       m.redraw();

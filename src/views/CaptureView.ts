@@ -714,7 +714,7 @@ function getFieldValue(p: ProcessInfo, field: SmapsNumericField, rollup?: SmapsR
 interface CaptureViewAttrs {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
   onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
-  onProcessStrings: (name: string, data: ProcessStringsResult) => string;
+  onProcessStrings: (name: string, data: ProcessStringsResult, scanAbortCtrl?: AbortController) => string;
   onUpdateProcessStrings: (sessionId: string, data: ProcessStringsResult) => void;
   conn: AdbConnection;
   sessionFile?: File | null;
@@ -1356,7 +1356,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         scannedVmas: 0,
         totalVmas: readable.length,
       };
-      const sessionId = _onProcessStrings(`${procSan}_strings`, liveData);
+      const sessionId = _onProcessStrings(`${procSan}_strings`, liveData, ac);
 
       stringsStatus = null;
       stringsProgress = null;
@@ -1410,7 +1410,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   // Attrs-derived callbacks stored each render
   let _onCaptured: (name: string, buffer: ArrayBuffer) => void;
   let _onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
-  let _onProcessStrings: (name: string, data: ProcessStringsResult) => string;
+  let _onProcessStrings: (name: string, data: ProcessStringsResult, scanAbortCtrl?: AbortController) => string;
   let _onUpdateProcessStrings: (sessionId: string, data: ProcessStringsResult) => void;
   let _importedSessionFile: File | null = null;
 

@@ -21,6 +21,9 @@ interface ProcessStringsViewAttrs {
   data: ProcessStringsResult;
   name: string;
   onDumpVma: (name: string, pid: number, region: { addrStart: string; addrEnd: string }, filterString?: string) => void;
+  dumpStatus: string | null;
+  onCancelScan?: () => void;
+  onCancelDump?: () => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -129,7 +132,7 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
 
   return {
     view(vnode) {
-      const { data, onDumpVma } = vnode.attrs;
+      const { data, onDumpVma, dumpStatus, onCancelScan, onCancelDump } = vnode.attrs;
       const { strings: rawStrings, regions, pid, processName, scanning, scannedVmas, totalVmas } = data;
       const strings = minLen > 4 ? rawStrings.filter(s => s.str.length >= minLen) : rawStrings;
       const addrWidth = strings.length > 0 && strings.some(s => s.vmaAddr > 0xFFFFFFFF) ? 12 : 8;
@@ -197,12 +200,23 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
             m("div", { className: "ah-capture-progress__row" }, [
               m("span", { className: "ah-capture-progress__text" }, "Scanning VMAs\u2026"),
               m("span", { className: "ah-capture-progress__count" }, `${scannedVmas ?? 0}/${totalVmas}`),
+              onCancelScan && m("button", { className: "ah-capture-progress__cancel", onclick: onCancelScan }, "Cancel"),
             ]),
             m("div", { className: "ah-capture-progress-bar" }, [
               m("div", {
                 className: "ah-capture-progress-bar__fill ah-capture-progress-bar__fill--accent",
                 style: { width: `${((scannedVmas ?? 0) / totalVmas) * 100}%` },
               }),
+            ]),
+          ])
+        ),
+
+        // ── VMA dump progress ──
+        dumpStatus && (
+          m("div", { className: "ah-capture-progress", style: { margin: "0 1rem" } }, [
+            m("div", { className: "ah-capture-progress__row" }, [
+              m("span", { className: "ah-capture-progress__text" }, dumpStatus),
+              onCancelDump && m("button", { className: "ah-capture-progress__cancel", onclick: onCancelDump }, "Cancel"),
             ]),
           ])
         ),

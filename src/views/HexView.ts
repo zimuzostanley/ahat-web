@@ -305,6 +305,7 @@ function HexView(): m.Component<HexViewAttrs> {
   let diffMinimapCanvas: HTMLCanvasElement | null = null;
   let programmaticScroll = false;
   let stringShowCount = MAX_DISPLAYED_STRINGS;
+  let stringMinLen = MIN_STRING_LEN;
   let appliedInitialFilter: string | undefined;
   let showDuplicates = false;
   let dupSortField: DupSortField = "totalBytes";
@@ -570,7 +571,10 @@ function HexView(): m.Component<HexViewAttrs> {
       const diffStats = getDiffStats(data, diffBaseline);
       const diffRows = getDiffRows(data, diffBaseline);
       const separators = regionMap && regionMap.length > 1 ? regionSeparatorRows(regionMap) : [];
-      const strings = getStrings(showStrings, buffer, data);
+      const rawStrings = getStrings(showStrings, buffer, data);
+      const strings = stringMinLen > MIN_STRING_LEN
+        ? rawStrings.filter(s => s.str.length >= stringMinLen)
+        : rawStrings;
 
       // Reset diff navigation when baseline changes
       if (diffBaselineId !== prevDiffBaselineId) {
@@ -789,7 +793,15 @@ function HexView(): m.Component<HexViewAttrs> {
                       m("div", { className: "ah-hex-strings__count" },
                         filteredDups.length === duplicates.length
                           ? `${duplicates.length.toLocaleString()} duplicate groups`
-                          : `${filteredDups.length.toLocaleString()} / ${duplicates.length.toLocaleString()}`)
+                          : `${filteredDups.length.toLocaleString()} / ${duplicates.length.toLocaleString()}`),
+                      m("label", { className: "ah-proc-strings__minlen" }, [
+                        "min ",
+                        m("input", {
+                          className: "ah-proc-strings__minlen-input",
+                          type: "number", min: 4, max: 999, value: stringMinLen,
+                          oninput: (e: Event) => { const v = parseInt((e.target as HTMLInputElement).value, 10); if (isFinite(v) && v >= 4) stringMinLen = v; },
+                        }),
+                      ]),
                     )
                   : m(Fragment, null,
                       m("input", {
@@ -803,7 +815,15 @@ function HexView(): m.Component<HexViewAttrs> {
                         filteredStrings.length === strings.length
                           ? `${strings.length.toLocaleString()} strings`
                           : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`,
-                        ` (\u2265${MIN_STRING_LEN} chars)`)
+                        stringMinLen > MIN_STRING_LEN ? ` (\u2265${stringMinLen})` : ` (\u2265${MIN_STRING_LEN} chars)`),
+                      m("label", { className: "ah-proc-strings__minlen" }, [
+                        "min ",
+                        m("input", {
+                          className: "ah-proc-strings__minlen-input",
+                          type: "number", min: 4, max: 999, value: stringMinLen,
+                          oninput: (e: Event) => { const v = parseInt((e.target as HTMLInputElement).value, 10); if (isFinite(v) && v >= 4) stringMinLen = v; },
+                        }),
+                      ]),
                     )
               ),
               showDuplicates
