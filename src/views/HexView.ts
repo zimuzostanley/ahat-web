@@ -771,7 +771,7 @@ function HexView(): m.Component<HexViewAttrs> {
           showStrings && (
             m("div", { className: "ah-hex-strings", style: { height: containerHeight + "px" } },
               m("div", { className: "ah-hex-strings__header" },
-                m("div", { style: { display: "flex", gap: "0.25rem", marginBottom: "0.25rem" } },
+                m("div", { style: { display: "flex", gap: "0.25rem", marginBottom: "0.25rem", alignItems: "center" } },
                   m("button", {
                     className: `ah-hex-btn ah-hex-btn--sm${!showDuplicates ? " ah-hex-btn--active" : ""}`,
                     onclick: () => { showDuplicates = false; },
@@ -780,6 +780,14 @@ function HexView(): m.Component<HexViewAttrs> {
                     className: `ah-hex-btn ah-hex-btn--sm${showDuplicates ? " ah-hex-btn--active" : ""}`,
                     onclick: () => { showDuplicates = true; },
                   }, `Duplicates${duplicates.length > 0 || showDuplicates ? ` (${getDuplicates(strings).length.toLocaleString()})` : ""}`),
+                  m("label", { className: "ah-proc-strings__minlen" }, [
+                    "min ",
+                    m("input", {
+                      className: "ah-proc-strings__minlen-input",
+                      type: "number", min: 4, max: 999, value: stringMinLen,
+                      oninput: (e: Event) => { const v = parseInt((e.target as HTMLInputElement).value, 10); if (isFinite(v) && v >= 4) stringMinLen = v; },
+                    }),
+                  ]),
                 ),
                 showDuplicates
                   ? m(Fragment, null,
@@ -794,14 +802,6 @@ function HexView(): m.Component<HexViewAttrs> {
                         filteredDups.length === duplicates.length
                           ? `${duplicates.length.toLocaleString()} duplicate groups`
                           : `${filteredDups.length.toLocaleString()} / ${duplicates.length.toLocaleString()}`),
-                      m("label", { className: "ah-proc-strings__minlen" }, [
-                        "min ",
-                        m("input", {
-                          className: "ah-proc-strings__minlen-input",
-                          type: "number", min: 4, max: 999, value: stringMinLen,
-                          oninput: (e: Event) => { const v = parseInt((e.target as HTMLInputElement).value, 10); if (isFinite(v) && v >= 4) stringMinLen = v; },
-                        }),
-                      ]),
                     )
                   : m(Fragment, null,
                       m("input", {
@@ -816,14 +816,6 @@ function HexView(): m.Component<HexViewAttrs> {
                           ? `${strings.length.toLocaleString()} strings`
                           : `${filteredStrings.length.toLocaleString()} / ${strings.length.toLocaleString()}`,
                         stringMinLen > MIN_STRING_LEN ? ` (\u2265${stringMinLen})` : ` (\u2265${MIN_STRING_LEN} chars)`),
-                      m("label", { className: "ah-proc-strings__minlen" }, [
-                        "min ",
-                        m("input", {
-                          className: "ah-proc-strings__minlen-input",
-                          type: "number", min: 4, max: 999, value: stringMinLen,
-                          oninput: (e: Event) => { const v = parseInt((e.target as HTMLInputElement).value, 10); if (isFinite(v) && v >= 4) stringMinLen = v; },
-                        }),
-                      ]),
                     )
               ),
               showDuplicates
