@@ -829,7 +829,7 @@ export default function App(): m.Component {
 
             // Ready — process strings view
             activeSession.status === "ready" && activeSession.kind === "procstrings" && activeSession.procStrings && (
-              m("main", { className: "ah-main--vmadump" },
+              m("main", { className: "ah-main--procstrings" },
                 m(ProcessStringsView, {
                   data: activeSession.procStrings,
                   name: activeSession.name,

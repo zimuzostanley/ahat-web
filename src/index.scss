@@ -258,6 +258,14 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   max-width: 95%;
   margin: 0 auto;
   width: 100%;
+}
+
+.ah-main--procstrings {
+  flex: 1;
+  padding: 1rem;
+  max-width: 95%;
+  margin: 0 auto;
+  width: 100%;
   min-width: 0;
   overflow: hidden;
   display: flex;
