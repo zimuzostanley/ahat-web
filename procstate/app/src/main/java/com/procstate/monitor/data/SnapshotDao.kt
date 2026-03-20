@@ -103,10 +103,10 @@ interface SnapshotDao {
     suspend fun getMemoryForSession(sessionId: String): List<MemorySnapshotEntity>
 
     /** Lightweight rows for transition counting — minimal fields, pre-sorted. */
-    data class TransitionRow(val name: String, val uid: String, val pid: Int, val procState: String, val frozen: Boolean)
+    data class TransitionRow(val name: String, val uid: String, val pid: Int, val procState: String, val frozen: Boolean, val timestamp: Long)
 
     @Query("""
-        SELECT name, uid, pid, procState, frozen
+        SELECT name, uid, pid, procState, frozen, timestamp
         FROM process_entries
         WHERE timestamp >= :start
         ORDER BY name, uid, timestamp

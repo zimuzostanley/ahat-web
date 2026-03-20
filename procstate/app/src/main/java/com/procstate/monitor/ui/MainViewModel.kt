@@ -342,12 +342,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val hasStateFilter: Boolean get() = _stateFilter.value != null
 
     /** Persisted sort key for process picker. */
-    private val _pickerSort = MutableStateFlow(prefs.getString("picker_sort", "transitions") ?: "transitions")
+    private val _pickerSort = MutableStateFlow("last")
     val pickerSort: StateFlow<String> = _pickerSort.asStateFlow()
-    fun setPickerSort(sort: String) {
-        _pickerSort.value = sort
-        prefs.edit().putString("picker_sort", sort).apply()
-    }
+    fun setPickerSort(sort: String) { _pickerSort.value = sort }
+    fun resetPickerSort() { _pickerSort.value = "last" }
 
     fun setStateFilter(states: Set<String>) {
         _stateFilter.value = states
@@ -469,11 +467,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 var transitions = 0
                 var starts = 0
                 var frozenTransitions = 0
+                var lastSeenMs = 0L
 
                 fun flush() {
                     if (curName.isNotEmpty()) {
                         result.add(ProcessKeyWithTransitions(
-                            ProcessKey(curName, curUid), transitions, starts, frozenTransitions,
+                            ProcessKey(curName, curUid), transitions, starts, frozenTransitions, lastSeenMs,
                         ))
                     }
                 }
@@ -489,6 +488,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         transitions = 0
                         starts = 0
                         frozenTransitions = 0
+                        lastSeenMs = row.timestamp
                     } else {
                         if (row.procState != prevState) transitions++
                         if (row.frozen != prevFrozen) frozenTransitions++
@@ -496,6 +496,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         prevState = row.procState
                         prevFrozen = row.frozen
                         prevPid = row.pid
+                        lastSeenMs = row.timestamp
                     }
                 }
                 flush()

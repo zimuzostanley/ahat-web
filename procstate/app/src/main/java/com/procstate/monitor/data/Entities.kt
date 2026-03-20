@@ -123,6 +123,7 @@ data class ProcessKeyWithTransitions(
     val transitions: Int,
     val starts: Int,
     val frozenCount: Int,
+    val lastSeenMs: Long = 0,
 )
 
 data class MemoryDotKey(

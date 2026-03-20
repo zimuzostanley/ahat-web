@@ -721,8 +721,10 @@ private fun ProcessPickerSheet(
                         else compareByDescending { it.starts }
             "frozen" -> if (sortAscending) compareBy { it.frozenCount }
                         else compareByDescending { it.frozenCount }
-            else -> if (sortAscending) compareBy { it.transitions }
-                    else compareByDescending { it.transitions }
+            "transitions" -> if (sortAscending) compareBy { it.transitions }
+                             else compareByDescending { it.transitions }
+            else -> if (sortAscending) compareBy { it.lastSeenMs }
+                    else compareByDescending { it.lastSeenMs }
         }
         searched.sortedWith(comparator)
     }

@@ -342,7 +342,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     // Filter: state filter (tab 0) or process picker (tab 1)
                     IconButton(onClick = {
                         if (selectedTab == 0) showStateFilterSheet = true
-                        else showProcessPicker = !showProcessPicker
+                        else { if (!showProcessPicker) vm.resetPickerSort(); showProcessPicker = !showProcessPicker }
                     }) {
                         Icon(
                             Icons.Default.FilterList,
@@ -483,7 +483,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                             onUnpinProcess = vm::unpinProcess,
                             collapsed = collapseTimeline,
                             showPicker = showProcessPicker,
-                            onOpenPicker = { showProcessPicker = true },
+                            onOpenPicker = { vm.resetPickerSort(); showProcessPicker = true },
                             onDismissPicker = { showProcessPicker = false },
                         )
                     }
