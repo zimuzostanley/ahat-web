@@ -1269,10 +1269,19 @@ fun ProcessDetailSheet(
                         }
                         // X-axis time labels (indented to align under chart, not y-axis)
                         val timeFmt = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
-                        Row(Modifier.fillMaxWidth().padding(start = 48.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        val durationMs = memoryTimeline.last().timestamp - memoryTimeline.first().timestamp
+                        val durText = when {
+                            durationMs < 60_000 -> "${durationMs / 1000}s"
+                            durationMs < 3600_000 -> "${durationMs / 60_000}m"
+                            else -> "%.1fh".format(durationMs / 3600_000.0)
+                        }
+                        Row(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(timeFmt.format(memoryTimeline.first().timestamp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(durText,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
                             Text(timeFmt.format(memoryTimeline.last().timestamp),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant)
