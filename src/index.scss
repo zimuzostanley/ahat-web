@@ -2614,6 +2614,32 @@ code {
   text-align: right;
 }
 
+.ah-proc-strings__col--len {
+  width: 3rem;
+  text-align: right;
+}
+
+.ah-proc-strings__col--vma-count {
+  width: 3.5rem;
+  text-align: right;
+}
+
+.ah-proc-strings__col--vma-hdr {
+  width: 14rem;
+  font-size: 10px;
+}
+
+.ah-proc-strings__col--vma-hdr-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 10px;
+}
+
+.ah-proc-strings__col--vma-metric {
+  width: 4.5rem;
+  text-align: right;
+}
+
 .ah-proc-strings__copy {
   flex-shrink: 0;
   font-size: 10px;
@@ -2672,17 +2698,10 @@ code {
   width: 2.5rem;
 }
 
-.ah-proc-strings__vma-count {
+.ah-proc-strings__vma-metric {
+  font-family: $mono;
   font-size: 10px;
   color: var(--ah-text-secondary);
-  flex-shrink: 0;
-  width: 7rem;
-  text-align: right;
-}
-
-.ah-proc-strings__vma-size {
-  font-size: 10px;
-  color: var(--ah-text-faint);
   flex-shrink: 0;
   width: 4.5rem;
   text-align: right;
