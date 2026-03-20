@@ -214,8 +214,7 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
                       return m("div", {
                         key: i,
                         className: "ah-proc-strings__row",
-                        title: `Click to copy \u2014 ${r?.name ?? ""}`,
-                        onclick: () => { navigator.clipboard.writeText(s.str).catch(() => {}); },
+                        title: r?.name ?? "",
                       }, [
                         m("span", { className: "ah-proc-strings__col ah-proc-strings__col--addr" },
                           fmtAddr(s.vmaAddr, addrWidth)),
@@ -231,6 +230,11 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
                           m("span", { className: "ah-proc-strings__vma-name" }, r?.name ?? "?"),
                         ]),
                         m("span", { className: "ah-proc-strings__col ah-proc-strings__col--str" }, s.str),
+                        m("button", {
+                          className: "ah-proc-strings__copy",
+                          onclick: () => { navigator.clipboard.writeText(s.str).catch(() => {}); },
+                          title: "Copy string",
+                        }, "copy"),
                       ]);
                     }),
                     sortedAll.length > allShowCount && (
@@ -270,7 +274,7 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
                       m("div", {
                         key: i,
                         className: "ah-proc-strings__row",
-                        title: `Click to filter All tab to this string (${d.vmaIndices.size} VMAs)`,
+                        title: `Click to filter All tab (${d.vmaIndices.size} VMAs)`,
                         onclick: () => { tab = "all"; filter = d.value; allShowCount = MAX_DISPLAY; },
                       }, [
                         m("span", { className: "ah-proc-strings__col ah-proc-strings__col--bytes" },
@@ -278,6 +282,11 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
                         m("span", { className: "ah-proc-strings__col ah-proc-strings__col--count" },
                           d.count.toLocaleString()),
                         m("span", { className: "ah-proc-strings__col ah-proc-strings__col--str" }, d.value),
+                        m("button", {
+                          className: "ah-proc-strings__copy",
+                          onclick: (e: Event) => { e.stopPropagation(); navigator.clipboard.writeText(d.value).catch(() => {}); },
+                          title: "Copy string",
+                        }, "copy"),
                       ]),
                     ),
                     sortedDups.length > dupShowCount && (
@@ -330,12 +339,15 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
                             m("div", {
                               key: si,
                               className: "ah-proc-strings__row ah-proc-strings__row--nested",
-                              onclick: () => { navigator.clipboard.writeText(s.str).catch(() => {}); },
-                              title: "Click to copy",
                             }, [
                               m("span", { className: "ah-proc-strings__col ah-proc-strings__col--addr" },
                                 fmtAddr(s.vmaAddr, addrWidth)),
                               m("span", { className: "ah-proc-strings__col ah-proc-strings__col--str" }, s.str),
+                              m("button", {
+                                className: "ah-proc-strings__copy",
+                                onclick: () => { navigator.clipboard.writeText(s.str).catch(() => {}); },
+                                title: "Copy string",
+                              }, "copy"),
                             ]),
                           ),
                           vmaStrings.length > MAX_DISPLAY && (
