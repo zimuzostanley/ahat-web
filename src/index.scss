@@ -2667,11 +2667,15 @@ code {
 
 // ── By VMA accordion ──
 
-.ah-proc-strings__vma-group {
+.ah-proc-strings__vma-row {
   display: flex;
   align-items: baseline;
   gap: 0.5rem;
   padding: 0.25rem 1rem;
+  min-width: 0;
+}
+
+.ah-proc-strings__vma-group {
   font-size: 0.75rem;
   cursor: pointer;
   border-bottom: 1px solid var(--ah-border-light);
@@ -2683,27 +2687,44 @@ code {
   border-bottom-color: var(--ah-border);
 }
 
-.ah-proc-strings__vma-addr {
+.ah-proc-strings__vma-col-exp {
+  width: 1rem;
+  flex-shrink: 0;
+  font-size: 10px;
+}
+
+.ah-proc-strings__vma-col-addr {
+  width: 14rem;
+  flex-shrink: 0;
   font-family: $mono;
   font-size: 10px;
   color: var(--ah-text-faint);
-  flex-shrink: 0;
+  white-space: nowrap;
 }
 
-.ah-proc-strings__vma-perms {
+.ah-proc-strings__vma-col-name {
+  flex: 1;
+  min-width: 0;
   font-family: $mono;
   font-size: 10px;
-  color: var(--ah-text-fainter);
-  flex-shrink: 0;
-  width: 2.5rem;
+  color: var(--ah-text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.ah-proc-strings__vma-metric {
+.ah-proc-strings__vma-col-metric {
+  width: 4.5rem;
+  flex-shrink: 0;
   font-family: $mono;
   font-size: 10px;
   color: var(--ah-text-secondary);
+  text-align: right;
+}
+
+.ah-proc-strings__vma-col-action {
+  width: 2.5rem;
   flex-shrink: 0;
-  width: 4.5rem;
   text-align: right;
 }
 

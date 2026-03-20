@@ -380,22 +380,23 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
             sortedRegions.length === 0
               ? m("div", { className: "ah-proc-strings__empty" }, vmaFilter ? "No matching VMAs" : "No VMAs")
               : m(Fragment, null, [
-                  m("div", { className: "ah-proc-strings__table-header" }, [
-                    m("span", { className: "ah-proc-strings__col", style: { width: "1rem" } }),
-                    m("span", { className: "ah-proc-strings__col ah-proc-strings__col--vma-hdr" }, "Address"),
-                    m("span", { className: "ah-proc-strings__col ah-proc-strings__col--vma-hdr-name" }, "Name"),
+                  m("div", { className: "ah-proc-strings__table-header ah-proc-strings__vma-row" }, [
+                    m("span", { className: "ah-proc-strings__vma-col-exp" }),
+                    m("span", { className: "ah-proc-strings__vma-col-addr" }, "Address"),
+                    m("span", { className: "ah-proc-strings__vma-col-name" }, "Name"),
                     m("span", {
-                      className: "ah-proc-strings__col ah-proc-strings__col--vma-metric ah-proc-strings__col--sortable",
+                      className: "ah-proc-strings__vma-col-metric ah-proc-strings__col--sortable",
                       onclick: () => toggleVmaSort("stringCount"),
                     }, `Strings${si(vmaSortField === "stringCount", vmaSortAsc)}`),
                     m("span", {
-                      className: "ah-proc-strings__col ah-proc-strings__col--vma-metric ah-proc-strings__col--sortable",
+                      className: "ah-proc-strings__vma-col-metric ah-proc-strings__col--sortable",
                       onclick: () => toggleVmaSort("dupCount"),
                     }, `Dups${si(vmaSortField === "dupCount", vmaSortAsc)}`),
                     m("span", {
-                      className: "ah-proc-strings__col ah-proc-strings__col--vma-metric ah-proc-strings__col--sortable",
+                      className: "ah-proc-strings__vma-col-metric ah-proc-strings__col--sortable",
                       onclick: () => toggleVmaSort("sizeKb"),
                     }, `Size${si(vmaSortField === "sizeKb", vmaSortAsc)}`),
+                    m("span", { className: "ah-proc-strings__vma-col-action" }),
                   ]),
                   m("div", { className: "ah-proc-strings__rows" },
                     sortedRegions.map(({ region: r, originalIndex: ri }) => {
@@ -404,29 +405,29 @@ function ProcessStringsView(): m.Component<ProcessStringsViewAttrs> {
                       const dupCount = vmaDupCounts.get(ri) ?? 0;
                       return m(Fragment, { key: ri }, [
                         m("div", {
-                          className: `ah-proc-strings__vma-group${isExpanded ? " ah-proc-strings__vma-group--expanded" : ""}`,
+                          className: `ah-proc-strings__vma-group ah-proc-strings__vma-row${isExpanded ? " ah-proc-strings__vma-group--expanded" : ""}`,
                           onclick: () => { expandedVma = isExpanded ? null : ri; },
                           title: r.name,
                         }, [
-                          m("span", { className: "ah-expander" }, isExpanded ? "\u25BC" : "\u25B6"),
-                          m("span", { className: "ah-proc-strings__vma-addr" },
-                            `${r.addrStart}-${r.addrEnd}`),
-                          m("span", { className: "ah-proc-strings__vma-perms" }, r.perms),
-                          m("span", { className: "ah-proc-strings__vma-name ah-truncate" }, r.name),
-                          m("span", { className: "ah-proc-strings__vma-metric" },
+                          m("span", { className: "ah-proc-strings__vma-col-exp" }, isExpanded ? "\u25BC" : "\u25B6"),
+                          m("span", { className: "ah-proc-strings__vma-col-addr" },
+                            `${r.addrStart}${r.perms ? " " + r.perms : ""}`),
+                          m("span", { className: "ah-proc-strings__vma-col-name" }, r.name),
+                          m("span", { className: "ah-proc-strings__vma-col-metric" },
                             r.stringCount > 0 ? r.stringCount.toLocaleString() : "\u2014"),
-                          m("span", { className: "ah-proc-strings__vma-metric" },
+                          m("span", { className: "ah-proc-strings__vma-col-metric" },
                             dupCount > 0 ? dupCount.toLocaleString() : "\u2014"),
-                          m("span", { className: "ah-proc-strings__vma-metric" },
+                          m("span", { className: "ah-proc-strings__vma-col-metric" },
                             fmtSize(r.sizeKb * 1024)),
-                          m("button", {
-                            className: "ah-smaps-action",
-                            onclick: (e: Event) => {
-                              e.stopPropagation();
-                              onDumpVma(`${processName}_${r.addrStart}-${r.addrEnd}`, pid, r);
-                            },
-                            title: "Dump this VMA",
-                          }, "dump"),
+                          m("span", { className: "ah-proc-strings__vma-col-action" },
+                            m("button", {
+                              className: "ah-smaps-action",
+                              onclick: (e: Event) => {
+                                e.stopPropagation();
+                                onDumpVma(`${processName}_${r.addrStart}-${r.addrEnd}`, pid, r);
+                              },
+                              title: "Dump this VMA",
+                            }, "dump")),
                         ]),
                         isExpanded && vmaStrings.length > 0 && (
                           m("div", { className: "ah-proc-strings__vma-strings" },
