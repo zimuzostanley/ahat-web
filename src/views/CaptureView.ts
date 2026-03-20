@@ -693,21 +693,34 @@ function DumpButton(): m.Component<{
 
 // --- VMA type classification -----------------------------------------------------
 
-function isFileBacked(name: string): boolean { return name.startsWith("/"); }
+type VmaType = "all" | "file" | "shmem" | "anon";
+
+function classifyVma(entry: SmapsEntry): "file" | "shmem" | "anon" {
+  if (entry.dev !== "00:00" && entry.inode !== 0) return "file";
+  if (entry.name.startsWith("/")) return "shmem"; // path but dev=00:00 → tmpfs/ashmem/memfd
+  return "anon";
+}
+
+// For shared mappings (no dev/inode), classify by name only
+function classifyByName(name: string): "file" | "shmem" | "anon" {
+  if (!name.startsWith("/")) return "anon";
+  // Heuristic: names starting with /dev/ or /memfd: are shmem
+  if (name.startsWith("/dev/") || name.startsWith("/memfd:")) return "shmem";
+  return "file";
+}
 
 interface VmaFilters {
-  type: "all" | "file" | "anon";
+  type: VmaType;
   r: boolean | null;
   w: boolean | null;
   x: boolean | null;
 }
 
-function matchesVmaFilters(name: string, perms: string, filters: VmaFilters): boolean {
-  if (filters.type === "file" && !isFileBacked(name)) return false;
-  if (filters.type === "anon" && isFileBacked(name)) return false;
-  if (filters.r !== null && (perms[0] === "r") !== filters.r) return false;
-  if (filters.w !== null && (perms[1] === "w") !== filters.w) return false;
-  if (filters.x !== null && (perms[2] === "x") !== filters.x) return false;
+function matchesEntryFilters(entry: SmapsEntry, filters: VmaFilters): boolean {
+  if (filters.type !== "all" && classifyVma(entry) !== filters.type) return false;
+  if (filters.r !== null && (entry.perms[0] === "r") !== filters.r) return false;
+  if (filters.w !== null && (entry.perms[1] === "w") !== filters.w) return false;
+  if (filters.x !== null && (entry.perms[2] === "x") !== filters.x) return false;
   return true;
 }
 
@@ -718,7 +731,7 @@ function hasActiveVmaFilters(filters: VmaFilters): boolean {
 function filterSmapsByFilters(aggregated: SmapsAggregated[], filters: VmaFilters): SmapsAggregated[] {
   if (!hasActiveVmaFilters(filters)) return aggregated;
   return aggregated.map(g => {
-    const entries = g.entries.filter(e => matchesVmaFilters(e.name, e.perms, filters));
+    const entries = g.entries.filter(e => matchesEntryFilters(e, filters));
     if (entries.length === 0) return null;
     if (entries.length === g.entries.length) return g;
     // Recompute aggregated values from filtered entries
@@ -806,8 +819,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   let scanStatus: string | null = null;
   let scanProgress: { done: number; total: number } | null = null;
 
-  // VMA type filter: "all" | "file" (name starts with /) | "anon" (everything else)
-  let vmaTypeFilter: "all" | "file" | "anon" = "all";
+  // VMA type filter
+  let vmaTypeFilter: VmaType = "all";
   // VMA permission filters: each flag is independently toggleable (null = no filter)
   let permFilterR: boolean | null = null; // null = don't filter, true = must have r, false = must not have r
   let permFilterW: boolean | null = null;
@@ -1396,7 +1409,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       // Apply global VMA filters before scanning
       const filters: VmaFilters = { type: vmaTypeFilter, r: permFilterR, w: permFilterW, x: permFilterX };
       const allEntries = aggregated.flatMap(a => a.entries)
-        .filter(e => matchesVmaFilters(e.name, e.perms, filters));
+        .filter(e => matchesEntryFilters(e, filters));
       const readable = allEntries.filter(e => e.perms[0] === "r");
       const procSan = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
 
@@ -1599,10 +1612,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       const sharedMappings = (() => {
         if (dSmaps.size === 0 || !dProcs) return null;
         const all = aggregateSharedMappings(dSmaps, dProcs);
-        if (!hasActiveVmaFilters(vmaFilters)) return all;
-        // For shared mappings, filter by type only (no per-entry perms available at this level)
         if (vmaFilters.type === "all") return all;
-        return all.filter(mp => vmaFilters.type === "file" ? isFileBacked(mp.name) : !isFileBacked(mp.name));
+        return all.filter(mp => classifyByName(mp.name) === vmaFilters.type);
       })();
 
       const prevSharedMappings = (() => {
@@ -1950,13 +1961,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                 ]),
                 dSmaps.size > 0 && (
                   m("div", { className: "ah-vma-filter" },
-                    (["all", "file", "anon"] as const).map(f =>
+                    (["all", "file", "shmem", "anon"] as VmaType[]).map(f =>
                       m("button", {
                         key: f,
                         className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === f ? " ah-hex-btn--active" : ""}`,
                         onclick: () => { vmaTypeFilter = f; },
-                        title: f === "all" ? "Show all VMAs" : f === "file" ? "File-backed VMAs only" : "Anonymous VMAs only",
-                      }, f === "all" ? "All" : f === "file" ? "File" : "Anon"),
+                        title: f === "all" ? "Show all VMAs" : f === "file" ? "File-backed (non-zero dev:inode)" : f === "shmem" ? "Shared memory (dev 00:00, path-named)" : "Anonymous ([anon:...], [heap], etc.)",
+                      }, f === "all" ? "All" : f === "file" ? "File" : f === "shmem" ? "Shmem" : "Anon"),
                     ),
                     m("span", { className: "ah-vma-filter__sep" }),
                     (["r", "w", "x"] as const).map(flag => {
