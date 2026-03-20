@@ -163,19 +163,6 @@ fun ProcessTab(
 
     // Detail drawer with memory data
     dotDetail?.let { detail ->
-        var memData by remember(detail) { mutableStateOf<MemorySnapshotEntity?>(null) }
-        var memStats by remember(detail) { mutableStateOf<MemoryStatsAggregate?>(null) }
-
-        // Load memory data when drawer opens
-        androidx.compose.runtime.LaunchedEffect(detail) {
-            if (getMemoryForDot != null && detail.pid > 0) {
-                memData = getMemoryForDot(detail.name, detail.uid, detail.pid, detail.timestampMs)
-            }
-            if (getMemoryStats != null && detail.timestampMs > 0) {
-                memStats = getMemoryStats(detail.name, detail.uid, detail.timestampMs)
-            }
-        }
-
         ProcessDetailSheet(
             detail = detail,
             isDark = isDark,
@@ -184,8 +171,8 @@ fun ProcessTab(
                 dotDetail = null
                 selectedDotId = null
             },
-            memoryData = memData,
-            memoryStats = memStats,
+            getMemoryForDot = getMemoryForDot,
+            getMemoryStats = getMemoryStats,
             memoryDumpProgress = memoryDumpProgress,
             onDumpMemory = if (onDumpMemory != null) { pid, name, uid ->
                 onDumpMemory(pid, name, uid) {
@@ -956,8 +943,8 @@ fun ProcessDetailSheet(
     isDark: Boolean,
     appLabel: String,
     onDismiss: () -> Unit,
-    memoryData: MemorySnapshotEntity? = null,
-    memoryStats: MemoryStatsAggregate? = null,
+    getMemoryForDot: (suspend (name: String, uid: String, pid: Int, timestamp: Long) -> MemorySnapshotEntity?)? = null,
+    getMemoryStats: (suspend (name: String, uid: String, upToMs: Long) -> MemoryStatsAggregate?)? = null,
     memoryDumpProgress: String? = null,
     onDumpMemory: ((pid: Int, name: String, uid: String) -> Unit)? = null,
 ) {
@@ -965,6 +952,17 @@ fun ProcessDetailSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
     ) {
+        // Load memory data inside the sheet so it recomposes correctly
+        var memoryData by remember(detail) { mutableStateOf<MemorySnapshotEntity?>(null) }
+        var memoryStats by remember(detail) { mutableStateOf<MemoryStatsAggregate?>(null) }
+        androidx.compose.runtime.LaunchedEffect(detail) {
+            if (getMemoryForDot != null && detail.pid > 0) {
+                memoryData = getMemoryForDot(detail.name, detail.uid, detail.pid, detail.timestampMs)
+            }
+            if (getMemoryStats != null && detail.timestampMs > 0) {
+                memoryStats = getMemoryStats(detail.name, detail.uid, detail.timestampMs)
+            }
+        }
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1143,6 +1141,7 @@ fun ProcessDetailSheet(
                         )
                     }
                 } else if (memoryData != null) {
+                    val mem = memoryData!!
                     // Show memory breakdown — single scrollable row
                     Text("Memory", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
@@ -1150,24 +1149,25 @@ fun ProcessDetailSheet(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        MemoryChip("PSS", memoryData.totalPssKb)
-                        MemoryChip("RSS", memoryData.totalRssKb)
-                        MemoryChip("Java", memoryData.javaHeapKb)
-                        MemoryChip("Native", memoryData.nativeHeapKb)
-                        MemoryChip("Code", memoryData.codeKb)
-                        MemoryChip("Stack", memoryData.stackKb)
-                        MemoryChip("Graphics", memoryData.graphicsKb)
-                        MemoryChip("System", memoryData.systemKb)
-                        if (memoryData.totalSwapKb > 0) MemoryChip("Swap", memoryData.totalSwapKb)
+                        MemoryChip("PSS", mem.totalPssKb)
+                        MemoryChip("RSS", mem.totalRssKb)
+                        MemoryChip("Java", mem.javaHeapKb)
+                        MemoryChip("Native", mem.nativeHeapKb)
+                        MemoryChip("Code", mem.codeKb)
+                        MemoryChip("Stack", mem.stackKb)
+                        MemoryChip("Graphics", mem.graphicsKb)
+                        MemoryChip("System", mem.systemKb)
+                        if (mem.totalSwapKb > 0) MemoryChip("Swap", mem.totalSwapKb)
                     }
 
                     // Memory summary stats
-                    if (memoryStats != null && memoryStats.count > 1) {
+                    val stats = memoryStats
+                    if (stats != null && stats.count > 1) {
                         Spacer(Modifier.height(12.dp))
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "Memory history (${memoryStats.count} samples)",
+                            "Memory history (${stats.count} samples)",
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1182,15 +1182,15 @@ fun ProcessDetailSheet(
                             Text("Max", Modifier.weight(1f), style = MaterialTheme.typography.labelSmall,
                                 textAlign = TextAlign.End, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        MemoryStatRow("PSS", memoryStats.minPss, memoryStats.avgPss, memoryStats.maxPss)
-                        MemoryStatRow("RSS", memoryStats.minRss, memoryStats.avgRss, memoryStats.maxRss)
-                        MemoryStatRow("Java", memoryStats.minJavaHeap, memoryStats.avgJavaHeap, memoryStats.maxJavaHeap)
-                        MemoryStatRow("Native", memoryStats.minNativeHeap, memoryStats.avgNativeHeap, memoryStats.maxNativeHeap)
-                        MemoryStatRow("Code", memoryStats.minCode, memoryStats.avgCode, memoryStats.maxCode)
-                        MemoryStatRow("Stack", memoryStats.minStack, memoryStats.avgStack, memoryStats.maxStack)
-                        MemoryStatRow("Graphics", memoryStats.minGraphics, memoryStats.avgGraphics, memoryStats.maxGraphics)
-                        MemoryStatRow("System", memoryStats.minSystem, memoryStats.avgSystem, memoryStats.maxSystem)
-                        MemoryStatRow("Swap", memoryStats.minSwap, memoryStats.avgSwap, memoryStats.maxSwap)
+                        MemoryStatRow("PSS", stats.minPss, stats.avgPss, stats.maxPss)
+                        MemoryStatRow("RSS", stats.minRss, stats.avgRss, stats.maxRss)
+                        MemoryStatRow("Java", stats.minJavaHeap, stats.avgJavaHeap, stats.maxJavaHeap)
+                        MemoryStatRow("Native", stats.minNativeHeap, stats.avgNativeHeap, stats.maxNativeHeap)
+                        MemoryStatRow("Code", stats.minCode, stats.avgCode, stats.maxCode)
+                        MemoryStatRow("Stack", stats.minStack, stats.avgStack, stats.maxStack)
+                        MemoryStatRow("Graphics", stats.minGraphics, stats.avgGraphics, stats.maxGraphics)
+                        MemoryStatRow("System", stats.minSystem, stats.avgSystem, stats.maxSystem)
+                        MemoryStatRow("Swap", stats.minSwap, stats.avgSwap, stats.maxSwap)
                     }
                 } else if (onDumpMemory != null) {
                     // Dump button
