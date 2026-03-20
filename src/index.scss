@@ -258,6 +258,10 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   max-width: 95%;
   margin: 0 auto;
   width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 // ─── Header ──────────────────────────────────────────────────────────────────
@@ -2477,7 +2481,9 @@ code {
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
+  max-width: 100%;
 }
 
 .ah-proc-strings__tabs {
