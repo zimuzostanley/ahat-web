@@ -1170,6 +1170,119 @@ fun ProcessDetailSheet(
                         if (mem.totalSwapKb > 0) MemoryChip("Swap", mem.totalSwapKb)
                     }
 
+                    // Memory sparkline (above stats)
+                    if (memoryTimeline.size >= 2) {
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                        Spacer(Modifier.height(12.dp))
+
+                        // Filter out metrics that are all zeros
+                        val availableMetrics = remember(memoryTimeline) {
+                            listOf(
+                                "PSS" to { e: MemorySnapshotEntity -> e.totalPssKb },
+                                "RSS" to { e: MemorySnapshotEntity -> e.totalRssKb },
+                                "Java" to { e: MemorySnapshotEntity -> e.javaHeapKb },
+                                "Native" to { e: MemorySnapshotEntity -> e.nativeHeapKb },
+                                "Code" to { e: MemorySnapshotEntity -> e.codeKb },
+                                "Graphics" to { e: MemorySnapshotEntity -> e.graphicsKb },
+                            ).filter { (_, extract) -> memoryTimeline.any { e -> extract(e) > 0 } }
+                                .map { it.first }
+                        }
+                        var selectedMetric by remember { mutableStateOf(availableMetrics.firstOrNull() ?: "PSS") }
+
+                        Row(
+                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            for (m in availableMetrics) {
+                                FilterChip(
+                                    selected = selectedMetric == m,
+                                    onClick = { selectedMetric = m },
+                                    label = { Text(m, style = MaterialTheme.typography.labelSmall) },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+
+                        val values = remember(memoryTimeline, selectedMetric) {
+                            memoryTimeline.map { e ->
+                                when (selectedMetric) {
+                                    "PSS" -> e.totalPssKb
+                                    "RSS" -> e.totalRssKb
+                                    "Java" -> e.javaHeapKb
+                                    "Native" -> e.nativeHeapKb
+                                    "Code" -> e.codeKb
+                                    "Graphics" -> e.graphicsKb
+                                    else -> e.totalPssKb
+                                }.toFloat()
+                            }
+                        }
+                        val lineColor = MaterialTheme.colorScheme.primary
+                        val fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                        val minVal = values.min()
+                        val maxVal = values.max()
+                        val range = (maxVal - minVal).coerceAtLeast(1f)
+
+                        // Y-axis labels (left) + chart
+                        Row(Modifier.fillMaxWidth()) {
+                            // Y-axis
+                            Column(
+                                Modifier.height(80.dp),
+                                verticalArrangement = Arrangement.SpaceBetween,
+                            ) {
+                                Text(formatKb(maxVal.toLong()), style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(formatKb(minVal.toLong()), style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            Canvas(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(80.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                            ) {
+                                val w = size.width
+                                val h = size.height
+                                val pad = 4.dp.toPx()
+                                val drawH = h - pad * 2
+                                val step = w / (values.size - 1).coerceAtLeast(1)
+
+                                val path = androidx.compose.ui.graphics.Path()
+                                val fillPath = androidx.compose.ui.graphics.Path()
+
+                                for ((i, v) in values.withIndex()) {
+                                    val x = i * step
+                                    val y = pad + drawH * (1f - (v - minVal) / range)
+                                    if (i == 0) {
+                                        path.moveTo(x, y)
+                                        fillPath.moveTo(x, h)
+                                        fillPath.lineTo(x, y)
+                                    } else {
+                                        path.lineTo(x, y)
+                                        fillPath.lineTo(x, y)
+                                    }
+                                }
+                                fillPath.lineTo((values.size - 1) * step, h)
+                                fillPath.close()
+
+                                drawPath(fillPath, fillColor)
+                                drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
+                            }
+                        }
+                        // X-axis time labels
+                        val timeFmt = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text(timeFmt.format(memoryTimeline.first().timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(timeFmt.format(memoryTimeline.last().timestamp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
                     // Memory summary stats
                     val stats = memoryStats
                     if (stats != null && stats.count > 1) {
@@ -1201,92 +1314,6 @@ fun ProcessDetailSheet(
                         MemoryStatRow("Graphics", stats.minGraphics, stats.avgGraphics, stats.maxGraphics)
                         MemoryStatRow("System", stats.minSystem, stats.avgSystem, stats.maxSystem)
                         MemoryStatRow("Swap", stats.minSwap, stats.avgSwap, stats.maxSwap)
-                    }
-
-                    // Memory sparkline
-                    if (memoryTimeline.size >= 2) {
-                        Spacer(Modifier.height(12.dp))
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
-                        Spacer(Modifier.height(12.dp))
-
-                        var selectedMetric by remember { mutableStateOf("PSS") }
-                        val metrics = listOf("PSS", "RSS", "Java", "Native", "Code", "Graphics")
-
-                        Row(
-                            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            for (m in metrics) {
-                                FilterChip(
-                                    selected = selectedMetric == m,
-                                    onClick = { selectedMetric = m },
-                                    label = { Text(m, style = MaterialTheme.typography.labelSmall) },
-                                )
-                            }
-                        }
-                        Spacer(Modifier.height(8.dp))
-
-                        val values = remember(memoryTimeline, selectedMetric) {
-                            memoryTimeline.map { e ->
-                                when (selectedMetric) {
-                                    "PSS" -> e.totalPssKb
-                                    "RSS" -> e.totalRssKb
-                                    "Java" -> e.javaHeapKb
-                                    "Native" -> e.nativeHeapKb
-                                    "Code" -> e.codeKb
-                                    "Graphics" -> e.graphicsKb
-                                    else -> e.totalPssKb
-                                }.toFloat()
-                            }
-                        }
-                        val lineColor = MaterialTheme.colorScheme.primary
-                        val fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                        val minVal = values.min()
-                        val maxVal = values.max()
-                        val range = (maxVal - minVal).coerceAtLeast(1f)
-
-                        Canvas(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(80.dp)
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                        ) {
-                            val w = size.width
-                            val h = size.height
-                            val pad = 4.dp.toPx()
-                            val drawH = h - pad * 2
-                            val step = w / (values.size - 1).coerceAtLeast(1)
-
-                            val path = androidx.compose.ui.graphics.Path()
-                            val fillPath = androidx.compose.ui.graphics.Path()
-
-                            for ((i, v) in values.withIndex()) {
-                                val x = i * step
-                                val y = pad + drawH * (1f - (v - minVal) / range)
-                                if (i == 0) {
-                                    path.moveTo(x, y)
-                                    fillPath.moveTo(x, h)
-                                    fillPath.lineTo(x, y)
-                                } else {
-                                    path.lineTo(x, y)
-                                    fillPath.lineTo(x, y)
-                                }
-                            }
-                            fillPath.lineTo((values.size - 1) * step, h)
-                            fillPath.close()
-
-                            drawPath(fillPath, fillColor)
-                            drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
-                        }
-
-                        // Min/Max labels
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(formatKb(minVal.toLong()), style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(formatKb(maxVal.toLong()), style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
                     }
                 } else if (onDumpMemory != null) {
                     // Dump button
