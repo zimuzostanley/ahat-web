@@ -826,11 +826,17 @@ function HexView(): m.Component<HexViewAttrs> {
                               onclick: () => toggleDupSort("value"),
                             }, `String ${dupSortField === "value" ? (dupSortAsc ? "\u25B2" : "\u25BC") : ""}`),
                           ),
-                          displayDups.map((d, i) =>
+                          displayDups.map((d) =>
                             m("div", {
-                              key: i,
+                              key: d.value,
                               className: "ah-hex-strings__row",
-                              onclick: () => { showDuplicates = false; stringFilter = d.value; },
+                              onclick: () => {
+                                showDuplicates = false;
+                                stringFilter = d.value;
+                                // Scroll to first occurrence
+                                const match = strings.find(s => s.str === d.value);
+                                if (match) scrollToOffset(match.offset);
+                              },
                               title: `Click to filter to this string`,
                             },
                               m("span", { className: "ah-hex-strings__dup-col" }, fmtSize(d.totalBytes)),
@@ -849,10 +855,10 @@ function HexView(): m.Component<HexViewAttrs> {
                         )
                   )
                 : m("div", { className: "ah-hex-strings__list" },
-                    displayStrings.map((s, i) => {
+                    displayStrings.map((s) => {
                       const vma = regionMap ? offsetToVmaAddr(s.offset, regionMap) : undefined;
                       return m("div", {
-                        key: i,
+                        key: s.offset,
                         className: "ah-hex-strings__row",
                         onclick: () => {
                           scrollToOffset(s.offset);
