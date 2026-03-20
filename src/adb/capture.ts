@@ -611,7 +611,7 @@ export class AdbConnection {
       if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
       const batchEnd = Math.min(batchStart + BATCH_SIZE, readable.length);
-      onProgress("Scanning VMAs\u2026", batchStart, readable.length);
+      onProgress("Scanning VMAs\u2026", batchEnd, readable.length);
 
       // Build a single shell command that greps all VMAs in this batch,
       // separated by a unique marker line so we can split the output.
