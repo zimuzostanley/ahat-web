@@ -1855,6 +1855,10 @@ $mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
   gap: 0.25rem;
   align-items: center;
   flex-shrink: 0;
+  .ah-hex-btn--sm {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.75rem;
+  }
 }
 
 .ah-vma-filter__sep {
