@@ -827,6 +827,7 @@ private fun ProcessPickerSheet(
         ) {
             items(sorted) { item ->
                 val isPinned = item.key in pinnedSet
+                val itemContext = androidx.compose.ui.platform.LocalContext.current
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -841,6 +842,7 @@ private fun ProcessPickerSheet(
                             } else {
                                 localPinned = localPinned + item.key
                                 onSelect(item.key)
+                                android.widget.Toast.makeText(itemContext, item.key.name, android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                         .then(if (isPinned) Modifier.background(
