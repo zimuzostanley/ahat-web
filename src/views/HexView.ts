@@ -553,6 +553,14 @@ function HexView(): m.Component<HexViewAttrs> {
         appliedInitialFilter = initialStringFilter;
         stringFilter = initialStringFilter;
         showStrings = true;
+        showDuplicates = false;
+        // Scroll to first match after strings are extracted (deferred to next frame)
+        requestAnimationFrame(() => {
+          const strs = getStrings(true, buffer, new Uint8Array(buffer));
+          const match = strs.find(s => s.str.toLowerCase().includes(initialStringFilter.toLowerCase()));
+          if (match) scrollToOffset(match.offset);
+          m.redraw();
+        });
       }
       const data = getData(buffer);
       const totalRows = Math.ceil(data.byteLength / BYTES_PER_ROW);
