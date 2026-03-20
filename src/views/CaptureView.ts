@@ -1975,33 +1975,33 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                 m("div", { className: "ah-vma-filter" }, [
                   m("button", {
                     className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === "all" ? " ah-hex-btn--active" : ""}`,
-                    onclick: () => { vmaTypeFilter = "all"; },
+                    onclick: () => { vmaTypeFilter = "all"; expandedSmapsGroup = null; },
                     title: "Show all VMAs",
                   }, "All"),
                   m("button", {
                     className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === "file" ? " ah-hex-btn--active" : ""}`,
-                    onclick: () => { vmaTypeFilter = "file"; },
+                    onclick: () => { vmaTypeFilter = "file"; expandedSmapsGroup = null; },
                     title: "File-backed (non-zero dev:inode)",
                   }, "File"),
                   m("button", {
                     className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === "anon" ? " ah-hex-btn--active" : ""}`,
-                    onclick: () => { vmaTypeFilter = "anon"; },
+                    onclick: () => { vmaTypeFilter = "anon"; expandedSmapsGroup = null; },
                     title: "Anonymous ([anon:...], [heap], etc.)",
                   }, "Anon"),
                   m("span", { className: "ah-vma-filter__sep" }),
                   m("button", {
                     className: `ah-hex-btn ah-hex-btn--sm${permFilterR === true ? " ah-hex-btn--active" : permFilterR === false ? " ah-hex-btn--neg" : ""}`,
-                    onclick: () => { permFilterR = permFilterR === null ? true : permFilterR === true ? false : null; },
+                    onclick: () => { permFilterR = permFilterR === null ? true : permFilterR === true ? false : null; expandedSmapsGroup = null; },
                     title: permFilterR === null ? "r: any" : permFilterR ? "r: required" : "r: excluded",
                   }, "r"),
                   m("button", {
                     className: `ah-hex-btn ah-hex-btn--sm${permFilterW === true ? " ah-hex-btn--active" : permFilterW === false ? " ah-hex-btn--neg" : ""}`,
-                    onclick: () => { permFilterW = permFilterW === null ? true : permFilterW === true ? false : null; },
+                    onclick: () => { permFilterW = permFilterW === null ? true : permFilterW === true ? false : null; expandedSmapsGroup = null; },
                     title: permFilterW === null ? "w: any" : permFilterW ? "w: required" : "w: excluded",
                   }, "w"),
                   m("button", {
                     className: `ah-hex-btn ah-hex-btn--sm${permFilterX === true ? " ah-hex-btn--active" : permFilterX === false ? " ah-hex-btn--neg" : ""}`,
-                    onclick: () => { permFilterX = permFilterX === null ? true : permFilterX === true ? false : null; },
+                    onclick: () => { permFilterX = permFilterX === null ? true : permFilterX === true ? false : null; expandedSmapsGroup = null; },
                     title: permFilterX === null ? "x: any" : permFilterX ? "x: required" : "x: excluded",
                   }, "x"),
                 ]),
