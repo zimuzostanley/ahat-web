@@ -1977,6 +1977,44 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             // Search box
             processes && processes.length > 0 && (
               m("div", { className: "ah-search" }, [
+                m("div", { className: "ah-vma-filter" }, [
+                  m("button", {
+                    className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === "all" ? " ah-hex-btn--active" : ""}`,
+                    onclick: () => { vmaTypeFilter = "all"; },
+                    title: "Show all VMAs",
+                  }, "All"),
+                  m("button", {
+                    className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === "file" ? " ah-hex-btn--active" : ""}`,
+                    onclick: () => { vmaTypeFilter = "file"; },
+                    title: "File-backed (non-zero dev:inode)",
+                  }, "File"),
+                  m("button", {
+                    className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === "shmem" ? " ah-hex-btn--active" : ""}`,
+                    onclick: () => { vmaTypeFilter = "shmem"; },
+                    title: "Shared memory (dev 00:00, path-named)",
+                  }, "Shmem"),
+                  m("button", {
+                    className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === "anon" ? " ah-hex-btn--active" : ""}`,
+                    onclick: () => { vmaTypeFilter = "anon"; },
+                    title: "Anonymous ([anon:...], [heap], etc.)",
+                  }, "Anon"),
+                  m("span", { className: "ah-vma-filter__sep" }),
+                  m("button", {
+                    className: `ah-hex-btn ah-hex-btn--sm${permFilterR === true ? " ah-hex-btn--active" : permFilterR === false ? " ah-hex-btn--neg" : ""}`,
+                    onclick: () => { permFilterR = permFilterR === null ? true : permFilterR === true ? false : null; },
+                    title: permFilterR === null ? "r: any" : permFilterR ? "r: required" : "r: excluded",
+                  }, "r"),
+                  m("button", {
+                    className: `ah-hex-btn ah-hex-btn--sm${permFilterW === true ? " ah-hex-btn--active" : permFilterW === false ? " ah-hex-btn--neg" : ""}`,
+                    onclick: () => { permFilterW = permFilterW === null ? true : permFilterW === true ? false : null; },
+                    title: permFilterW === null ? "w: any" : permFilterW ? "w: required" : "w: excluded",
+                  }, "w"),
+                  m("button", {
+                    className: `ah-hex-btn ah-hex-btn--sm${permFilterX === true ? " ah-hex-btn--active" : permFilterX === false ? " ah-hex-btn--neg" : ""}`,
+                    onclick: () => { permFilterX = permFilterX === null ? true : permFilterX === true ? false : null; },
+                    title: permFilterX === null ? "x: any" : permFilterX ? "x: required" : "x: excluded",
+                  }, "x"),
+                ]),
                 m("div", { className: "ah-search__inner" }, [
                   m("input", {
                     type: "text",
@@ -2006,35 +2044,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     );
                   })(),
                 ]),
-                dSmaps.size > 0 && (
-                  m("div", { className: "ah-vma-filter" },
-                    (["all", "file", "shmem", "anon"] as VmaType[]).map(f =>
-                      m("button", {
-                        key: f,
-                        className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === f ? " ah-hex-btn--active" : ""}`,
-                        onclick: () => { vmaTypeFilter = f; },
-                        title: f === "all" ? "Show all VMAs" : f === "file" ? "File-backed (non-zero dev:inode)" : f === "shmem" ? "Shared memory (dev 00:00, path-named)" : "Anonymous ([anon:...], [heap], etc.)",
-                      }, f === "all" ? "All" : f === "file" ? "File" : f === "shmem" ? "Shmem" : "Anon"),
-                    ),
-                    m("span", { className: "ah-vma-filter__sep" }),
-                    (["r", "w", "x"] as const).map(flag => {
-                      const val = flag === "r" ? permFilterR : flag === "w" ? permFilterW : permFilterX;
-                      const cls = val === true ? " ah-hex-btn--active" : val === false ? " ah-hex-btn--neg" : "";
-                      return m("button", {
-                        key: flag,
-                        className: `ah-hex-btn ah-hex-btn--sm${cls}`,
-                        onclick: () => {
-                          // Cycle: null (any) → true (must have) → false (must not) → null
-                          const next = val === null ? true : val === true ? false : null;
-                          if (flag === "r") permFilterR = next;
-                          else if (flag === "w") permFilterW = next;
-                          else permFilterX = next;
-                        },
-                        title: val === null ? `${flag}: any` : val ? `${flag}: required` : `${flag}: excluded`,
-                      }, flag);
-                    }),
-                  )
-                ),
               ])
             ),
 
