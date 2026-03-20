@@ -771,6 +771,28 @@ function getFieldValue(p: ProcessInfo, field: SmapsNumericField, rollup?: SmapsR
   return 0;
 }
 
+/** Compute per-process rollup from filtered smaps entries. */
+function computeFilteredRollup(
+  pid: number,
+  smapsData: Map<number, SmapsAggregated[]>,
+  filters: VmaFilters,
+): SmapsRollup | null {
+  const aggregated = smapsData.get(pid);
+  if (!aggregated) return null;
+  const filtered = filterSmapsByFilters(aggregated, filters);
+  const r: SmapsRollup = {
+    sizeKb: 0, rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0,
+    privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, swapPssKb: 0,
+  };
+  for (const g of filtered) {
+    r.sizeKb += g.sizeKb; r.rssKb += g.rssKb; r.pssKb += g.pssKb;
+    r.sharedCleanKb += g.sharedCleanKb; r.sharedDirtyKb += g.sharedDirtyKb;
+    r.privateCleanKb += g.privateCleanKb; r.privateDirtyKb += g.privateDirtyKb;
+    r.swapKb += g.swapKb; r.swapPssKb += g.swapPssKb;
+  }
+  return r;
+}
+
 interface CaptureViewAttrs {
   onCaptured: (name: string, buffer: ArrayBuffer) => void;
   onVmaDump: (name: string, buffer: ArrayBuffer, regions?: { addrStart: string; addrEnd: string }[]) => void;
@@ -1519,6 +1541,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       recomputeDiffs();
 
       const vmaFilters: VmaFilters = { type: vmaTypeFilter, r: permFilterR, w: permFilterW, x: permFilterX };
+      const filtersActive = hasActiveVmaFilters(vmaFilters);
 
       const baseSnap = getBaseSnap();
       const baseRollups = baseSnap?.smapsRollups ?? null;
@@ -1533,6 +1556,19 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
       const dRollups = viewSnap?.smapsRollups ?? smapsRollups;
       const dSmaps = viewSnap?.smapsData ?? smapsData;
       const pinProcesses = !sort.userSorted;
+
+      // When VMA filters are active and smaps data is loaded, compute
+      // filtered rollups so process table values reflect the filter.
+      const effectiveRollups = filtersActive
+        ? new Map<number, SmapsRollup>(
+            [...dSmaps.keys()].map(pid => {
+              const fr = computeFilteredRollup(pid, dSmaps, vmaFilters);
+              return fr ? [pid, fr] as const : null;
+            }).filter((x): x is [number, SmapsRollup] => x !== null),
+          )
+        : null;
+      const getRollup = (pid: number): SmapsRollup | undefined =>
+        effectiveRollups?.get(pid) ?? dRollups.get(pid);
 
       const sorted = (() => {
         if (!dProcs) return null;
@@ -1557,16 +1593,16 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             // Find the base field from the delta key
             const baseField = Object.entries(SMAPS_DELTA_KEY).find(([, dk]) => dk === sf)?.[0] as SmapsNumericField | undefined;
             if (!baseField) return 0;
-            const aR = dRollups.get(a.pid);
-            const bR = dRollups.get(b.pid);
+            const aR = getRollup(a.pid);
+            const bR = getRollup(b.pid);
             const aPR = baseRollups?.get(a.pid);
             const bPR = baseRollups?.get(b.pid);
             const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
             const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
             return sort.asc ? aD - bD : bD - aD;
           }
-          const aVal = getFieldValue(a, sort.field, dRollups.get(a.pid));
-          const bVal = getFieldValue(b, sort.field, dRollups.get(b.pid));
+          const aVal = getFieldValue(a, sort.field, getRollup(a.pid));
+          const bVal = getFieldValue(b, sort.field, getRollup(b.pid));
           return sort.asc ? aVal - bVal : bVal - aVal;
         });
         return copy;
@@ -1594,16 +1630,16 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
             const sf = sort.field;
             const baseField = Object.entries(SMAPS_DELTA_KEY).find(([, dk]) => dk === sf)?.[0] as SmapsNumericField | undefined;
             if (!baseField) return 0;
-            const aR = dRollups.get(a.current.pid);
-            const bR = dRollups.get(b.current.pid);
+            const aR = getRollup(a.current.pid);
+            const bR = getRollup(b.current.pid);
             const aPR = baseRollups?.get(a.current.pid);
             const bPR = baseRollups?.get(b.current.pid);
             const aD = aR && aPR ? aR[baseField] - aPR[baseField] : 0;
             const bD = bR && bPR ? bR[baseField] - bPR[baseField] : 0;
             return sort.asc ? aD - bD : bD - aD;
           }
-          const aVal = getFieldValue(a.current, sort.field, dRollups.get(a.current.pid));
-          const bVal = getFieldValue(b.current, sort.field, dRollups.get(b.current.pid));
+          const aVal = getFieldValue(a.current, sort.field, getRollup(a.current.pid));
+          const bVal = getFieldValue(b.current, sort.field, getRollup(b.current.pid));
           return sort.asc ? aVal - bVal : bVal - aVal;
         });
         return copy;
@@ -1671,7 +1707,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         const totals: Record<string, number> = {};
         for (const [f] of ROLLUP_COLUMNS) totals[f] = 0;
         for (const p of activeProcs) {
-          const r = dRollups.get(p.pid);
+          const r = getRollup(p.pid);
           for (const [f] of ROLLUP_COLUMNS) totals[f] += getFieldValue(p, f, r);
         }
         return { count: activeProcs.length, values: totals };
@@ -2116,7 +2152,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                         ];
                         if (diffMode) {
                           const totalDelta = filteredDiffs ? filteredDiffs.reduce((s, d) => {
-                            const r = dRollups.get(d.current.pid);
+                            const r = getRollup(d.current.pid);
                             const pr = baseRollups?.get(d.current.pid);
                             return s + (r && pr ? r[f] - pr[f] : 0);
                           }, 0) : 0;
@@ -2140,7 +2176,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                       const isSmapsLoading = isExpanded && !hasSmaps && smapsFetchPid === p.pid;
                       const isDiff = diffMode;
                       const colCount = 3 + (hasOomLabel ? 1 : 0) + ROLLUP_COLUMNS.length + (isDiff ? ROLLUP_COLUMNS.length : 0);
-                      const rollup = dRollups.get(p.pid);
+                      const rollup = getRollup(p.pid);
                       const prevRollup = baseRollups?.get(p.pid);
                       const rowKey = `${d.status}-${p.pid}`;
                       return m(Fragment, { key: rowKey }, [
