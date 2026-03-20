@@ -691,6 +691,53 @@ function DumpButton(): m.Component<{
   };
 }
 
+// --- VMA type classification -----------------------------------------------------
+
+function isFileBacked(name: string): boolean { return name.startsWith("/"); }
+
+interface VmaFilters {
+  type: "all" | "file" | "anon";
+  r: boolean | null;
+  w: boolean | null;
+  x: boolean | null;
+}
+
+function matchesVmaFilters(name: string, perms: string, filters: VmaFilters): boolean {
+  if (filters.type === "file" && !isFileBacked(name)) return false;
+  if (filters.type === "anon" && isFileBacked(name)) return false;
+  if (filters.r !== null && (perms[0] === "r") !== filters.r) return false;
+  if (filters.w !== null && (perms[1] === "w") !== filters.w) return false;
+  if (filters.x !== null && (perms[2] === "x") !== filters.x) return false;
+  return true;
+}
+
+function hasActiveVmaFilters(filters: VmaFilters): boolean {
+  return filters.type !== "all" || filters.r !== null || filters.w !== null || filters.x !== null;
+}
+
+function filterSmapsByFilters(aggregated: SmapsAggregated[], filters: VmaFilters): SmapsAggregated[] {
+  if (!hasActiveVmaFilters(filters)) return aggregated;
+  return aggregated.map(g => {
+    const entries = g.entries.filter(e => matchesVmaFilters(e.name, e.perms, filters));
+    if (entries.length === 0) return null;
+    if (entries.length === g.entries.length) return g;
+    // Recompute aggregated values from filtered entries
+    const agg: SmapsAggregated = {
+      name: g.name, count: entries.length,
+      sizeKb: 0, rssKb: 0, pssKb: 0, sharedCleanKb: 0, sharedDirtyKb: 0,
+      privateCleanKb: 0, privateDirtyKb: 0, swapKb: 0, swapPssKb: 0,
+      entries,
+    };
+    for (const e of entries) {
+      agg.sizeKb += e.sizeKb; agg.rssKb += e.rssKb; agg.pssKb += e.pssKb;
+      agg.sharedCleanKb += e.sharedCleanKb; agg.sharedDirtyKb += e.sharedDirtyKb;
+      agg.privateCleanKb += e.privateCleanKb; agg.privateDirtyKb += e.privateDirtyKb;
+      agg.swapKb += e.swapKb; agg.swapPssKb += e.swapPssKb;
+    }
+    return agg;
+  }).filter((g): g is SmapsAggregated => g !== null);
+}
+
 // --- Capture View ----------------------------------------------------------------
 
 type SortField = "pid" | "name" | "oomLabel" | SmapsNumericField | SmapsDeltaKey;
@@ -758,6 +805,13 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   let smapsFetchPid: number | null = null;
   let scanStatus: string | null = null;
   let scanProgress: { done: number; total: number } | null = null;
+
+  // VMA type filter: "all" | "file" (name starts with /) | "anon" (everything else)
+  let vmaTypeFilter: "all" | "file" | "anon" = "all";
+  // VMA permission filters: each flag is independently toggleable (null = no filter)
+  let permFilterR: boolean | null = null; // null = don't filter, true = must have r, false = must not have r
+  let permFilterW: boolean | null = null;
+  let permFilterX: boolean | null = null;
 
   // Smaps expansion / sort state
   let expandedSmapsPid: number | null = null;
@@ -1339,7 +1393,10 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
         smapsData.set(pid, aggregated);
       }
 
-      const allEntries = aggregated.flatMap(a => a.entries);
+      // Apply global VMA filters before scanning
+      const filters: VmaFilters = { type: vmaTypeFilter, r: permFilterR, w: permFilterW, x: permFilterX };
+      const allEntries = aggregated.flatMap(a => a.entries)
+        .filter(e => matchesVmaFilters(e.name, e.perms, filters));
       const readable = allEntries.filter(e => e.perms[0] === "r");
       const procSan = processName.replace(/[^a-zA-Z0-9._-]/g, "_");
 
@@ -1448,6 +1505,8 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
       recomputeDiffs();
 
+      const vmaFilters: VmaFilters = { type: vmaTypeFilter, r: permFilterR, w: permFilterW, x: permFilterX };
+
       const baseSnap = getBaseSnap();
       const baseRollups = baseSnap?.smapsRollups ?? null;
       const baseSmapsData = baseSnap?.smapsData ?? null;
@@ -1539,7 +1598,11 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
 
       const sharedMappings = (() => {
         if (dSmaps.size === 0 || !dProcs) return null;
-        return aggregateSharedMappings(dSmaps, dProcs);
+        const all = aggregateSharedMappings(dSmaps, dProcs);
+        if (!hasActiveVmaFilters(vmaFilters)) return all;
+        // For shared mappings, filter by type only (no per-entry perms available at this level)
+        if (vmaFilters.type === "all") return all;
+        return all.filter(mp => vmaFilters.type === "file" ? isFileBacked(mp.name) : !isFileBacked(mp.name));
       })();
 
       const prevSharedMappings = (() => {
@@ -1885,6 +1948,35 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     );
                   })(),
                 ]),
+                dSmaps.size > 0 && (
+                  m("div", { className: "ah-vma-filter" },
+                    (["all", "file", "anon"] as const).map(f =>
+                      m("button", {
+                        key: f,
+                        className: `ah-hex-btn ah-hex-btn--sm${vmaTypeFilter === f ? " ah-hex-btn--active" : ""}`,
+                        onclick: () => { vmaTypeFilter = f; },
+                        title: f === "all" ? "Show all VMAs" : f === "file" ? "File-backed VMAs only" : "Anonymous VMAs only",
+                      }, f === "all" ? "All" : f === "file" ? "File" : "Anon"),
+                    ),
+                    m("span", { className: "ah-vma-filter__sep" }),
+                    (["r", "w", "x"] as const).map(flag => {
+                      const val = flag === "r" ? permFilterR : flag === "w" ? permFilterW : permFilterX;
+                      const cls = val === true ? " ah-hex-btn--active" : val === false ? " ah-hex-btn--neg" : "";
+                      return m("button", {
+                        key: flag,
+                        className: `ah-hex-btn ah-hex-btn--sm${cls}`,
+                        onclick: () => {
+                          // Cycle: null (any) → true (must have) → false (must not) → null
+                          const next = val === null ? true : val === true ? false : null;
+                          if (flag === "r") permFilterR = next;
+                          else if (flag === "w") permFilterW = next;
+                          else permFilterX = next;
+                        },
+                        title: val === null ? `${flag}: any` : val ? `${flag}: required` : `${flag}: excluded`,
+                      }, flag);
+                    }),
+                  )
+                ),
               ])
             ),
 
@@ -2157,7 +2249,7 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                           m(SmapsSubTable, {
                             pid: p.pid,
                             processName: p.name,
-                            aggregated: dSmaps.get(p.pid)!,
+                            aggregated: filterSmapsByFilters(dSmaps.get(p.pid)!, vmaFilters),
                             expandedGroup: expandedSmapsGroup,
                             onToggleGroup: (name: string) => {
                               if (expandedSmapsGroup === name) {
