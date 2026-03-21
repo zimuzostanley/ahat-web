@@ -118,16 +118,12 @@ data class SnapshotWithCounts(
 }
 
 /** Process key with transition stats for the picker. */
-/**
- * OOM adj priority: higher = more important (user-facing). Based on Android ProcessList.
- * Even values with gaps of 2 so unfreeze transitions can slot at +1 (e.g., fg=30, unfreeze+fg=31).
- * Going INTO frozen = 1 (least interesting change).
- */
+/** OOM adj priority: higher = more important (user-facing). Based on Android ProcessList. */
 val STATE_PRIORITY = mapOf(
-    "sys" to 36, "pers" to 34, "psvc" to 32, "fg" to 30, "fgs" to 28,
-    "vis" to 26, "prcp" to 24, "prcm" to 22, "prcl" to 20,
-    "bkup" to 18, "hvy" to 16, "svc" to 14, "home" to 12, "prev" to 10,
-    "svcb" to 8, "cch" to 6, "ntv" to 4, "frzn" to 2,
+    "sys" to 18, "pers" to 17, "psvc" to 16, "fg" to 15, "fgs" to 14,
+    "vis" to 13, "prcp" to 12, "prcm" to 11, "prcl" to 10,
+    "bkup" to 9, "hvy" to 8, "svc" to 7, "home" to 6, "prev" to 5,
+    "svcb" to 4, "cch" to 3, "ntv" to 2, "frzn" to 1,
 )
 
 data class ProcessKeyWithTransitions(
@@ -137,6 +133,7 @@ data class ProcessKeyWithTransitions(
     val frozenCount: Int,
     val lastChangeMs: Long = 0,
     val lastChangePriority: Int = 0,
+    val lastChangeUnfreeze: Boolean = false,
 )
 
 data class MemoryDotKey(

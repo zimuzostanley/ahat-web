@@ -470,11 +470,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 var frozenTransitions = 0
                 var lastChangeMs = 0L
                 var lastChangePriority = 0
+                var lastChangeUnfreeze = false
 
                 fun flush() {
                     if (curName.isNotEmpty()) {
                         result.add(ProcessKeyWithTransitions(
-                            ProcessKey(curName, curUid), transitions, starts, frozenTransitions, lastChangeMs, lastChangePriority,
+                            ProcessKey(curName, curUid), transitions, starts, frozenTransitions, lastChangeMs, lastChangePriority, lastChangeUnfreeze,
                         ))
                     }
                 }
@@ -492,25 +493,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         frozenTransitions = 0
                         lastChangeMs = row.timestamp
                         lastChangePriority = STATE_PRIORITY[row.procState] ?: 0
+                        lastChangeUnfreeze = false
                     } else {
-                        var changePriority = 0
+                        var changed = false
+                        var unfroze = false
+                        var priority = 0
                         if (row.procState != prevState) {
                             transitions++
-                            changePriority = STATE_PRIORITY[row.procState] ?: 0
+                            changed = true
+                            priority = STATE_PRIORITY[row.procState] ?: 0
                         }
                         if (row.frozen != prevFrozen) {
                             frozenTransitions++
-                            changePriority = if (row.frozen) {
-                                // Going INTO frozen = least interesting
-                                maxOf(changePriority, 1)
+                            changed = true
+                            if (!row.frozen) {
+                                // Coming OUT of frozen — tiebreaker only
+                                unfroze = true
+                                priority = maxOf(priority, STATE_PRIORITY[row.procState] ?: 0)
                             } else {
-                                // Coming OUT of frozen = just above normal state change
-                                maxOf(changePriority, (STATE_PRIORITY[row.procState] ?: 0) + 1)
+                                // Going INTO frozen — use frozen priority (lowest)
+                                priority = maxOf(priority, STATE_PRIORITY["frzn"] ?: 1)
                             }
                         }
-                        if (changePriority > 0) {
+                        if (changed) {
                             lastChangeMs = row.timestamp
-                            lastChangePriority = changePriority
+                            lastChangePriority = priority
+                            lastChangeUnfreeze = unfroze
                         }
                         if (row.pid != prevPid && row.pid != 0 && prevPid != 0) starts++
                         prevState = row.procState

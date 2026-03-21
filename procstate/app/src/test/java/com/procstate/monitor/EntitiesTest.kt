@@ -88,26 +88,28 @@ class EntitiesTest {
     }
 
     @Test
-    fun `STATE_PRIORITY values are even with gaps for unfreeze`() {
-        // All values should be even (gaps of 2 for +1 unfreeze slot)
-        for ((state, priority) in STATE_PRIORITY) {
-            assertEquals("$state should be even", 0, priority % 2)
-        }
-    }
+    fun `unfreeze is tiebreaker only within same state`() {
+        // Same state: unfreeze wins
+        val normalFg = ProcessKeyWithTransitions(ProcessKey("a", "u1"), 1, 0, 0,
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["fg"]!!, lastChangeUnfreeze = false)
+        val unfreezeFg = ProcessKeyWithTransitions(ProcessKey("b", "u2"), 1, 0, 0,
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["fg"]!!, lastChangeUnfreeze = true)
+        val sorted = listOf(normalFg, unfreezeFg)
+            .sortedWith(compareByDescending<ProcessKeyWithTransitions> { it.lastChangeMs }
+                .thenByDescending { it.lastChangePriority }
+                .thenByDescending { it.lastChangeUnfreeze })
+        assertEquals("b", sorted[0].key.name) // unfreeze wins same-state tie
 
-    @Test
-    fun `unfreeze priority is one above normal state change`() {
-        val fgNormal = STATE_PRIORITY["fg"]!!       // 30
-        val fgUnfreeze = STATE_PRIORITY["fg"]!! + 1  // 31
-        assertTrue(fgUnfreeze > fgNormal)
-        // Unfreeze+fg should be below normal vis change
-        assertTrue(fgUnfreeze > STATE_PRIORITY["vis"]!!)
-    }
-
-    @Test
-    fun `freeze into frozen is lowest priority`() {
-        val freezePriority = 1  // hardcoded in ViewModel
-        assertTrue(freezePriority < STATE_PRIORITY.values.min())
+        // Different states: higher state wins regardless of unfreeze
+        val unfreezeCch = ProcessKeyWithTransitions(ProcessKey("c", "u3"), 1, 0, 0,
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["cch"]!!, lastChangeUnfreeze = true)
+        val normalVis = ProcessKeyWithTransitions(ProcessKey("d", "u4"), 1, 0, 0,
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["vis"]!!, lastChangeUnfreeze = false)
+        val sorted2 = listOf(unfreezeCch, normalVis)
+            .sortedWith(compareByDescending<ProcessKeyWithTransitions> { it.lastChangeMs }
+                .thenByDescending { it.lastChangePriority }
+                .thenByDescending { it.lastChangeUnfreeze })
+        assertEquals("d", sorted2[0].key.name) // vis > cch regardless of unfreeze
     }
 
     // ── Sort by last change tests ────────────────────────────────────────────
@@ -133,27 +135,15 @@ class EntitiesTest {
     }
 
     @Test
-    fun `unfreeze wins over normal state change at same timestamp`() {
-        val normalFg = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 1, 0, 0,
-            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["fg"]!!)       // 30
-        val unfreezeFg = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 1, 0, 0,
-            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["fg"]!! + 1)   // 31
-        val sorted = listOf(normalFg, unfreezeFg)
-            .sortedWith(compareByDescending<ProcessKeyWithTransitions> { it.lastChangeMs }
-                .thenByDescending { it.lastChangePriority })
-        assertEquals("com.b", sorted[0].key.name) // unfreeze+fg > normal fg
-    }
-
-    @Test
-    fun `freeze into frozen sorts below everything`() {
+    fun `freeze into frozen sorts below normal state changes`() {
         val frozen = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 1, 0, 1,
-            lastChangeMs = 5000, lastChangePriority = 1)  // going into frozen
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["frzn"]!!)
         val cached = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 1, 0, 0,
-            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["cch"]!!)  // 6
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["cch"]!!)
         val sorted = listOf(frozen, cached)
             .sortedWith(compareByDescending<ProcessKeyWithTransitions> { it.lastChangeMs }
                 .thenByDescending { it.lastChangePriority })
-        assertEquals("com.b", sorted[0].key.name) // cch change > going into frozen
+        assertEquals("com.b", sorted[0].key.name) // cch > frzn
     }
 
     @Test
