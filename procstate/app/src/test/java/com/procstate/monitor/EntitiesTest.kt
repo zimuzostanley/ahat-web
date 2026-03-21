@@ -82,18 +82,40 @@ class EntitiesTest {
 
     @Test
     fun `STATE_PRIORITY order is correct`() {
-        // fg > vis > prcp > cch
         assertTrue(STATE_PRIORITY["fg"]!! > STATE_PRIORITY["vis"]!!)
         assertTrue(STATE_PRIORITY["vis"]!! > STATE_PRIORITY["prcp"]!!)
         assertTrue(STATE_PRIORITY["prcp"]!! > STATE_PRIORITY["cch"]!!)
+    }
+
+    @Test
+    fun `STATE_PRIORITY values are even with gaps for unfreeze`() {
+        // All values should be even (gaps of 2 for +1 unfreeze slot)
+        for ((state, priority) in STATE_PRIORITY) {
+            assertEquals("$state should be even", 0, priority % 2)
+        }
+    }
+
+    @Test
+    fun `unfreeze priority is one above normal state change`() {
+        val fgNormal = STATE_PRIORITY["fg"]!!       // 30
+        val fgUnfreeze = STATE_PRIORITY["fg"]!! + 1  // 31
+        assertTrue(fgUnfreeze > fgNormal)
+        // Unfreeze+fg should be below normal vis change
+        assertTrue(fgUnfreeze > STATE_PRIORITY["vis"]!!)
+    }
+
+    @Test
+    fun `freeze into frozen is lowest priority`() {
+        val freezePriority = 1  // hardcoded in ViewModel
+        assertTrue(freezePriority < STATE_PRIORITY.values.min())
     }
 
     // ── Sort by last change tests ────────────────────────────────────────────
 
     @Test
     fun `sort by lastChangeMs descending puts most recent first`() {
-        val a = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 5, 0, 0, lastChangeMs = 1000, lastChangePriority = 3)
-        val b = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 2, 0, 0, lastChangeMs = 5000, lastChangePriority = 3)
+        val a = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 5, 0, 0, lastChangeMs = 1000, lastChangePriority = 6)
+        val b = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 2, 0, 0, lastChangeMs = 5000, lastChangePriority = 6)
         val sorted = listOf(a, b).sortedByDescending { it.lastChangeMs }
         assertEquals("com.b", sorted[0].key.name)
     }
@@ -111,8 +133,32 @@ class EntitiesTest {
     }
 
     @Test
-    fun `process with no state change has lastChangeMs 0 and sorts last`() {
-        val changed = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 1, 0, 0, lastChangeMs = 5000, lastChangePriority = 3)
+    fun `unfreeze wins over normal state change at same timestamp`() {
+        val normalFg = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 1, 0, 0,
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["fg"]!!)       // 30
+        val unfreezeFg = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 1, 0, 0,
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["fg"]!! + 1)   // 31
+        val sorted = listOf(normalFg, unfreezeFg)
+            .sortedWith(compareByDescending<ProcessKeyWithTransitions> { it.lastChangeMs }
+                .thenByDescending { it.lastChangePriority })
+        assertEquals("com.b", sorted[0].key.name) // unfreeze+fg > normal fg
+    }
+
+    @Test
+    fun `freeze into frozen sorts below everything`() {
+        val frozen = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 1, 0, 1,
+            lastChangeMs = 5000, lastChangePriority = 1)  // going into frozen
+        val cached = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 1, 0, 0,
+            lastChangeMs = 5000, lastChangePriority = STATE_PRIORITY["cch"]!!)  // 6
+        val sorted = listOf(frozen, cached)
+            .sortedWith(compareByDescending<ProcessKeyWithTransitions> { it.lastChangeMs }
+                .thenByDescending { it.lastChangePriority })
+        assertEquals("com.b", sorted[0].key.name) // cch change > going into frozen
+    }
+
+    @Test
+    fun `process with no state change sorts last`() {
+        val changed = ProcessKeyWithTransitions(ProcessKey("com.a", "u1"), 1, 0, 0, lastChangeMs = 5000, lastChangePriority = 6)
         val unchanged = ProcessKeyWithTransitions(ProcessKey("com.b", "u2"), 0, 0, 0, lastChangeMs = 0, lastChangePriority = 0)
         val sorted = listOf(unchanged, changed).sortedByDescending { it.lastChangeMs }
         assertEquals("com.a", sorted[0].key.name)

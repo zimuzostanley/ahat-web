@@ -493,17 +493,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         lastChangeMs = row.timestamp
                         lastChangePriority = STATE_PRIORITY[row.procState] ?: 0
                     } else {
+                        var changePriority = 0
                         if (row.procState != prevState) {
                             transitions++
-                            lastChangeMs = row.timestamp
-                            lastChangePriority = STATE_PRIORITY[row.procState] ?: 0
+                            changePriority = STATE_PRIORITY[row.procState] ?: 0
                         }
                         if (row.frozen != prevFrozen) {
                             frozenTransitions++
-                            if (row.timestamp > lastChangeMs) {
-                                lastChangeMs = row.timestamp
-                                lastChangePriority = STATE_PRIORITY[row.procState] ?: 0
+                            changePriority = if (row.frozen) {
+                                // Going INTO frozen = least interesting
+                                maxOf(changePriority, 1)
+                            } else {
+                                // Coming OUT of frozen = just above normal state change
+                                maxOf(changePriority, (STATE_PRIORITY[row.procState] ?: 0) + 1)
                             }
+                        }
+                        if (changePriority > 0) {
+                            lastChangeMs = row.timestamp
+                            lastChangePriority = changePriority
                         }
                         if (row.pid != prevPid && row.pid != 0 && prevPid != 0) starts++
                         prevState = row.procState
