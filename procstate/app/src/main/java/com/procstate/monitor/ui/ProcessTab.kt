@@ -143,6 +143,7 @@ fun ProcessTab(
     onPinProcess: (ProcessKey) -> Unit,
     onUnpinProcess: (ProcessKey) -> Unit,
     collapsed: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
     showPicker: Boolean = false,
     onOpenPicker: () -> Unit = {},
     onDismissPicker: () -> Unit = {},
@@ -191,12 +192,20 @@ fun ProcessTab(
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
             // Snapshot data on open — don't update while picker is visible
-            val snapshotKeys = remember { allProcessKeysFlow?.value ?: allProcessKeysWithTransitions }
+            var snapshotKeys by remember { mutableStateOf(allProcessKeysFlow?.value ?: allProcessKeysWithTransitions) }
             ProcessPickerSheet(
                 allKeysWithTransitions = snapshotKeys,
                 pinnedKeys = pinnedProcesses,
                 onSelect = onPinProcess,
                 onUnpin = onUnpinProcess,
+                onRefresh = onRefresh?.let { refresh -> {
+                    refresh()
+                    // Update the list after a short delay to let the snapshot process
+                    kotlinx.coroutines.MainScope().launch {
+                        kotlinx.coroutines.delay(2000)
+                        snapshotKeys = allProcessKeysFlow?.value ?: allProcessKeysWithTransitions
+                    }
+                } },
                 sortBy = pickerSort,
                 onSortChange = onPickerSortChange,
                 hasData = allSnapshotTimestamps.isNotEmpty(),
@@ -697,6 +706,7 @@ private fun ProcessPickerSheet(
     pinnedKeys: List<ProcessKey>,
     onSelect: (ProcessKey) -> Unit,
     onUnpin: (ProcessKey) -> Unit = {},
+    onRefresh: (() -> Unit)? = null,
     sortBy: String = "transitions",
     onSortChange: (String) -> Unit = {},
     hasData: Boolean = true,
@@ -740,6 +750,11 @@ private fun ProcessPickerSheet(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text("Processes", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
+            if (onRefresh != null) {
+                androidx.compose.material3.TextButton(onClick = onRefresh) {
+                    Text("Refresh")
+                }
+            }
             val unpinnedCount = sorted.count { it.key !in pinnedSet }
             if (unpinnedCount > 0) {
                 androidx.compose.material3.TextButton(

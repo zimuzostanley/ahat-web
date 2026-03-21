@@ -482,6 +482,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                             onPinProcess = vm::pinProcess,
                             onUnpinProcess = vm::unpinProcess,
                             collapsed = collapseTimeline,
+                            onRefresh = vm::pullToRefresh,
                             showPicker = showProcessPicker,
                             onOpenPicker = { vm.resetPickerSort(); showProcessPicker = true },
                             onDismissPicker = { showProcessPicker = false },
