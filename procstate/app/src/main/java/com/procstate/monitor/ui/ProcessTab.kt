@@ -191,11 +191,11 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
-            // Snapshot data on open — if empty, wait for first emission then freeze
-            var snapshotKeys by remember { mutableStateOf(allProcessKeysFlow?.value ?: allProcessKeysWithTransitions) }
-            if (snapshotKeys.isEmpty() && allProcessKeysFlow != null) {
-                val live = allProcessKeysFlow.collectAsState().value
-                if (live.isNotEmpty()) snapshotKeys = live
+            // Collect flow inside sheet, but freeze after first non-empty emission
+            val liveKeys = allProcessKeysFlow?.collectAsState()?.value ?: allProcessKeysWithTransitions
+            var snapshotKeys by remember { mutableStateOf(liveKeys) }
+            if (snapshotKeys.isEmpty() && liveKeys.isNotEmpty()) {
+                snapshotKeys = liveKeys
             }
             ProcessPickerSheet(
                 allKeysWithTransitions = snapshotKeys,
