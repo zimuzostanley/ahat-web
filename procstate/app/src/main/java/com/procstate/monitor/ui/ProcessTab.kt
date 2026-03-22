@@ -137,6 +137,7 @@ fun ProcessTab(
     pickerSort: String = "transitions",
     onPickerSortChange: (String) -> Unit = {},
     isRefreshing: Boolean = false,
+    isRefreshingFlow: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
     allSnapshotTimestamps: List<Long>,
@@ -191,10 +192,11 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
-            // Collect live data, freeze when not refreshing
+            // Collect live data inside sheet, freeze when not refreshing
             val liveKeys = allProcessKeysFlow?.collectAsState()?.value ?: allProcessKeysWithTransitions
+            val refreshing = isRefreshingFlow?.collectAsState()?.value ?: isRefreshing
             var snapshotKeys by remember { mutableStateOf(liveKeys) }
-            if (isRefreshing || snapshotKeys.isEmpty()) {
+            if (refreshing || snapshotKeys.isEmpty()) {
                 snapshotKeys = liveKeys
             }
             ProcessPickerSheet(
