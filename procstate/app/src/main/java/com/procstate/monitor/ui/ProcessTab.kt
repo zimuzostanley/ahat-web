@@ -1434,7 +1434,7 @@ fun SparklineChart(
         durationMs < 3600_000 -> "${durationMs / 60_000}m"
         else -> "%.1fh".format(durationMs / 3600_000.0)
     }
-    Row(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(Modifier.fillMaxWidth().padding(start = 44.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(timeFmt.format(startTimeMs), style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(durText, style = MaterialTheme.typography.labelSmall,
