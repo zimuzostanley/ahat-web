@@ -192,19 +192,29 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
-            // Collect live data inside sheet, freeze when not refreshing
+            // Collect live data inside sheet. Stay live until refresh completes
+            // (isRefreshing goes true then false), then freeze.
             val liveKeys = allProcessKeysFlow?.collectAsState()?.value ?: allProcessKeysWithTransitions
             val refreshing = isRefreshingFlow?.collectAsState()?.value ?: isRefreshing
+            var sawRefreshing by remember { mutableStateOf(false) }
+            var frozen by remember { mutableStateOf(false) }
             var snapshotKeys by remember { mutableStateOf(liveKeys) }
-            if (refreshing || snapshotKeys.isEmpty()) {
+            if (refreshing) sawRefreshing = true
+            if (!frozen) {
                 snapshotKeys = liveKeys
+                // Freeze after we've seen refreshing go true then false
+                if (sawRefreshing && !refreshing) frozen = true
             }
             ProcessPickerSheet(
                 allKeysWithTransitions = snapshotKeys,
                 pinnedKeys = pinnedProcesses,
                 onSelect = onPinProcess,
                 onUnpin = onUnpinProcess,
-                onRefresh = onRefresh,
+                onRefresh = onRefresh?.let { refresh -> {
+                    refresh()
+                    sawRefreshing = false
+                    frozen = false
+                } },
                 sortBy = pickerSort,
                 onSortChange = onPickerSortChange,
                 hasData = allSnapshotTimestamps.isNotEmpty(),
