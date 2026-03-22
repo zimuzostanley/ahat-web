@@ -212,7 +212,12 @@ object ShellHelper {
         val pids = list.map { it.pid }.toSet()
         for (name in arrayOf("system_server", "com.android.systemui")) {
             try {
-                val pidStr = exec("pidof $name").trim()
+                // Try both raw and root-wrapped — pidof may need different contexts
+                val pidStr = try {
+                    execRaw("sh", "-c", "pidof $name").trim()
+                } catch (_: Exception) {
+                    exec("pidof $name").trim()
+                }
                 if (pidStr.isEmpty()) continue
                 val pid = pidStr.split(Regex("\\s+"))[0].toInt()
                 if (pid !in pids) {
