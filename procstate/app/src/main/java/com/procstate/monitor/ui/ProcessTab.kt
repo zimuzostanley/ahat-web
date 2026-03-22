@@ -137,7 +137,6 @@ fun ProcessTab(
     pickerSort: String = "transitions",
     onPickerSortChange: (String) -> Unit = {},
     isRefreshing: Boolean = false,
-    isRefreshingFlow: kotlinx.coroutines.flow.StateFlow<Boolean>? = null,
     pinnedProcesses: List<ProcessKey>,
     timelineRows: List<ProcessTimelineRow>,
     allSnapshotTimestamps: List<Long>,
@@ -192,18 +191,16 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
-            // Collect live data inside sheet. Stay live until refresh completes
-            // (isRefreshing goes true then false), then freeze.
+            // Show current data, accept next flow emission (auto-refresh), then freeze
             val liveKeys = allProcessKeysFlow?.collectAsState()?.value ?: allProcessKeysWithTransitions
-            val refreshing = isRefreshingFlow?.collectAsState()?.value ?: isRefreshing
-            var sawRefreshing by remember { mutableStateOf(false) }
-            var frozen by remember { mutableStateOf(false) }
             var snapshotKeys by remember { mutableStateOf(liveKeys) }
-            if (refreshing) sawRefreshing = true
-            if (!frozen) {
-                snapshotKeys = liveKeys
-                // Freeze after we've seen refreshing go true then false
-                if (sawRefreshing && !refreshing) frozen = true
+            var updates by remember { mutableStateOf(0) }
+            androidx.compose.runtime.LaunchedEffect(liveKeys) {
+                // Accept initial + one refresh update, then freeze
+                if (updates < 2) {
+                    snapshotKeys = liveKeys
+                    updates++
+                }
             }
             ProcessPickerSheet(
                 allKeysWithTransitions = snapshotKeys,
@@ -212,8 +209,7 @@ fun ProcessTab(
                 onUnpin = onUnpinProcess,
                 onRefresh = onRefresh?.let { refresh -> {
                     refresh()
-                    sawRefreshing = false
-                    frozen = false
+                    updates = 0
                 } },
                 sortBy = pickerSort,
                 onSortChange = onPickerSortChange,
