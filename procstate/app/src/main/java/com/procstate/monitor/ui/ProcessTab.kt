@@ -1239,6 +1239,7 @@ fun ProcessDetailSheet(
                             maxLabel = formatKb(values.max().toLong()),
                             startTimeMs = memoryTimeline.first().timestamp,
                             endTimeMs = memoryTimeline.last().timestamp,
+                            markerTimeMs = detail.timestampMs,
                         )
                     }
 
@@ -1374,6 +1375,7 @@ fun SparklineChart(
     maxLabel: String,
     startTimeMs: Long,
     endTimeMs: Long,
+    markerTimeMs: Long = 0,
 ) {
     if (values.size < 2) return
     val fillColor = lineColor.copy(alpha = 0.1f)
@@ -1425,6 +1427,18 @@ fun SparklineChart(
 
             drawPath(fillPath, fillColor)
             drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
+
+            // Vertical marker line
+            if (markerTimeMs in startTimeMs..endTimeMs && endTimeMs > startTimeMs) {
+                val markerX = w * (markerTimeMs - startTimeMs).toFloat() / (endTimeMs - startTimeMs)
+                drawLine(
+                    color = lineColor.copy(alpha = 0.5f),
+                    start = androidx.compose.ui.geometry.Offset(markerX, 0f),
+                    end = androidx.compose.ui.geometry.Offset(markerX, h),
+                    strokeWidth = 1.dp.toPx(),
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx())),
+                )
+            }
         }
     }
     val timeFmt = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }

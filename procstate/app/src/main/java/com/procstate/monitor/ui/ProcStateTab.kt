@@ -668,6 +668,7 @@ private fun SnapshotBreakdown(
                     maxLabel = "${values.max().toInt()}",
                     startTimeMs = sparkData.first().timestamp,
                     endTimeMs = sparkData.last().timestamp,
+                    markerTimeMs = snapshot.timestamp,
                 )
             }
         }
