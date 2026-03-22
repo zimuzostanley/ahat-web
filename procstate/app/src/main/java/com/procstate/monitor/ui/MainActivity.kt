@@ -342,7 +342,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     // Filter: state filter (tab 0) or process picker (tab 1)
                     IconButton(onClick = {
                         if (selectedTab == 0) showStateFilterSheet = true
-                        else { if (!showProcessPicker) { vm.resetPickerSort(); vm.pullToRefresh() }; showProcessPicker = !showProcessPicker }
+                        else { if (!showProcessPicker) vm.resetPickerSort(); showProcessPicker = !showProcessPicker }
                     }) {
                         Icon(
                             Icons.Default.FilterList,
@@ -476,7 +476,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                             timelineRows = timelineRows,
                             allSnapshotTimestamps = snapshotTimestamps,
                             allProcessKeysWithTransitions = allProcessKeysWithTransitions,
-                            allProcessKeysFlow = vm.allProcessKeysWithTransitions,
+                            loadProcessKeys = vm::refreshAndGetProcessKeys,
                             pickerSort = vm.pickerSort.collectAsState().value,
                             onPickerSortChange = vm::setPickerSort,
                             onPinProcess = vm::pinProcess,
@@ -484,7 +484,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                             collapsed = collapseTimeline,
                             onRefresh = vm::pullToRefresh,
                             showPicker = showProcessPicker,
-                            onOpenPicker = { vm.resetPickerSort(); vm.pullToRefresh(); showProcessPicker = true },
+                            onOpenPicker = { vm.resetPickerSort(); showProcessPicker = true },
                             onDismissPicker = { showProcessPicker = false },
                         )
                     }

@@ -113,6 +113,14 @@ interface SnapshotDao {
     """)
     fun getTransitionRows(start: Long): Flow<List<TransitionRow>>
 
+    @Query("""
+        SELECT name, uid, pid, procState, frozen, timestamp
+        FROM process_entries
+        WHERE timestamp >= :start
+        ORDER BY name, uid, timestamp
+    """)
+    suspend fun getTransitionRowsOnce(start: Long): List<TransitionRow>
+
     @Query("SELECT COUNT(*) FROM snapshots")
     fun getSnapshotCount(): Flow<Int>
 

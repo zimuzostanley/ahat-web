@@ -307,6 +307,61 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissError() { _captureError.value = null }
 
+    /** Capture a snapshot and return fresh process keys. Single suspend call, no timing issues. */
+    suspend fun refreshAndGetProcessKeys(): List<ProcessKeyWithTransitions> {
+        // 1. Capture snapshot
+        withContext(Dispatchers.IO) {
+            val processes = ShellHelper.getProcessList()
+            val frozenPids = ShellHelper.getFrozenPids()
+            val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = java.util.UUID.randomUUID().toString())
+            val entries = processes.map { p ->
+                ProcessEntryEntity(snapshotId = 0, pid = p.pid, name = p.name, uid = p.uid,
+                    procState = p.procState, frozen = p.pid in frozenPids)
+            }
+            dao.insertSnapshotWithEntries(snapshot, entries)
+        }
+        // 2. Query fresh data (after insert, so it includes the new snapshot)
+        val start = _pinnedStartMs.value ?: (System.currentTimeMillis() - _timeRange.value.millis)
+        val rows = withContext(Dispatchers.IO) { dao.getTransitionRowsOnce(start) }
+        // 3. Compute transitions (same logic as the StateFlow)
+        return computeTransitions(rows)
+    }
+
+    private fun computeTransitions(rows: List<com.procstate.monitor.data.SnapshotDao.TransitionRow>): List<ProcessKeyWithTransitions> {
+        val result = mutableListOf<ProcessKeyWithTransitions>()
+        var curName = ""; var curUid = ""; var prevState = ""; var prevFrozen = false; var prevPid = 0
+        var transitions = 0; var starts = 0; var frozenTransitions = 0
+        var lastChangeMs = 0L; var lastChangePriority = 0; var lastChangeUnfreeze = false
+
+        fun flush() {
+            if (curName.isNotEmpty()) {
+                result.add(ProcessKeyWithTransitions(
+                    ProcessKey(curName, curUid), transitions, starts, frozenTransitions, lastChangeMs, lastChangePriority, lastChangeUnfreeze))
+            }
+        }
+        for (row in rows) {
+            if (row.name != curName || row.uid != curUid) {
+                flush()
+                curName = row.name; curUid = row.uid; prevState = row.procState; prevFrozen = row.frozen; prevPid = row.pid
+                transitions = 0; starts = 0; frozenTransitions = 0
+                lastChangeMs = row.timestamp; lastChangePriority = STATE_PRIORITY[row.procState] ?: 0; lastChangeUnfreeze = false
+            } else {
+                var changePriority = 0; var changed = false; var unfroze = false
+                if (row.procState != prevState) { transitions++; changed = true; changePriority = STATE_PRIORITY[row.procState] ?: 0 }
+                if (row.frozen != prevFrozen) {
+                    frozenTransitions++; changed = true
+                    changePriority = if (!row.frozen) { unfroze = true; maxOf(changePriority, STATE_PRIORITY[row.procState] ?: 0) }
+                    else maxOf(changePriority, STATE_PRIORITY["frzn"] ?: 1)
+                }
+                if (changed) { lastChangeMs = row.timestamp; lastChangePriority = changePriority; lastChangeUnfreeze = unfroze }
+                if (row.pid != prevPid && row.pid != 0 && prevPid != 0) starts++
+                prevState = row.procState; prevFrozen = row.frozen; prevPid = row.pid
+            }
+        }
+        flush()
+        return result.sortedByDescending { it.transitions }
+    }
+
     // ── Proc State tab data ─────────────────────────────────────────────────
 
     val snapshotsWithCounts: StateFlow<List<SnapshotWithCounts>> =
