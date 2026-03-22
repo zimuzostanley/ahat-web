@@ -307,38 +307,59 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissError() { _captureError.value = null }
 
-    /** Capture a snapshot and return fresh process keys. Fast: uses latest snapshot + distinct keys. */
+    /** Capture a snapshot and return fresh process keys. Compares last 2 snapshots for transitions. */
     suspend fun refreshAndGetProcessKeys(): List<ProcessKeyWithTransitions> = withContext(Dispatchers.IO) {
         // 1. Capture fresh snapshot
         val processes = ShellHelper.getProcessList()
         val frozenPids = ShellHelper.getFrozenPids()
         val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = java.util.UUID.randomUUID().toString())
-        val entries = processes.map { p ->
+        val newEntries = processes.map { p ->
             ProcessEntryEntity(snapshotId = 0, pid = p.pid, name = p.name, uid = p.uid,
                 procState = p.procState, frozen = p.pid in frozenPids)
         }
-        dao.insertSnapshotWithEntries(snapshot, entries)
+        dao.insertSnapshotWithEntries(snapshot, newEntries)
 
-        // 2. Rank current processes by state priority (from latest snapshot)
-        val currentByKey = processes.associate {
-            ProcessKey(it.name, it.uid) to ProcessKeyWithTransitions(
-                key = ProcessKey(it.name, it.uid),
-                transitions = 0, starts = 0, frozenCount = 0,
-                lastChangePriority = STATE_PRIORITY[it.procState] ?: 0,
-                lastChangeMs = snapshot.timestamp,
+        // 2. Get the previous snapshot's entries for transition detection
+        val start = _pinnedStartMs.value ?: (System.currentTimeMillis() - _timeRange.value.millis)
+        val timestamps = dao.getAllTimestampsForExport(start)
+        val prevEntries = if (timestamps.size >= 2) {
+            val prevTs = timestamps[timestamps.size - 2]
+            dao.getAllEntriesForExport(prevTs).filter { it.timestamp == prevTs }
+        } else emptyList()
+        val prevByKey = prevEntries.associate { ProcessKey(it.name, it.uid) to it }
+
+        // 3. Build current process list with transition detection
+        val currentKeys = processes.map { p ->
+            val key = ProcessKey(p.name, p.uid)
+            val prev = prevByKey[key]
+            val stateChanged = prev != null && (prev.procState != p.procState || prev.frozen != (p.pid in frozenPids))
+            val unfroze = prev != null && prev.frozen && p.pid !in frozenPids
+            ProcessKeyWithTransitions(
+                key = key,
+                transitions = if (stateChanged) 1 else 0,
+                starts = 0, frozenCount = 0,
+                lastChangeMs = if (stateChanged) snapshot.timestamp else 0,
+                lastChangePriority = STATE_PRIORITY[p.procState] ?: 0,
+                lastChangeUnfreeze = unfroze,
             )
         }
 
-        // 3. Get all distinct processes in the time range (fast query)
-        val start = _pinnedStartMs.value ?: (System.currentTimeMillis() - _timeRange.value.millis)
+        // 4. Historical processes not in current snapshot
+        val currentSet = currentKeys.map { it.key }.toSet()
         val allKeys = dao.getDistinctProcessKeysInRange(start)
         val historicalKeys = allKeys
             .map { ProcessKey(it.name, it.uid) }
-            .filter { it !in currentByKey }
+            .filter { it !in currentSet }
             .map { ProcessKeyWithTransitions(key = it, transitions = 0, starts = 0, frozenCount = 0) }
 
-        // 4. Current processes (ranked by state) + historical (alphabetical)
-        currentByKey.values.sortedByDescending { it.lastChangePriority } + historicalKeys.sortedBy { it.key.name }
+        // 5. Sort: recently changed first (by time, then priority, then unfreeze), then by state, then historical
+        val changed = currentKeys.filter { it.lastChangeMs > 0 }
+            .sortedWith(compareByDescending<ProcessKeyWithTransitions> { it.lastChangeMs }
+                .thenByDescending { it.lastChangePriority }
+                .thenByDescending { it.lastChangeUnfreeze })
+        val unchanged = currentKeys.filter { it.lastChangeMs == 0L }
+            .sortedByDescending { it.lastChangePriority }
+        changed + unchanged + historicalKeys.sortedBy { it.key.name }
     }
 
     private fun computeTransitions(rows: List<com.procstate.monitor.data.SnapshotDao.TransitionRow>): List<ProcessKeyWithTransitions> {
