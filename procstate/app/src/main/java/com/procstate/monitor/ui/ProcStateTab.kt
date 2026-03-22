@@ -607,12 +607,9 @@ private fun SnapshotBreakdown(
             }
         }
 
-        // State count sparkline — only when not searching
-        if (localSearch.isBlank()) {
-        val sparkData = remember(allSnapshots, snapshot.timestamp) {
-            allSnapshots
-                .filter { it.timestamp >= snapshot.timestamp }
-                .sortedBy { it.timestamp }
+        // State count sparkline
+        val sparkData = remember(allSnapshots) {
+            allSnapshots.sortedBy { it.timestamp }
         }
         if (sparkData.size >= 2) {
             Spacer(Modifier.height(8.dp))
@@ -656,7 +653,6 @@ private fun SnapshotBreakdown(
                 )
             }
         }
-        } // if localSearch.isBlank
     }
 }
 
