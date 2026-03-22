@@ -607,7 +607,8 @@ private fun SnapshotBreakdown(
             }
         }
 
-        // State count sparkline (from this snapshot to end of range)
+        // State count sparkline — only when not searching
+        if (localSearch.isBlank()) {
         val sparkData = remember(allSnapshots, snapshot.timestamp) {
             allSnapshots
                 .filter { it.timestamp >= snapshot.timestamp }
@@ -655,6 +656,7 @@ private fun SnapshotBreakdown(
                 )
             }
         }
+        } // if localSearch.isBlank
     }
 }
 
