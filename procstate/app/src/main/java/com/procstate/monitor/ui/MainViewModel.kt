@@ -591,9 +591,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    suspend fun getMemoryTimeline(name: String, uid: String): List<MemorySnapshotEntity> {
-        val start = _pinnedStartMs.value ?: (System.currentTimeMillis() - _timeRange.value.millis)
-        return withContext(Dispatchers.IO) { dao.getMemoryTimeline(name, uid, start) }
+    fun memoryTimelineFlow(name: String, uid: String): kotlinx.coroutines.flow.Flow<List<MemorySnapshotEntity>> {
+        return effectiveStart.flatMapLatest { start ->
+            dao.getMemoryTimelineFlow(name, uid, start)
+        }
     }
 
     suspend fun getMemoryForDot(name: String, uid: String, pid: Int, timestamp: Long): MemorySnapshotEntity? =

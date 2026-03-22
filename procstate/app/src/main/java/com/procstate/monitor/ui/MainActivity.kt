@@ -469,7 +469,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                                 vm.dumpMemory(pid, name, uid, onDone)
                             },
                             getMemoryForDot = vm::getMemoryForDot,
-                            getMemoryTimeline = vm::getMemoryTimeline,
+                            memoryTimelineFlow = vm::memoryTimelineFlow,
                             memoryDumpProgress = memDumpProgress,
                             memoryEnrichedDots = memEnrichedDots,
                             pinnedProcesses = pinnedProcesses,

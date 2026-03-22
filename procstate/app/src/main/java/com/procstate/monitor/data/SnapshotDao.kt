@@ -194,7 +194,7 @@ interface SnapshotDao {
         WHERE name = :name AND uid = :uid AND timestamp >= :start
         ORDER BY timestamp
     """)
-    suspend fun getMemoryTimeline(name: String, uid: String, start: Long): List<MemorySnapshotEntity>
+    fun getMemoryTimelineFlow(name: String, uid: String, start: Long): Flow<List<MemorySnapshotEntity>>
 
     /** All memory snapshots for export. */
     @Query("""

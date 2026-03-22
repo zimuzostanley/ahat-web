@@ -129,7 +129,7 @@ fun ProcessTab(
     getAppLabel: (String) -> String = { it.substringAfterLast('.') },
     onDumpMemory: ((pid: Int, name: String, uid: String, onDone: () -> Unit) -> Unit)? = null,
     getMemoryForDot: (suspend (name: String, uid: String, pid: Int, timestamp: Long) -> MemorySnapshotEntity?)? = null,
-    getMemoryTimeline: (suspend (name: String, uid: String) -> List<MemorySnapshotEntity>)? = null,
+    memoryTimelineFlow: ((name: String, uid: String) -> kotlinx.coroutines.flow.Flow<List<MemorySnapshotEntity>>)? = null,
     memoryDumpProgress: String? = null,
     memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
     allProcessKeysWithTransitions: List<ProcessKeyWithTransitions> = emptyList(),
@@ -173,7 +173,7 @@ fun ProcessTab(
                 selectedDotId = null
             },
             getMemoryForDot = getMemoryForDot,
-            getMemoryTimeline = getMemoryTimeline,
+            memoryTimelineFlow = memoryTimelineFlow,
             memoryDumpProgress = memoryDumpProgress,
             onDumpMemory = if (onDumpMemory != null) { pid, name, uid ->
                 onDumpMemory(pid, name, uid) {
@@ -965,7 +965,7 @@ fun ProcessDetailSheet(
     appLabel: String,
     onDismiss: () -> Unit,
     getMemoryForDot: (suspend (name: String, uid: String, pid: Int, timestamp: Long) -> MemorySnapshotEntity?)? = null,
-    getMemoryTimeline: (suspend (name: String, uid: String) -> List<MemorySnapshotEntity>)? = null,
+    memoryTimelineFlow: ((name: String, uid: String) -> kotlinx.coroutines.flow.Flow<List<MemorySnapshotEntity>>)? = null,
     memoryDumpProgress: String? = null,
     onDumpMemory: ((pid: Int, name: String, uid: String) -> Unit)? = null,
 ) {
@@ -975,19 +975,16 @@ fun ProcessDetailSheet(
     ) {
         // Load memory data inside the sheet so it recomposes correctly
         var memoryData by remember(detail) { mutableStateOf<MemorySnapshotEntity?>(null) }
-        var memoryTimeline by remember(detail) { mutableStateOf<List<MemorySnapshotEntity>>(emptyList()) }
-        // Load memory data and refresh periodically while sheet is open
+        // Load dot memory data once
         androidx.compose.runtime.LaunchedEffect(detail) {
             if (getMemoryForDot != null && detail.pid > 0) {
                 memoryData = getMemoryForDot(detail.name, detail.uid, detail.pid, detail.timestampMs)
             }
-            while (true) {
-                if (getMemoryTimeline != null) {
-                    memoryTimeline = getMemoryTimeline(detail.name, detail.uid)
-                }
-                kotlinx.coroutines.delay(5000)
-            }
         }
+        // Reactive memory timeline (updates live as recording captures new data)
+        val memoryTimeline = memoryTimelineFlow?.let { flow ->
+            flow(detail.name, detail.uid).collectAsState(emptyList()).value
+        } ?: emptyList()
         Column(
             modifier = Modifier
                 .fillMaxWidth()
