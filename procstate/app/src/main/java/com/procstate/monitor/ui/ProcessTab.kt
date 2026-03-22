@@ -191,26 +191,13 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
-            // Show current data, accept next flow emission (auto-refresh), then freeze
             val liveKeys = allProcessKeysFlow?.collectAsState()?.value ?: allProcessKeysWithTransitions
-            var snapshotKeys by remember { mutableStateOf(liveKeys) }
-            var updates by remember { mutableStateOf(0) }
-            androidx.compose.runtime.LaunchedEffect(liveKeys) {
-                // Accept initial + one refresh update, then freeze
-                if (updates < 2) {
-                    snapshotKeys = liveKeys
-                    updates++
-                }
-            }
             ProcessPickerSheet(
-                allKeysWithTransitions = snapshotKeys,
+                allKeysWithTransitions = liveKeys,
                 pinnedKeys = pinnedProcesses,
                 onSelect = onPinProcess,
                 onUnpin = onUnpinProcess,
-                onRefresh = onRefresh?.let { refresh -> {
-                    refresh()
-                    updates = 0
-                } },
+                onRefresh = onRefresh,
                 sortBy = pickerSort,
                 onSortChange = onPickerSortChange,
                 hasData = allSnapshotTimestamps.isNotEmpty(),
