@@ -134,7 +134,6 @@ fun ProcessTab(
     memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
     allProcessKeysWithTransitions: List<ProcessKeyWithTransitions> = emptyList(),
     loadProcessKeys: (suspend () -> List<ProcessKeyWithTransitions>)? = null,
-    allProcessKeysFlow: kotlinx.coroutines.flow.StateFlow<List<ProcessKeyWithTransitions>>? = null,
     pickerSort: String = "transitions",
     onPickerSortChange: (String) -> Unit = {},
     isRefreshing: Boolean = false,
@@ -192,26 +191,11 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
-            // Fast load on open, merge full transition counts from background flow
-            var fastData by remember { mutableStateOf<List<ProcessKeyWithTransitions>>(emptyList()) }
-            val fullData = allProcessKeysFlow?.collectAsState()?.value ?: emptyList()
+            // Load fresh data on open (captures snapshot + computes transitions)
+            var pickerData by remember { mutableStateOf<List<ProcessKeyWithTransitions>>(emptyList()) }
             val scope = androidx.compose.runtime.rememberCoroutineScope()
             androidx.compose.runtime.LaunchedEffect(Unit) {
-                if (loadProcessKeys != null) fastData = loadProcessKeys()
-            }
-            // Merge: use fast data for sort order, overlay full transition counts
-            val pickerData = remember(fastData, fullData) {
-                if (fastData.isEmpty()) return@remember emptyList()
-                if (fullData.isEmpty()) return@remember fastData
-                val fullMap = fullData.associateBy { it.key }
-                fastData.map { fast ->
-                    val full = fullMap[fast.key]
-                    if (full != null) fast.copy(
-                        transitions = full.transitions,
-                        starts = full.starts,
-                        frozenCount = full.frozenCount,
-                    ) else fast
-                }
+                if (loadProcessKeys != null) pickerData = loadProcessKeys()
             }
             ProcessPickerSheet(
                 allKeysWithTransitions = pickerData,
@@ -219,7 +203,7 @@ fun ProcessTab(
                 onSelect = onPinProcess,
                 onUnpin = onUnpinProcess,
                 onRefresh = loadProcessKeys?.let { load -> {
-                    scope.launch { fastData = load() }
+                    scope.launch { pickerData = load() }
                 } },
                 sortBy = pickerSort,
                 onSortChange = onPickerSortChange,
