@@ -134,6 +134,7 @@ fun ProcessTab(
     memoryEnrichedDots: Set<MemoryDotKey> = emptySet(),
     allProcessKeysWithTransitions: List<ProcessKeyWithTransitions> = emptyList(),
     loadProcessKeys: (suspend () -> List<ProcessKeyWithTransitions>)? = null,
+    allProcessKeysFlow: kotlinx.coroutines.flow.StateFlow<List<ProcessKeyWithTransitions>>? = null,
     pickerSort: String = "transitions",
     onPickerSortChange: (String) -> Unit = {},
     isRefreshing: Boolean = false,
@@ -191,12 +192,12 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
-            // Load fresh data on open (captures snapshot + computes transitions)
-            var pickerData by remember { mutableStateOf<List<ProcessKeyWithTransitions>>(emptyList()) }
+            // Use existing computed data (instant). Refresh button does full capture.
+            val liveData = allProcessKeysFlow?.collectAsState()?.value ?: allProcessKeysWithTransitions
+            var pickerData by remember { mutableStateOf(liveData) }
+            // Update once if initial was empty (cold launch)
+            if (pickerData.isEmpty() && liveData.isNotEmpty()) pickerData = liveData
             val scope = androidx.compose.runtime.rememberCoroutineScope()
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-                if (loadProcessKeys != null) pickerData = loadProcessKeys()
-            }
             ProcessPickerSheet(
                 allKeysWithTransitions = pickerData,
                 pinnedKeys = pinnedProcesses,
