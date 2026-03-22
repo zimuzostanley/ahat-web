@@ -191,10 +191,10 @@ fun ProcessTab(
             onDismissRequest = onDismissPicker,
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = false),
         ) {
-            // Collect flow inside sheet, but freeze after first non-empty emission
+            // Collect live data, freeze when not refreshing
             val liveKeys = allProcessKeysFlow?.collectAsState()?.value ?: allProcessKeysWithTransitions
             var snapshotKeys by remember { mutableStateOf(liveKeys) }
-            if (snapshotKeys.isEmpty() && liveKeys.isNotEmpty()) {
+            if (isRefreshing || snapshotKeys.isEmpty()) {
                 snapshotKeys = liveKeys
             }
             ProcessPickerSheet(
@@ -202,14 +202,7 @@ fun ProcessTab(
                 pinnedKeys = pinnedProcesses,
                 onSelect = onPinProcess,
                 onUnpin = onUnpinProcess,
-                onRefresh = onRefresh?.let { refresh -> {
-                    refresh()
-                    // Update the list after a short delay to let the snapshot process
-                    kotlinx.coroutines.MainScope().launch {
-                        kotlinx.coroutines.delay(2000)
-                        snapshotKeys = allProcessKeysFlow?.value ?: allProcessKeysWithTransitions
-                    }
-                } },
+                onRefresh = onRefresh,
                 sortBy = pickerSort,
                 onSortChange = onPickerSortChange,
                 hasData = allSnapshotTimestamps.isNotEmpty(),
