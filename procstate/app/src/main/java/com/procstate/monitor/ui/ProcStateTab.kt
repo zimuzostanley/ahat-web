@@ -616,32 +616,50 @@ private fun SnapshotBreakdown(
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
             Spacer(Modifier.height(8.dp))
 
+            // Built-in options + per-state options
             val availableStates = remember(sparkData) {
-                sparkData.flatMap { it.stateCounts.keys }.toSet()
+                val builtIn = mutableListOf("__total__", "__frozen__")
+                val states = sparkData.flatMap { it.stateCounts.keys }.toSet()
                     .filter { state -> sparkData.count { (it.stateCounts[state] ?: 0) > 0 } >= 2 }
                     .sortedByDescending { state -> sparkData.sumOf { it.stateCounts[state] ?: 0 } }
+                builtIn + states
             }
             if (availableStates.isNotEmpty()) {
-                var selectedState by remember { mutableStateOf(availableStates.first()) }
+                var selectedState by remember { mutableStateOf("__total__") }
 
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     for (state in availableStates) {
+                        val label = when (state) {
+                            "__total__" -> "Total"
+                            "__frozen__" -> "Frozen"
+                            else -> ProcStateColors.label(state)
+                        }
                         FilterChip(
                             selected = selectedState == state,
                             onClick = { selectedState = state },
-                            label = { Text(ProcStateColors.label(state), style = MaterialTheme.typography.labelSmall) },
+                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                         )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
 
                 val values = remember(sparkData, selectedState) {
-                    sparkData.map { (it.stateCounts[selectedState] ?: 0).toFloat() }
+                    sparkData.map { snap ->
+                        when (selectedState) {
+                            "__total__" -> snap.totalProcesses.toFloat()
+                            "__frozen__" -> snap.frozenCount.toFloat()
+                            else -> (snap.stateCounts[selectedState] ?: 0).toFloat()
+                        }
+                    }
                 }
-                val stateColor = ProcStateColors.get(selectedState, isDark)
+                val stateColor = when (selectedState) {
+                    "__total__" -> MaterialTheme.colorScheme.primary
+                    "__frozen__" -> ProcStateColors.get("frzn", isDark)
+                    else -> ProcStateColors.get(selectedState, isDark)
+                }
 
                 SparklineChart(
                     values = values,
