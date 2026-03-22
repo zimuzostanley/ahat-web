@@ -209,24 +209,6 @@ object ShellHelper {
         val list = parseLruOutput(output).toMutableList()
         Log.d(TAG, "Parsed ${list.size} LRU processes")
 
-        // Add system_server and systemui if not in LRU (they never are)
-        val existingPids = list.map { it.pid }.toSet()
-        try {
-            val psOutput = execRaw("sh", "-c", "ps -A -o PID,NAME")
-            for (line in psOutput.lines()) {
-                val parts = line.trim().split(Regex("\\s+"), limit = 2)
-                if (parts.size < 2) continue
-                val pid = parts[0].toIntOrNull() ?: continue
-                val name = parts[1]
-                if (pid in existingPids) continue
-                if (name == "system_server" || name == "com.android.systemui") {
-                    list.add(0, ProcessEntry(pid, name, "pers", "1000"))
-                    Log.d(TAG, "Pinned from ps: $name PID $pid")
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "ps -A failed: ${e.message}")
-        }
         Log.d(TAG, "Total: ${list.size} processes")
         return list
     }
