@@ -307,24 +307,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun dismissError() { _captureError.value = null }
 
-    /** Capture a snapshot and return fresh process keys. Single suspend call, no timing issues. */
-    suspend fun refreshAndGetProcessKeys(): List<ProcessKeyWithTransitions> {
-        // 1. Capture snapshot
-        withContext(Dispatchers.IO) {
-            val processes = ShellHelper.getProcessList()
-            val frozenPids = ShellHelper.getFrozenPids()
-            val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = java.util.UUID.randomUUID().toString())
-            val entries = processes.map { p ->
-                ProcessEntryEntity(snapshotId = 0, pid = p.pid, name = p.name, uid = p.uid,
-                    procState = p.procState, frozen = p.pid in frozenPids)
-            }
-            dao.insertSnapshotWithEntries(snapshot, entries)
+    /** Capture a snapshot and return fresh process keys. Fast: uses latest snapshot + distinct keys. */
+    suspend fun refreshAndGetProcessKeys(): List<ProcessKeyWithTransitions> = withContext(Dispatchers.IO) {
+        // 1. Capture fresh snapshot
+        val processes = ShellHelper.getProcessList()
+        val frozenPids = ShellHelper.getFrozenPids()
+        val snapshot = SnapshotEntity(timestamp = System.currentTimeMillis(), sessionId = java.util.UUID.randomUUID().toString())
+        val entries = processes.map { p ->
+            ProcessEntryEntity(snapshotId = 0, pid = p.pid, name = p.name, uid = p.uid,
+                procState = p.procState, frozen = p.pid in frozenPids)
         }
-        // 2. Query fresh data (after insert, so it includes the new snapshot)
+        dao.insertSnapshotWithEntries(snapshot, entries)
+
+        // 2. Rank current processes by state priority (from latest snapshot)
+        val currentByKey = processes.associate {
+            ProcessKey(it.name, it.uid) to ProcessKeyWithTransitions(
+                key = ProcessKey(it.name, it.uid),
+                transitions = 0, starts = 0, frozenCount = 0,
+                lastChangePriority = STATE_PRIORITY[it.procState] ?: 0,
+                lastChangeMs = snapshot.timestamp,
+            )
+        }
+
+        // 3. Get all distinct processes in the time range (fast query)
         val start = _pinnedStartMs.value ?: (System.currentTimeMillis() - _timeRange.value.millis)
-        val rows = withContext(Dispatchers.IO) { dao.getTransitionRowsOnce(start) }
-        // 3. Compute transitions (same logic as the StateFlow)
-        return computeTransitions(rows)
+        val allKeys = dao.getDistinctProcessKeysInRange(start)
+        val historicalKeys = allKeys
+            .map { ProcessKey(it.name, it.uid) }
+            .filter { it !in currentByKey }
+            .map { ProcessKeyWithTransitions(key = it, transitions = 0, starts = 0, frozenCount = 0) }
+
+        // 4. Current processes (ranked by state) + historical (alphabetical)
+        currentByKey.values.sortedByDescending { it.lastChangePriority } + historicalKeys.sortedBy { it.key.name }
     }
 
     private fun computeTransitions(rows: List<com.procstate.monitor.data.SnapshotDao.TransitionRow>): List<ProcessKeyWithTransitions> {

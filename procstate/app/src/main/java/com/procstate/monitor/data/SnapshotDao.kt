@@ -121,6 +121,13 @@ interface SnapshotDao {
     """)
     suspend fun getTransitionRowsOnce(start: Long): List<TransitionRow>
 
+    @Query("""
+        SELECT DISTINCT pe.name, pe.uid
+        FROM process_entries pe
+        WHERE pe.timestamp >= :start
+    """)
+    suspend fun getDistinctProcessKeysInRange(start: Long): List<ProcessKeyPair>
+
     @Query("SELECT COUNT(*) FROM snapshots")
     fun getSnapshotCount(): Flow<Int>
 
@@ -212,6 +219,8 @@ interface SnapshotDao {
     """)
     suspend fun getAllMemoryForExport(start: Long): List<MemorySnapshotEntity>
 }
+
+data class ProcessKeyPair(val name: String, val uid: String)
 
 data class SessionRow(
     val sessionId: String,
