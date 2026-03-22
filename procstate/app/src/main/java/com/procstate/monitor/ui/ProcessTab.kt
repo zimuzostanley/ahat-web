@@ -976,12 +976,16 @@ fun ProcessDetailSheet(
         // Load memory data inside the sheet so it recomposes correctly
         var memoryData by remember(detail) { mutableStateOf<MemorySnapshotEntity?>(null) }
         var memoryTimeline by remember(detail) { mutableStateOf<List<MemorySnapshotEntity>>(emptyList()) }
+        // Load memory data and refresh periodically while sheet is open
         androidx.compose.runtime.LaunchedEffect(detail) {
             if (getMemoryForDot != null && detail.pid > 0) {
                 memoryData = getMemoryForDot(detail.name, detail.uid, detail.pid, detail.timestampMs)
             }
-            if (getMemoryTimeline != null) {
-                memoryTimeline = getMemoryTimeline(detail.name, detail.uid)
+            while (true) {
+                if (getMemoryTimeline != null) {
+                    memoryTimeline = getMemoryTimeline(detail.name, detail.uid)
+                }
+                kotlinx.coroutines.delay(5000)
             }
         }
         Column(
