@@ -121,6 +121,16 @@ interface SnapshotDao {
     """)
     suspend fun getTransitionRowsOnce(start: Long): List<TransitionRow>
 
+    @Query("SELECT timestamp FROM snapshots ORDER BY timestamp DESC LIMIT 2")
+    suspend fun getLastTwoTimestamps(): List<Long>
+
+    @Query("""
+        SELECT timestamp, 0 as snapshotId, name, pid, uid, procState, frozen
+        FROM process_entries
+        WHERE timestamp = :ts
+    """)
+    suspend fun getEntriesAtTimestamp(ts: Long): List<ProcessTimelineRow>
+
     @Query("""
         SELECT DISTINCT pe.name, pe.uid
         FROM process_entries pe

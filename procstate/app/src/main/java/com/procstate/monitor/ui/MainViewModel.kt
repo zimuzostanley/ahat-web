@@ -321,10 +321,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         // 2. Get the previous snapshot's entries for transition detection
         val start = _pinnedStartMs.value ?: (System.currentTimeMillis() - _timeRange.value.millis)
-        val timestamps = dao.getAllTimestampsForExport(start)
-        val prevEntries = if (timestamps.size >= 2) {
-            val prevTs = timestamps[timestamps.size - 2]
-            dao.getAllEntriesForExport(prevTs).filter { it.timestamp == prevTs }
+        val lastTwo = dao.getLastTwoTimestamps()
+        val prevEntries = if (lastTwo.size >= 2) {
+            dao.getEntriesAtTimestamp(lastTwo[1])
         } else emptyList()
         val prevByKey = prevEntries.associate { ProcessKey(it.name, it.uid) to it }
 
