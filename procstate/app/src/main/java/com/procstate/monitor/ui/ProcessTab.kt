@@ -1434,12 +1434,18 @@ fun SparklineChart(
         durationMs < 3600_000 -> "${durationMs / 60_000}m"
         else -> "%.1fh".format(durationMs / 3600_000.0)
     }
-    Row(Modifier.fillMaxWidth().padding(start = 44.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(timeFmt.format(startTimeMs), style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(durText, style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-        Text(timeFmt.format(endTimeMs), style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(Modifier.fillMaxWidth()) {
+        // Invisible spacer matching y-axis width
+        Text(maxLabel, style = MaterialTheme.typography.labelSmall,
+            color = Color.Transparent)
+        Spacer(Modifier.width(4.dp))
+        Row(Modifier.weight(1f), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(timeFmt.format(startTimeMs), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(durText, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+            Text(timeFmt.format(endTimeMs), style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
     }
 }
