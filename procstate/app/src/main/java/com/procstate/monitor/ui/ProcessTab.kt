@@ -1232,79 +1232,14 @@ fun ProcessDetailSheet(
                                 }.toFloat()
                             }
                         }
-                        val lineColor = MaterialTheme.colorScheme.primary
-                        val fillColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                        val minVal = values.min()
-                        val maxVal = values.max()
-                        val range = (maxVal - minVal).coerceAtLeast(1f)
-
-                        // Y-axis labels (left) + chart
-                        Row(Modifier.fillMaxWidth()) {
-                            // Y-axis
-                            Column(
-                                Modifier.height(80.dp),
-                                verticalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Text(formatKb(maxVal.toLong()), style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                Text(formatKb(minVal.toLong()), style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Spacer(Modifier.width(4.dp))
-                            Canvas(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .height(80.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
-                            ) {
-                                val w = size.width
-                                val h = size.height
-                                val pad = 4.dp.toPx()
-                                val drawH = h - pad * 2
-                                val step = w / (values.size - 1).coerceAtLeast(1)
-
-                                val path = androidx.compose.ui.graphics.Path()
-                                val fillPath = androidx.compose.ui.graphics.Path()
-
-                                for ((i, v) in values.withIndex()) {
-                                    val x = i * step
-                                    val y = pad + drawH * (1f - (v - minVal) / range)
-                                    if (i == 0) {
-                                        path.moveTo(x, y)
-                                        fillPath.moveTo(x, h)
-                                        fillPath.lineTo(x, y)
-                                    } else {
-                                        path.lineTo(x, y)
-                                        fillPath.lineTo(x, y)
-                                    }
-                                }
-                                fillPath.lineTo((values.size - 1) * step, h)
-                                fillPath.close()
-
-                                drawPath(fillPath, fillColor)
-                                drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
-                            }
-                        }
-                        // X-axis time labels (indented to align under chart, not y-axis)
-                        val timeFmt = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
-                        val durationMs = memoryTimeline.last().timestamp - memoryTimeline.first().timestamp
-                        val durText = when {
-                            durationMs < 60_000 -> "${durationMs / 1000}s"
-                            durationMs < 3600_000 -> "${durationMs / 60_000}m"
-                            else -> "%.1fh".format(durationMs / 3600_000.0)
-                        }
-                        Row(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(timeFmt.format(memoryTimeline.first().timestamp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text(durText,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                            Text(timeFmt.format(memoryTimeline.last().timestamp),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                        SparklineChart(
+                            values = values,
+                            lineColor = MaterialTheme.colorScheme.primary,
+                            minLabel = formatKb(values.min().toLong()),
+                            maxLabel = formatKb(values.max().toLong()),
+                            startTimeMs = memoryTimeline.first().timestamp,
+                            endTimeMs = memoryTimeline.last().timestamp,
+                        )
                     }
 
                 } else if (onDumpMemory != null) {
@@ -1427,4 +1362,84 @@ private fun PickerCell(value: Int, isActiveSort: Boolean, width: Dp) {
         textAlign = TextAlign.Center,
         modifier = Modifier.width(width),
     )
+}
+
+// ── Shared sparkline chart ───────────────────────────────────────────────────
+
+@Composable
+fun SparklineChart(
+    values: List<Float>,
+    lineColor: Color,
+    minLabel: String,
+    maxLabel: String,
+    startTimeMs: Long,
+    endTimeMs: Long,
+) {
+    if (values.size < 2) return
+    val fillColor = lineColor.copy(alpha = 0.1f)
+    val minVal = values.min()
+    val maxVal = values.max()
+    val range = (maxVal - minVal).coerceAtLeast(1f)
+
+    Row(Modifier.fillMaxWidth()) {
+        Column(
+            Modifier.height(80.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(maxLabel, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(minLabel, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.width(4.dp))
+        Canvas(
+            modifier = Modifier
+                .weight(1f)
+                .height(80.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+        ) {
+            val w = size.width
+            val h = size.height
+            val pad = 4.dp.toPx()
+            val drawH = h - pad * 2
+            val step = w / (values.size - 1).coerceAtLeast(1)
+
+            val path = androidx.compose.ui.graphics.Path()
+            val fillPath = androidx.compose.ui.graphics.Path()
+
+            for ((i, v) in values.withIndex()) {
+                val x = i * step
+                val y = pad + drawH * (1f - (v - minVal) / range)
+                if (i == 0) {
+                    path.moveTo(x, y)
+                    fillPath.moveTo(x, h)
+                    fillPath.lineTo(x, y)
+                } else {
+                    path.lineTo(x, y)
+                    fillPath.lineTo(x, y)
+                }
+            }
+            fillPath.lineTo((values.size - 1) * step, h)
+            fillPath.close()
+
+            drawPath(fillPath, fillColor)
+            drawPath(path, lineColor, style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()))
+        }
+    }
+    val timeFmt = remember { java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()) }
+    val durationMs = endTimeMs - startTimeMs
+    val durText = when {
+        durationMs < 60_000 -> "${durationMs / 1000}s"
+        durationMs < 3600_000 -> "${durationMs / 60_000}m"
+        else -> "%.1fh".format(durationMs / 3600_000.0)
+    }
+    Row(Modifier.fillMaxWidth().padding(start = 56.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(timeFmt.format(startTimeMs), style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(durText, style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+        Text(timeFmt.format(endTimeMs), style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }

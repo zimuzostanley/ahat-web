@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -244,6 +245,7 @@ fun ProcStateTab(
                     snapshot = snapshot,
                     entries = entries,
                     expandedStateSet = expandedStateSet,
+                    allSnapshots = snapshots,
                     pinnedProcesses = pinnedProcesses,
                     isDark = isDark,
                     onToggleState = { state ->
@@ -422,6 +424,7 @@ private fun SnapshotBreakdown(
     snapshot: SnapshotWithCounts,
     entries: List<ProcessEntryEntity>,
     expandedStateSet: Set<String>,
+    allSnapshots: List<SnapshotWithCounts>,
     pinnedProcesses: List<ProcessKey>,
     isDark: Boolean,
     onToggleState: (String) -> Unit,
@@ -600,6 +603,55 @@ private fun SnapshotBreakdown(
                     onPinProcess = onPinProcess,
                     onUnpinProcess = onUnpinProcess,
                     onShowDetail = onShowDetail,
+                )
+            }
+        }
+
+        // State count sparkline (from this snapshot to end of range)
+        val sparkData = remember(allSnapshots, snapshot.timestamp) {
+            allSnapshots
+                .filter { it.timestamp >= snapshot.timestamp }
+                .sortedBy { it.timestamp }
+        }
+        if (sparkData.size >= 2) {
+            Spacer(Modifier.height(8.dp))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+            Spacer(Modifier.height(8.dp))
+
+            val availableStates = remember(sparkData) {
+                sparkData.flatMap { it.stateCounts.keys }.toSet()
+                    .filter { state -> sparkData.count { (it.stateCounts[state] ?: 0) > 0 } >= 2 }
+                    .sortedByDescending { state -> sparkData.sumOf { it.stateCounts[state] ?: 0 } }
+            }
+            if (availableStates.isNotEmpty()) {
+                var selectedState by remember { mutableStateOf(availableStates.first()) }
+
+                Row(
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    for (state in availableStates) {
+                        FilterChip(
+                            selected = selectedState == state,
+                            onClick = { selectedState = state },
+                            label = { Text(ProcStateColors.label(state), style = MaterialTheme.typography.labelSmall) },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+
+                val values = remember(sparkData, selectedState) {
+                    sparkData.map { (it.stateCounts[selectedState] ?: 0).toFloat() }
+                }
+                val stateColor = ProcStateColors.get(selectedState, isDark)
+
+                SparklineChart(
+                    values = values,
+                    lineColor = stateColor,
+                    minLabel = "${values.min().toInt()}",
+                    maxLabel = "${values.max().toInt()}",
+                    startTimeMs = sparkData.first().timestamp,
+                    endTimeMs = sparkData.last().timestamp,
                 )
             }
         }
