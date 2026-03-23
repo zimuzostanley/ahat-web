@@ -495,6 +495,7 @@ private fun ProcStateApp(vm: MainViewModel) {
                     refreshing = isRefreshing,
                     state = pullState,
                     modifier = Modifier.align(Alignment.TopCenter),
+                    backgroundColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.primary,
                 )
             }
