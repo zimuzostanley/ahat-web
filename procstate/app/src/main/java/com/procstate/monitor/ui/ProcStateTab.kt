@@ -141,6 +141,7 @@ fun ProcStateTab(
     val scope = rememberCoroutineScope()
     val isDark = LocalIsDarkTheme.current
     var processDetail by remember { mutableStateOf<DotDetail?>(null) }
+    var sparklineState by remember { mutableStateOf("__total__") }
     // Long-press timestamp for time diff measurement
     var diffAnchorMs by remember { mutableStateOf<Long?>(null) }
 
@@ -261,6 +262,8 @@ fun ProcStateTab(
                     onPinProcess = onPinProcess,
                     onUnpinProcess = onUnpinProcess,
                     onShowDetail = { processDetail = it },
+                    selectedSparkState = sparklineState,
+                    onSparkStateChange = { sparklineState = it },
                 )
             }
             } // wrapper Column
@@ -431,6 +434,8 @@ private fun SnapshotBreakdown(
     onPinProcess: (ProcessKey) -> Unit,
     onUnpinProcess: (ProcessKey) -> Unit,
     onShowDetail: (DotDetail) -> Unit,
+    selectedSparkState: String = "__total__",
+    onSparkStateChange: (String) -> Unit = {},
 ) {
     val sorted = remember(snapshot.stateCounts) {
         snapshot.stateCounts.entries
@@ -625,8 +630,6 @@ private fun SnapshotBreakdown(
                 builtIn + states
             }
             if (availableStates.isNotEmpty()) {
-                var selectedState by remember { mutableStateOf("__total__") }
-
                 Row(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -638,27 +641,27 @@ private fun SnapshotBreakdown(
                             else -> ProcStateColors.label(state)
                         }
                         FilterChip(
-                            selected = selectedState == state,
-                            onClick = { selectedState = state },
+                            selected = selectedSparkState == state,
+                            onClick = { onSparkStateChange(state) },
                             label = { Text(label, style = MaterialTheme.typography.labelSmall) },
                         )
                     }
                 }
                 Spacer(Modifier.height(8.dp))
 
-                val values = remember(sparkData, selectedState) {
+                val values = remember(sparkData, selectedSparkState) {
                     sparkData.map { snap ->
-                        when (selectedState) {
+                        when (selectedSparkState) {
                             "__total__" -> snap.totalProcesses.toFloat()
                             "__frozen__" -> snap.frozenCount.toFloat()
-                            else -> (snap.stateCounts[selectedState] ?: 0).toFloat()
+                            else -> (snap.stateCounts[selectedSparkState] ?: 0).toFloat()
                         }
                     }
                 }
-                val stateColor = when (selectedState) {
+                val stateColor = when (selectedSparkState) {
                     "__total__" -> MaterialTheme.colorScheme.primary
                     "__frozen__" -> ProcStateColors.get("frzn", isDark)
-                    else -> ProcStateColors.get(selectedState, isDark)
+                    else -> ProcStateColors.get(selectedSparkState, isDark)
                 }
 
                 SparklineChart(
