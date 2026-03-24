@@ -141,7 +141,8 @@ fun ProcStateTab(
     val scope = rememberCoroutineScope()
     val isDark = LocalIsDarkTheme.current
     var processDetail by remember { mutableStateOf<DotDetail?>(null) }
-    var sparklineState by remember { mutableStateOf("__total__") }
+    val sparkPrefs = LocalContext.current.getSharedPreferences("settings", android.content.Context.MODE_PRIVATE)
+    var sparklineState by remember { mutableStateOf(sparkPrefs.getString("sparkline_state", "__total__") ?: "__total__") }
     // Long-press timestamp for time diff measurement
     var diffAnchorMs by remember { mutableStateOf<Long?>(null) }
 
@@ -263,7 +264,7 @@ fun ProcStateTab(
                     onUnpinProcess = onUnpinProcess,
                     onShowDetail = { processDetail = it },
                     selectedSparkState = sparklineState,
-                    onSparkStateChange = { sparklineState = it },
+                    onSparkStateChange = { sparklineState = it; sparkPrefs.edit().putString("sparkline_state", it).apply() },
                 )
             }
             } // wrapper Column
