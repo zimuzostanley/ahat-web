@@ -2179,6 +2179,69 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
               ])
             ),
 
+            // Zygote candidate scan
+            javaPids.size > 0 && processes && processes.length > 0 && (
+              m("div", { className: "ah-mb-2", style: { display: "flex", gap: "0.5rem", alignItems: "center" } }, [
+                m("button", {
+                  className: "ah-capture-toolbar__btn",
+                  onclick: zygoteScanStatus ? cancelZygoteScan : handleZygoteScan,
+                  disabled: !connected || !isLive,
+                }, zygoteScanStatus
+                  ? "Cancel Zygote Scan"
+                  : `Scan Zygote Candidates (${javaPids.size} Java)`),
+                zygoteScanStatus && zygoteScanProgress && (
+                  m("span", { style: { fontSize: "0.75rem", color: "var(--ah-text-faint)" } },
+                    `${zygoteScanProgress.done}/${zygoteScanProgress.total}: ${zygoteScanStatus}`)
+                ),
+              ])
+            ),
+            zygoteScanStatus && zygoteScanProgress && zygoteScanProgress.total > 0 && (
+              m("div", { className: "ah-capture-progress-bar ah-mb-2" }, [
+                m("div", {
+                  className: "ah-capture-progress-bar__fill ah-capture-progress-bar__fill--accent",
+                  style: { width: `${(zygoteScanProgress.done / zygoteScanProgress.total) * 100}%` },
+                }),
+              ])
+            ),
+            zygoteCandidates !== null && zygoteCandidates.length > 0 && (
+              m("div", { className: "ah-mb-4" }, [
+                m("h3", { style: { fontSize: "0.875rem", marginBottom: "0.5rem" } },
+                  `Zygote Candidates (${zygoteCandidates.length})`),
+                m("p", { style: { fontSize: "0.75rem", color: "var(--ah-text-faint)", marginBottom: "0.5rem" } },
+                  "Objects with identical content across multiple processes. Preloading in Zygote would eliminate per-process copies."),
+                m("div", { className: "ah-shared-mappings__table-wrap" }, [
+                  m("table", { className: "ah-shared-mappings__table" }, [
+                    m("thead", { className: "ah-shared-mappings__thead" }, [
+                      m("tr", [
+                        m("th", { className: "ah-smaps-th" }, "Class"),
+                        m("th", { className: "ah-smaps-th--right" }, "Processes"),
+                        m("th", { className: "ah-smaps-th--right" }, "Instances"),
+                        m("th", { className: "ah-smaps-th--right" }, "Per Instance"),
+                        m("th", { className: "ah-smaps-th--right" }, "Total Wasted"),
+                      ]),
+                    ]),
+                    m("tbody",
+                      zygoteCandidates.slice(0, 200).map((c, i) =>
+                        m("tr", { key: i, title: `Found in: ${c.processes.join(", ")}` }, [
+                          m("td", { className: "ah-smaps-td--name" }, [
+                            m("span", { className: "ah-truncate", style: { maxWidth: "350px" } }, c.className),
+                          ]),
+                          m("td", { className: "ah-smaps-td--right" }, String(c.processCount)),
+                          m("td", { className: "ah-smaps-td--right" }, c.totalInstances.toLocaleString()),
+                          m("td", { className: "ah-smaps-td--right" }, fmtSize(c.perInstanceRetained)),
+                          m("td", { className: "ah-smaps-td--right" }, fmtSize(c.totalWasted)),
+                        ]),
+                      ),
+                    ),
+                  ]),
+                ]),
+              ])
+            ),
+            zygoteCandidates !== null && zygoteCandidates.length === 0 && (
+              m("p", { className: "ah-mb-2", style: { fontSize: "0.8rem", color: "var(--ah-text-faint)" } },
+                "No Zygote candidates found (all objects are unique across processes).")
+            ),
+
             // Process list
             filteredSorted === null ? (
               m("div", { className: "ah-loading" }, "Loading processes\u2026")
@@ -2448,73 +2511,6 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     onclick: scanStatus ? cancelSmapsFetch : scanAllSmaps,
                     disabled: !connected || !isLive || !!vmaDumpStatus,
                   }, scanStatus ? `Cancel Scan (${smapsData.size}/${dProcs?.length ?? 0})` : `Scan All VMAs (${smapsData.size}/${dProcs?.length ?? 0})`)
-                ),
-                // Zygote candidate scan
-                javaPids.size > 0 && (
-                  m("button", {
-                    className: "ah-capture-toolbar__btn ah-mb-2",
-                    style: { marginLeft: "0.5rem" },
-                    onclick: zygoteScanStatus ? cancelZygoteScan : handleZygoteScan,
-                    disabled: !connected || !isLive,
-                  }, zygoteScanStatus
-                    ? `Cancel Zygote Scan`
-                    : `Scan Zygote Candidates (${javaPids.size} Java)`)
-                ),
-                zygoteScanStatus && (
-                  m("div", { className: "ah-capture-progress ah-mb-2" }, [
-                    m("div", { className: "ah-capture-progress__row" }, [
-                      m("span", { className: "ah-capture-progress__text" }, `Zygote: ${zygoteScanStatus}`),
-                      zygoteScanProgress && m("span", { className: "ah-capture-progress__count" },
-                        `${zygoteScanProgress.done}/${zygoteScanProgress.total}`),
-                      m("button", { className: "ah-capture-progress__cancel", onclick: cancelZygoteScan }, "Cancel"),
-                    ]),
-                    zygoteScanProgress && zygoteScanProgress.total > 0 && (
-                      m("div", { className: "ah-capture-progress-bar" }, [
-                        m("div", {
-                          className: "ah-capture-progress-bar__fill ah-capture-progress-bar__fill--accent",
-                          style: { width: `${(zygoteScanProgress.done / zygoteScanProgress.total) * 100}%` },
-                        }),
-                      ])
-                    ),
-                  ])
-                ),
-                zygoteCandidates !== null && zygoteCandidates.length > 0 && (
-                  m("div", { className: "ah-mb-4" }, [
-                    m("h3", { style: { fontSize: "0.875rem", marginBottom: "0.5rem" } },
-                      `Zygote Candidates (${zygoteCandidates.length})`),
-                    m("p", { style: { fontSize: "0.75rem", color: "var(--ah-text-faint)", marginBottom: "0.5rem" } },
-                      "Objects with identical content across multiple processes. Preloading in Zygote would eliminate per-process copies."),
-                    m("div", { className: "ah-shared-mappings__table-wrap" }, [
-                      m("table", { className: "ah-shared-mappings__table" }, [
-                        m("thead", { className: "ah-shared-mappings__thead" }, [
-                          m("tr", [
-                            m("th", { className: "ah-smaps-th" }, "Class"),
-                            m("th", { className: "ah-smaps-th--right" }, "Processes"),
-                            m("th", { className: "ah-smaps-th--right" }, "Instances"),
-                            m("th", { className: "ah-smaps-th--right" }, "Per Instance"),
-                            m("th", { className: "ah-smaps-th--right" }, "Total Wasted"),
-                          ]),
-                        ]),
-                        m("tbody",
-                          zygoteCandidates.slice(0, 200).map((c, i) =>
-                            m("tr", { key: i, title: `Found in: ${c.processes.join(", ")}` }, [
-                              m("td", { className: "ah-smaps-td--name" }, [
-                                m("span", { className: "ah-truncate", style: { maxWidth: "350px" } }, c.className),
-                              ]),
-                              m("td", { className: "ah-smaps-td--right" }, String(c.processCount)),
-                              m("td", { className: "ah-smaps-td--right" }, c.totalInstances.toLocaleString()),
-                              m("td", { className: "ah-smaps-td--right" }, fmtSize(c.perInstanceRetained)),
-                              m("td", { className: "ah-smaps-td--right" }, fmtSize(c.totalWasted)),
-                            ]),
-                          ),
-                        ),
-                      ]),
-                    ]),
-                  ])
-                ),
-                zygoteCandidates !== null && zygoteCandidates.length === 0 && (
-                  m("p", { className: "ah-mb-2", style: { fontSize: "0.8rem", color: "var(--ah-text-faint)" } },
-                    "No Zygote candidates found (all objects are unique across processes).")
                 ),
                 filteredSharedMappings && filteredSharedMappings.length > 0 && (
                   m(SharedMappingsTable, {
