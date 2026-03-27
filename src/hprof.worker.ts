@@ -785,9 +785,10 @@ addEventListener("message", (e: MessageEvent) => {
       const tempSnap = parseHprof(msg.buffer, (m: string, pct: number) => {
         postMessage({ type: "progress", msg: m, pct: 10 + pct * 0.7 });
       });
-      postMessage({ type: "progress", msg: "Fingerprinting\u2026", pct: 85 });
+      const instCount = tempSnap.instances.size;
+      postMessage({ type: "progress", msg: `Fingerprinting ${instCount.toLocaleString()} objects\u2026`, pct: 85 });
       const fingerprints = computeFingerprints(tempSnap);
-      postMessage({ type: "progress", msg: "Done", pct: 100 });
+      postMessage({ type: "progress", msg: `${fingerprints.length.toLocaleString()} fingerprints`, pct: 100 });
       postMessage({ type: "fingerprints", fingerprints });
       // tempSnap goes out of scope → GC reclaims the full snapshot
     } catch (err: unknown) {

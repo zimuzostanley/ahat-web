@@ -1653,81 +1653,107 @@ export interface ObjectFingerprint {
   hash: number;          // FNV-1a hash of content
   className: string;
   shallowSize: number;
-  retainedSize: number;
+  retainedSize: number;  // shallow size used as proxy (fast)
 }
 
+// Skip classes that are too numerous and low-value for Zygote candidates.
+const SKIP_CLASSES = new Set([
+  "java.lang.String",       // handled by string dedup
+  "java.lang.Object",       // too generic
+  "java.lang.ref.WeakReference",
+  "java.lang.ref.SoftReference",
+  "java.lang.ref.PhantomReference",
+  "java.lang.ref.FinalizerReference",
+]);
+
 /**
- * Compute content fingerprints for all class instances in the "app" heap.
- * Each fingerprint is a hash of: className + sorted(fieldName:primitiveValue)
- * + sorted(fieldName:resolvedStringValue). Reference fields contribute only
- * their target class name (shallow), not a recursive hash.
+ * Compute content fingerprints for class instances in the "app" heap.
  *
- * This is designed for cross-process Zygote candidate detection: objects with
- * identical fingerprints across multiple processes are candidates for Zygote
- * preloading.
+ * Each fingerprint = FNV-1a hash of: className + field name/value pairs.
+ *
+ * For String reference fields: resolve the full string content via asString().
+ * For other reference fields: hash the referenced object's class name (shallow).
+ * Primitives: hash the value directly.
+ *
+ * Pre-caches resolved strings by instance ID so each String is resolved at
+ * most once across all objects that reference it.
  */
 export function computeFingerprints(snapshot: AhatSnapshot): ObjectFingerprint[] {
   const appHeap = snapshot.heaps.find(h => h.name === "app");
   if (!appHeap) return [];
 
+  // Pre-cache: resolve each String instance once, keyed by ID.
+  // This avoids re-resolving the same String thousands of times when
+  // many objects reference the same interned string.
+  const stringCache = new Map<number, string>();
+  function resolveString(inst: AhatInstance): string | null {
+    const cached = stringCache.get(inst.id);
+    if (cached !== undefined) return cached;
+    const str = inst.asString?.(-1);
+    if (str !== null && str !== undefined) {
+      stringCache.set(inst.id, str);
+      return str;
+    }
+    return null;
+  }
+
   const results: ObjectFingerprint[] = [];
 
   for (const [, inst] of snapshot.instances) {
-    // Only app heap — zygote/image are already shared
     if (inst.heap !== appHeap) continue;
-
-    // Only class instances (not arrays, not class objects)
     if (!inst.isClassInstance()) continue;
+
     const ci = inst as AhatClassInstance;
     const className = ci.getClassName();
+    if (SKIP_CLASSES.has(className)) continue;
 
-    // Skip java.lang.String — handled separately and more efficiently
-    // by the existing string dedup feature
-    if (className === "java.lang.String") continue;
-
-    // Build content string for hashing
-    const parts: string[] = [className];
+    // Incremental FNV-1a — hash field values without string allocation
+    let h = 0x811c9dc5;
+    h = fnv1aStr(h, className);
 
     for (const fv of ci.getInstanceFields()) {
+      h = fnv1aByte(h, 0); // field separator
+      h = fnv1aStr(h, fv.name);
+      h = fnv1aByte(h, 58); // ':'
+
       const val = fv.value;
       if (val === null || val === undefined) {
-        parts.push(`${fv.name}:null`);
+        h = fnv1aStr(h, "null");
       } else if (val instanceof AhatInstance) {
-        // For String references: resolve the string value
-        const str = val.asString?.(-1);
-        if (str !== null && str !== undefined) {
-          parts.push(`${fv.name}:s:${str}`);
+        const str = resolveString(val);
+        if (str !== null) {
+          h = fnv1aByte(h, 115); // 's' prefix for string content
+          h = fnv1aStr(h, str);
         } else {
-          // For other references: use class name only (shallow)
-          parts.push(`${fv.name}:@${val.getClassName()}`);
+          h = fnv1aByte(h, 64); // '@' prefix for class ref
+          h = fnv1aStr(h, val.getClassName());
         }
       } else {
-        // Primitive: include name + value
-        parts.push(`${fv.name}:${String(val)}`);
+        h = fnv1aStr(h, String(val));
       }
     }
 
-    const hash = fnv1a(parts.join("\0"));
     const size = ci.getSize();
-    const retained = ci.getTotalRetainedSize();
-
     results.push({
-      hash,
+      hash: h >>> 0,
       className,
       shallowSize: size.java,
-      retainedSize: retained.total,
+      retainedSize: size.java,
     });
   }
 
   return results;
 }
 
-/** FNV-1a hash for strings — fast, good distribution, no crypto overhead. */
-function fnv1a(str: string): number {
-  let hash = 0x811c9dc5; // FNV offset basis (32-bit)
+/** FNV-1a: feed a single byte. */
+function fnv1aByte(hash: number, byte: number): number {
+  return Math.imul(hash ^ byte, 0x01000193);
+}
+
+/** FNV-1a: feed a string char by char. */
+function fnv1aStr(hash: number, str: string): number {
   for (let i = 0; i < str.length; i++) {
-    hash ^= str.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193); // FNV prime
+    hash = Math.imul(hash ^ str.charCodeAt(i), 0x01000193);
   }
-  return hash >>> 0; // Ensure unsigned 32-bit
+  return hash;
 }
