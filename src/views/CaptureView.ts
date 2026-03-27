@@ -843,6 +843,12 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
   let permFilterW: boolean | null = null;
   let permFilterX: boolean | null = null;
 
+  // Zygote candidate scanning
+  let zygoteScanStatus: string | null = null;
+  let zygoteScanProgress: { done: number; total: number } | null = null;
+  let zygoteScanAbort: AbortController | null = null;
+  let zygoteCandidates: import("../zygote-candidates").ZygoteCandidate[] | null = null;
+
   // Smaps expansion / sort state
   let expandedSmapsPid: number | null = null;
   let expandedSmapsGroup: string | null = null;
@@ -1480,12 +1486,102 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
     }
   }
 
+  // ── Zygote candidate scanning ─────────────────────────────────────────────
+
+  function cancelZygoteScan() {
+    if (zygoteScanAbort) { zygoteScanAbort.abort(); zygoteScanAbort = null; }
+    zygoteScanStatus = null;
+    zygoteScanProgress = null;
+  }
+
+  async function handleZygoteScan() {
+    if (!connected || !javaPids || zygoteScanStatus) return;
+    const ac = new AbortController();
+    zygoteScanAbort = ac;
+    zygoteScanStatus = "Starting\u2026";
+    zygoteCandidates = null;
+    m.redraw();
+
+    const { findZygoteCandidates } = await import("../zygote-candidates");
+    const HprofWorkerInline = (await import("../hprof.worker.ts?worker&inline")).default;
+
+    // Collect Java processes that can be dumped
+    const targets = (processes ?? []).filter(p =>
+      javaPids.has(p.pid) && (conn.isRoot || p.debuggable !== false)
+    );
+    const allFingerprints = new Map<string, import("../hprof").ObjectFingerprint[]>();
+    const total = targets.length;
+
+    for (let i = 0; i < targets.length; i++) {
+      if (ac.signal.aborted) break;
+      const p = targets[i];
+      zygoteScanStatus = `${i + 1}/${total}: ${p.name}`;
+      zygoteScanProgress = { done: i, total };
+      m.redraw();
+
+      try {
+        // 1. Capture heap dump
+        zygoteScanStatus = `${i + 1}/${total}: dumping ${p.name}\u2026`;
+        m.redraw();
+        const hprofData = await conn.captureHeapDump(p.pid, false, (phase) => {
+          if (phase.step === "pulling") {
+            const mb = ((phase.received ?? 0) / 1_048_576).toFixed(1);
+            zygoteScanStatus = `${i + 1}/${total}: pulling ${p.name} (${mb} MiB)`;
+            m.redraw();
+          }
+        }, ac.signal);
+        if (ac.signal.aborted) break;
+
+        // 2. Send to a temporary worker for fingerprinting
+        zygoteScanStatus = `${i + 1}/${total}: fingerprinting ${p.name}\u2026`;
+        m.redraw();
+        const fingerprints = await new Promise<import("../hprof").ObjectFingerprint[]>((resolve, reject) => {
+          const worker = new HprofWorkerInline();
+          const onMsg = (ev: MessageEvent) => {
+            if (ev.data.type === "fingerprints") {
+              worker.removeEventListener("message", onMsg);
+              worker.terminate();
+              resolve(ev.data.fingerprints);
+            } else if (ev.data.type === "error") {
+              worker.removeEventListener("message", onMsg);
+              worker.terminate();
+              reject(new Error(ev.data.message));
+            }
+            // Ignore progress messages
+          };
+          worker.addEventListener("message", onMsg);
+          worker.postMessage({ type: "fingerprint", buffer: hprofData }, { transfer: [hprofData] });
+        });
+
+        allFingerprints.set(p.name, fingerprints);
+      } catch (e) {
+        if (ac.signal.aborted) break;
+        // Skip this process, continue with others
+        console.warn(`Zygote scan: skipping ${p.name}:`, e);
+      }
+    }
+
+    if (!ac.signal.aborted) {
+      zygoteScanStatus = "Computing candidates\u2026";
+      m.redraw();
+      zygoteCandidates = findZygoteCandidates(allFingerprints);
+    }
+
+    if (zygoteScanAbort === ac) {
+      zygoteScanAbort = null;
+      zygoteScanStatus = null;
+      zygoteScanProgress = null;
+      m.redraw();
+    }
+  }
+
   function handleDisconnect() {
     cancelEnrichment();
     cancelSmapsFetch();
     cancelAllCaptures();
     cancelVmaDump();
     cancelStrings();
+    cancelZygoteScan();
     conn.disconnect();
     connected = false;
     error = null;
@@ -2352,6 +2448,73 @@ function CaptureView(): m.Component<CaptureViewAttrs> {
                     onclick: scanStatus ? cancelSmapsFetch : scanAllSmaps,
                     disabled: !connected || !isLive || !!vmaDumpStatus,
                   }, scanStatus ? `Cancel Scan (${smapsData.size}/${dProcs?.length ?? 0})` : `Scan All VMAs (${smapsData.size}/${dProcs?.length ?? 0})`)
+                ),
+                // Zygote candidate scan
+                javaPids.size > 0 && (
+                  m("button", {
+                    className: "ah-capture-toolbar__btn ah-mb-2",
+                    style: { marginLeft: "0.5rem" },
+                    onclick: zygoteScanStatus ? cancelZygoteScan : handleZygoteScan,
+                    disabled: !connected || !isLive,
+                  }, zygoteScanStatus
+                    ? `Cancel Zygote Scan`
+                    : `Scan Zygote Candidates (${javaPids.size} Java)`)
+                ),
+                zygoteScanStatus && (
+                  m("div", { className: "ah-capture-progress ah-mb-2" }, [
+                    m("div", { className: "ah-capture-progress__row" }, [
+                      m("span", { className: "ah-capture-progress__text" }, `Zygote: ${zygoteScanStatus}`),
+                      zygoteScanProgress && m("span", { className: "ah-capture-progress__count" },
+                        `${zygoteScanProgress.done}/${zygoteScanProgress.total}`),
+                      m("button", { className: "ah-capture-progress__cancel", onclick: cancelZygoteScan }, "Cancel"),
+                    ]),
+                    zygoteScanProgress && zygoteScanProgress.total > 0 && (
+                      m("div", { className: "ah-capture-progress-bar" }, [
+                        m("div", {
+                          className: "ah-capture-progress-bar__fill ah-capture-progress-bar__fill--accent",
+                          style: { width: `${(zygoteScanProgress.done / zygoteScanProgress.total) * 100}%` },
+                        }),
+                      ])
+                    ),
+                  ])
+                ),
+                zygoteCandidates !== null && zygoteCandidates.length > 0 && (
+                  m("div", { className: "ah-mb-4" }, [
+                    m("h3", { style: { fontSize: "0.875rem", marginBottom: "0.5rem" } },
+                      `Zygote Candidates (${zygoteCandidates.length})`),
+                    m("p", { style: { fontSize: "0.75rem", color: "var(--ah-text-faint)", marginBottom: "0.5rem" } },
+                      "Objects with identical content across multiple processes. Preloading in Zygote would eliminate per-process copies."),
+                    m("div", { className: "ah-shared-mappings__table-wrap" }, [
+                      m("table", { className: "ah-shared-mappings__table" }, [
+                        m("thead", { className: "ah-shared-mappings__thead" }, [
+                          m("tr", [
+                            m("th", { className: "ah-smaps-th" }, "Class"),
+                            m("th", { className: "ah-smaps-th--right" }, "Processes"),
+                            m("th", { className: "ah-smaps-th--right" }, "Instances"),
+                            m("th", { className: "ah-smaps-th--right" }, "Per Instance"),
+                            m("th", { className: "ah-smaps-th--right" }, "Total Wasted"),
+                          ]),
+                        ]),
+                        m("tbody",
+                          zygoteCandidates.slice(0, 200).map((c, i) =>
+                            m("tr", { key: i, title: `Found in: ${c.processes.join(", ")}` }, [
+                              m("td", { className: "ah-smaps-td--name" }, [
+                                m("span", { className: "ah-truncate", style: { maxWidth: "350px" } }, c.className),
+                              ]),
+                              m("td", { className: "ah-smaps-td--right" }, String(c.processCount)),
+                              m("td", { className: "ah-smaps-td--right" }, c.totalInstances.toLocaleString()),
+                              m("td", { className: "ah-smaps-td--right" }, fmtSize(c.perInstanceRetained)),
+                              m("td", { className: "ah-smaps-td--right" }, fmtSize(c.totalWasted)),
+                            ]),
+                          ),
+                        ),
+                      ]),
+                    ]),
+                  ])
+                ),
+                zygoteCandidates !== null && zygoteCandidates.length === 0 && (
+                  m("p", { className: "ah-mb-2", style: { fontSize: "0.8rem", color: "var(--ah-text-faint)" } },
+                    "No Zygote candidates found (all objects are unique across processes).")
                 ),
                 filteredSharedMappings && filteredSharedMappings.length > 0 && (
                   m(SharedMappingsTable, {

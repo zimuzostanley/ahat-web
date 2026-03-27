@@ -1646,3 +1646,88 @@ export function parseHprof(buffer: ArrayBuffer, onProgress?: ProgressCallback): 
   snapshot.bitmapDumpData = bitmapDumpData;
   return snapshot;
 }
+
+// ─── Cross-process fingerprinting ────────────────────────────────────────────
+
+export interface ObjectFingerprint {
+  hash: number;          // FNV-1a hash of content
+  className: string;
+  shallowSize: number;
+  retainedSize: number;
+}
+
+/**
+ * Compute content fingerprints for all class instances in the "app" heap.
+ * Each fingerprint is a hash of: className + sorted(fieldName:primitiveValue)
+ * + sorted(fieldName:resolvedStringValue). Reference fields contribute only
+ * their target class name (shallow), not a recursive hash.
+ *
+ * This is designed for cross-process Zygote candidate detection: objects with
+ * identical fingerprints across multiple processes are candidates for Zygote
+ * preloading.
+ */
+export function computeFingerprints(snapshot: AhatSnapshot): ObjectFingerprint[] {
+  const appHeap = snapshot.heaps.find(h => h.name === "app");
+  if (!appHeap) return [];
+
+  const results: ObjectFingerprint[] = [];
+
+  for (const [, inst] of snapshot.instances) {
+    // Only app heap — zygote/image are already shared
+    if (inst.heap !== appHeap) continue;
+
+    // Only class instances (not arrays, not class objects)
+    if (!inst.isClassInstance()) continue;
+    const ci = inst as AhatClassInstance;
+    const className = ci.getClassName();
+
+    // Skip java.lang.String — handled separately and more efficiently
+    // by the existing string dedup feature
+    if (className === "java.lang.String") continue;
+
+    // Build content string for hashing
+    const parts: string[] = [className];
+
+    for (const fv of ci.getInstanceFields()) {
+      const val = fv.value;
+      if (val === null || val === undefined) {
+        parts.push(`${fv.name}:null`);
+      } else if (val instanceof AhatInstance) {
+        // For String references: resolve the string value
+        const str = val.asString?.(-1);
+        if (str !== null && str !== undefined) {
+          parts.push(`${fv.name}:s:${str}`);
+        } else {
+          // For other references: use class name only (shallow)
+          parts.push(`${fv.name}:@${val.getClassName()}`);
+        }
+      } else {
+        // Primitive: include name + value
+        parts.push(`${fv.name}:${String(val)}`);
+      }
+    }
+
+    const hash = fnv1a(parts.join("\0"));
+    const size = ci.getSize();
+    const retained = ci.getTotalRetainedSize();
+
+    results.push({
+      hash,
+      className,
+      shallowSize: size.java,
+      retainedSize: retained.total,
+    });
+  }
+
+  return results;
+}
+
+/** FNV-1a hash for strings — fast, good distribution, no crypto overhead. */
+function fnv1a(str: string): number {
+  let hash = 0x811c9dc5; // FNV offset basis (32-bit)
+  for (let i = 0; i < str.length; i++) {
+    hash ^= str.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193); // FNV prime
+  }
+  return hash >>> 0; // Ensure unsigned 32-bit
+}

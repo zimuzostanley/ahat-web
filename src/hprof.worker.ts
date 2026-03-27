@@ -15,7 +15,7 @@
 //   Worker → Main   { type: "queryError", id: number, message: string }
 
 import {
-  parseHprof,
+  parseHprof, computeFingerprints,
   AhatSnapshot, AhatInstance, AhatClassInstance, AhatArrayInstance, AhatClassObj,
   SuperRoot, SiteNode, Reachability,
   TypeName, ReachabilityName,
@@ -30,7 +30,8 @@ type WorkerMessage =
   | { type: "query"; id: number; name: string; params: Record<string, unknown> }
   | { type: "diffWithBaseline"; buffer: ArrayBuffer }
   | { type: "clearBaseline" }
-  | { type: "loadProguardMap"; text: string };
+  | { type: "loadProguardMap"; text: string }
+  | { type: "fingerprint"; buffer: ArrayBuffer };
 
 // ─── Shared display types (must match worker-protocol.ts on main side) ────────
 
@@ -772,6 +773,28 @@ addEventListener("message", (e: MessageEvent) => {
       baselineSnap = null;
     }
     postMessage({ type: "baselineCleared", overview: handleGetOverview() });
+    return;
+  }
+
+  if (msg.type === "fingerprint") {
+    // One-shot: parse → compute fingerprints → return → discard snapshot.
+    // Designed for cross-process Zygote candidate scanning where we cycle
+    // through many processes sequentially without keeping dumps in memory.
+    try {
+      postMessage({ type: "progress", msg: "Parsing\u2026", pct: 10 });
+      const tempSnap = parseHprof(msg.buffer, (m: string, pct: number) => {
+        postMessage({ type: "progress", msg: m, pct: 10 + pct * 0.7 });
+      });
+      postMessage({ type: "progress", msg: "Fingerprinting\u2026", pct: 85 });
+      const fingerprints = computeFingerprints(tempSnap);
+      postMessage({ type: "progress", msg: "Done", pct: 100 });
+      postMessage({ type: "fingerprints", fingerprints });
+      // tempSnap goes out of scope → GC reclaims the full snapshot
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[hprof worker] fingerprint error:", err);
+      postMessage({ type: "error", message });
+    }
     return;
   }
 
