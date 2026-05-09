@@ -327,7 +327,8 @@ export default function App(): m.Component {
               m("button", {
                 className: "ah-header__logo",
                 onclick: () => {
-                  if (captureUsed) switchToTab("device");
+                  captureUsed = true;
+                  switchToTab("device");
                 },
               },
                 m("div", { className: "ah-header__logo-icon" }, "A"),
